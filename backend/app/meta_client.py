@@ -38,7 +38,7 @@ Be specific about colors, patterns, and distinguishing features that would help 
 
 
 class MetaClient:
-    def __init__(self, api_key: str, base_url: str = "https://api.llama-api.com", model: str = DEFAULT_MODEL):
+    def __init__(self, api_key: str, base_url: str = "https://api.llama.com", model: str = DEFAULT_MODEL):
         self.api_key = api_key
         self.base_url = base_url.rstrip('/')
         self.model = model
@@ -119,7 +119,7 @@ def get_meta_client(mock: bool = False, scenario_map: Optional[dict] = None):
     if mock:
         return MockMetaClient(scenario_map=scenario_map)
     api_key = os.environ.get("META_API_KEY", "")
-    base_url = os.environ.get("META_API_BASE_URL", "https://api.llama-api.com")
+    base_url = os.environ.get("META_API_BASE_URL", "https://api.llama.com")
     if not api_key:
         logger.warning("META_API_KEY not set; using mock client")
         return MockMetaClient()

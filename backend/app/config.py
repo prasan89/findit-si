@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     data_dir: str = "./data"
     meta_api_key: str = ""
-    meta_api_base_url: str = "https://api.llama-api.com"
+    meta_api_base_url: str = "https://api.llama.com"
     findit_max_video_size_mb: int = 500
     findit_frame_extraction_fps: float = 1.0
     findit_max_frames_per_video: int = 300

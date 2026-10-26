@@ -156,7 +156,7 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
                   </div>
                   {r.indexing_status_detail && <div className="text-gray-400">{r.indexing_status_detail}</div>}
                 </div>
-                {r.processing_errors.length > 0 && (
+                {(r.processing_errors ?? []).length > 0 && (
                   <details className="mt-1">
                     <summary className="text-xs text-red-600 cursor-pointer">{r.processing_errors.length} processing warning(s)</summary>
                     <ul className="text-xs text-red-500 mt-1 space-y-0.5 pl-3">
