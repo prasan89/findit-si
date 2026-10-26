@@ -38,7 +38,7 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
       if (recordingTimezone) form.append('recording_timezone', recordingTimezone)
 
       try {
-        const res = await fetch('/api/recordings/', { method: 'POST', body: form })
+        const res = await fetch('/api/recordings/upload', { method: 'POST', body: form })
         if (!res.ok) {
           const err = await res.json()
           setUploadError(`Upload failed for ${file.name}: ${err.detail || res.statusText}`)
