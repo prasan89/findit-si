@@ -30,7 +30,8 @@ from .database import get_db
 # earlier cached answers (e.g. dog query -> bird events) must not be served.
 # v3: insect subject class added; never-indexed/failed recordings are now
 # reported in evidence gaps.
-CACHE_VERSION = "3"
+# v4: provider-aware keys (investigation/vision provider in the model part).
+CACHE_VERSION = "4"
 
 _IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
@@ -102,8 +103,11 @@ def build_fingerprint(
 
 
 def model_config_part(investigation_model: str, vision_model: str,
-                      max_llm_calls: Optional[int] = None) -> str:
-    return f"{investigation_model}|{vision_model}|{max_llm_calls}"
+                      max_llm_calls: Optional[int] = None,
+                      investigation_provider: str = "meta",
+                      vision_provider: str = "meta") -> str:
+    return (f"{investigation_model}|{vision_model}|{max_llm_calls}|"
+            f"{investigation_provider}|{vision_provider}")
 
 
 async def lookup(db_path: str, fingerprint: str, ttl_s: int,

@@ -41,7 +41,9 @@ async def create_investigation(request: InvestigationRequest, http_request: Requ
     fingerprint = build_fingerprint(
         "standard", request.query, rec_part,
         request.time_start_seconds, request.time_end_seconds, None,
-        model_config_part(settings.investigation_model, settings.vision_model))
+        model_config_part(settings.investigation_model, settings.vision_model,
+                          investigation_provider=settings.investigation_provider,
+                          vision_provider=settings.vision_provider))
     if ttl_s > 0:
         try:
             hit = await lookup(settings.db_path, fingerprint, ttl_s, idem_key)

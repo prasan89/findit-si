@@ -84,6 +84,10 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await create_tables(settings.db_path)
 
+    # Validate provider configuration (warn-only; missing keys serve mocks)
+    from .provider_config import validate_provider_config
+    validate_provider_config(settings)
+
     # Recover recordings stuck in PROCESSING from a prior crash/restart
     await _recover_stuck_recordings(settings, storage)
 

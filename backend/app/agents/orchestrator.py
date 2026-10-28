@@ -161,11 +161,15 @@ class InvestigationOrchestrator:
         }
         try:
             from ..config import get_settings as _get_settings
+            from ..provider_config import resolve_text_spec, resolve_vision_spec
             _settings = _get_settings()
+            _text_spec = resolve_text_spec(_settings)
+            _vision_spec = resolve_vision_spec(_settings)
             model_config = {
-                "investigation_model": _settings.investigation_model,
-                "vision_model": _settings.vision_model,
-                "vision_provider": _settings.vision_provider,
+                "investigation_model": _text_spec.model,
+                "investigation_provider": _text_spec.provider,
+                "vision_model": _vision_spec.model,
+                "vision_provider": _vision_spec.provider,
                 "budget_usd": self.budget_usd,
                 "agent_timeout_s": self.agent_timeout_s,
                 "investigation_timeout_s": self.investigation_timeout_s,

@@ -7,6 +7,7 @@ from ..agents.base import AgentResult, AgentStatus, InvestigationContext
 from ..agents.llm_helper import llm_json_call_ex
 from ..agents.schemas import ContradictionItem, ContradictionReport
 from ..config import get_settings
+from ..provider_config import resolve_text_spec
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ AGENT_NAME = "ContradictionHunterAgent"
 async def run(ctx: InvestigationContext) -> AgentResult[ContradictionReport]:
     t0 = time.monotonic()
     settings = get_settings()
+    spec = resolve_text_spec(settings)
     events = ctx.events
 
     if not events:
@@ -27,7 +29,7 @@ async def run(ctx: InvestigationContext) -> AgentResult[ContradictionReport]:
                 items=[],
                 alternative_explanations=["No events to analyze for contradictions"],
                 evidence_gaps=["No events available"],
-                model_used=settings.investigation_model,
+                model_used=spec.model,
             ),
             duration_ms=0.0,
         )
@@ -89,7 +91,7 @@ Return ONLY valid JSON. If no contradictions found, return contradictions_found:
                     items=[],
                     alternative_explanations=[],
                     evidence_gaps=[],
-                    model_used=settings.investigation_model,
+                    model_used=spec.model,
                 ),
                 duration_ms=(time.monotonic() - t0) * 1000,
                 error="Investigation model-call cap reached",
@@ -98,7 +100,8 @@ Return ONLY valid JSON. If no contradictions found, return contradictions_found:
             prompt=prompt,
             db_path=ctx.db_path,
             operation="contradiction_hunting",
-            model=settings.investigation_model,
+            model=spec.model,
+            provider=spec.provider,
         )
         result, tokens_in, tokens_out, cost = (
             call.data, call.tokens_in, call.tokens_out, call.cost_usd)
@@ -127,7 +130,7 @@ Return ONLY valid JSON. If no contradictions found, return contradictions_found:
             items=items,
             alternative_explanations=result.get("alternative_explanations", []),
             evidence_gaps=result.get("evidence_gaps", []),
-            model_used=settings.investigation_model,
+            model_used=spec.model,
         )
 
         ctx.budget_spent += cost
@@ -142,7 +145,8 @@ Return ONLY valid JSON. If no contradictions found, return contradictions_found:
             tokens_in=tokens_in if not call.mocked else None,
             tokens_out=tokens_out if not call.mocked else None,
             usage_measured=call.success and not call.mocked,
-            model_used=settings.investigation_model,
+            model_used=spec.model,
+            provider_used=call.provider,
             event_ids=[ev.get("event_id", "") for ev in events[:10]],
             retries=max(0, call.attempts - 1),
             timeouts=call.timeouts,

@@ -110,7 +110,9 @@ async def create_multi_agent_investigation(
     fingerprint = build_fingerprint(
         "multi_agent", request.query, rec_part, None, None, budget,
         model_config_part(settings.investigation_model, settings.vision_model,
-                          settings.investigation_max_llm_calls))
+                          settings.investigation_max_llm_calls,
+                          settings.investigation_provider,
+                          settings.vision_provider))
     if ttl_s > 0:
         try:
             hit = await lookup(settings.db_path, fingerprint, ttl_s, idem_key)

@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     # Model routing
     vision_provider: str = "meta"
     vision_model: str = "muse-spark-1.3"
+    investigation_provider: str = "meta"
+
+    # Baseten OpenAI-compatible inference (https://inference.baseten.co/v1).
+    # Selected per path via VISION_PROVIDER / INVESTIGATION_PROVIDER = "baseten".
+    baseten_api_key: str = ""
+    baseten_base_url: str = "https://inference.baseten.co/v1"
+    baseten_model: str = "meta-models/muse-spark-open-1026"
 
     # Retry settings
     max_api_attempts: int = 3
@@ -45,7 +52,9 @@ class Settings(BaseSettings):
     # reasoning for vision frames; 2000 starved content to null/truncated.
     # Measured complete responses need ~3300 total; 8000 gives headroom.
     vision_max_output_tokens: int = 8000
-    text_max_output_tokens: int = 1500
+    # Baseten probe 2026-10-29: text calls also spend ~1500 completion tokens
+    # on hidden reasoning; 1500 starved content (finish=length, 87 chars).
+    text_max_output_tokens: int = 4000
 
     # Phase 6: pipeline + cost safeguards
     investigation_max_concurrent: int = 4

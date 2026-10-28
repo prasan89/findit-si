@@ -34,6 +34,9 @@ _COST_PER_1K_TOKENS_IN: dict[str, float] = {
     "muse-spark-1.2": 0.00125,
     "muse-spark-1.3-contributor": 0.0001,
     "muse-spark-1.2-contributor": 0.0001,
+    # Baseten pricing is account/contract-specific: 0.0 means cost unavailable,
+    # NOT free. Token counts are still recorded exactly when reported.
+    "meta-models/muse-spark-open-1026": 0.0,
     "mock-v1": 0.0,
 }
 _COST_PER_1K_TOKENS_OUT: dict[str, float] = {
@@ -41,6 +44,9 @@ _COST_PER_1K_TOKENS_OUT: dict[str, float] = {
     "muse-spark-1.2": 0.00425,
     "muse-spark-1.3-contributor": 0.0002,
     "muse-spark-1.2-contributor": 0.0002,
+    # Baseten pricing is account/contract-specific: 0.0 means cost unavailable,
+    # NOT free. Token counts are still recorded exactly when reported.
+    "meta-models/muse-spark-open-1026": 0.0,
     "mock-v1": 0.0,
 }
 # Vision: images billed as tokens; no separate flat per-image fee published.

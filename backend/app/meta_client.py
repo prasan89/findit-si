@@ -76,13 +76,19 @@ class MuseSparkClient:
         connect_timeout_s: Optional[float] = None,
         read_timeout_s: Optional[float] = None,
         max_output_tokens: Optional[int] = None,
+        provider: str = "meta",
     ):
         if not api_key:
-            raise ValueError("MODEL_API_KEY is required for MuseSparkClient")
+            raise ValueError(
+                "MODEL_API_KEY (or the selected provider's key) is required "
+                "for MuseSparkClient"
+            )
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.model_version = model
+        # Observability label; the wire protocol is OpenAI-compatible on both.
+        self.provider = provider
         # Phase 6: configurable timeouts/token cap (constructor overrides win;
         # otherwise Settings; otherwise the historical defaults).
         connect_default, read_default, tokens_default = 10.0, 60.0, 2000
@@ -243,6 +249,8 @@ class ModelResponseError(ValueError):
 TRUNCATED_FINISH_REASONS = frozenset({"length"})
 # Upper bound for the one-shot truncation retry's token budget.
 TRUNCATED_RETRY_MAX_TOKENS = 16000
+# Same bound for text-agent calls (one vision-sized call at most).
+TEXT_TRUNCATED_RETRY_MAX_TOKENS = 8000
 # Cap for persisted raw failure text (forensics, not full dumps).
 MAX_RAW_FAILURE_CHARS = 8192
 
@@ -459,28 +467,44 @@ def _parse_json_response(content: str) -> dict:
 def get_meta_client(
     mock: bool = False,
     scenario_map: Optional[dict] = None,
+    provider: Optional[str] = None,
 ) -> FrameAnalyzer:
     """
-    Factory. Resolution order for the API key:
-      1. MODEL_API_KEY  (preferred — Meta Model API naming)
-      2. META_API_KEY   (backwards-compatible alias)
-    Falls back to MockMetaClient when no key is set.
+    Factory. Resolves (provider, base_url, key, model) from settings:
+      meta (default): MODEL_API_KEY > META_API_KEY, META_API_BASE_URL, VISION_MODEL
+      baseten: BASETEN_API_KEY, BASETEN_BASE_URL, BASETEN_MODEL
+    Falls back to MockMetaClient when the selected provider has no key set.
     """
     if mock:
         return MockMetaClient(scenario_map=scenario_map)
 
-    api_key = (
-        os.environ.get("MODEL_API_KEY")
-        or os.environ.get("META_API_KEY")
-        or ""
-    )
-    base_url = os.environ.get("META_API_BASE_URL", API_BASE_URL)
+    from .provider_config import resolve_vision_spec
+    try:
+        from .config import get_settings
+        settings = get_settings()
+    except Exception:
+        settings = None
+    spec = resolve_vision_spec(settings, provider=provider) if settings else None
+    if spec is None:
+        api_key = (
+            os.environ.get("MODEL_API_KEY")
+            or os.environ.get("META_API_KEY")
+            or ""
+        )
+        base_url = os.environ.get("META_API_BASE_URL", API_BASE_URL)
+        provider_name, model = "meta", MUSE_SPARK_MODEL
+    else:
+        api_key, base_url = spec.api_key, spec.base_url
+        provider_name, model = spec.provider, spec.model
 
     if not api_key:
         logger.warning(
-            "Neither MODEL_API_KEY nor META_API_KEY is set; "
-            "falling back to mock client — no real AI analysis will occur"
+            "No API key for vision provider %r; "
+            "falling back to mock client — no real AI analysis will occur",
+            provider_name,
         )
         return MockMetaClient()
 
-    return MuseSparkClient(api_key=api_key, base_url=base_url)
+    return MuseSparkClient(
+        api_key=api_key, base_url=base_url, model=model, provider=provider_name
+    )

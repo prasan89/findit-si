@@ -7,6 +7,7 @@ from ..agents.base import AgentResult, AgentStatus, InvestigationContext
 from ..agents.llm_helper import llm_json_call_ex
 from ..agents.schemas import ObjectActionAnalysis, ObjectActionReport
 from ..config import get_settings
+from ..provider_config import resolve_text_spec
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ AGENT_NAME = "ObjectActionAnalystAgent"
 async def run(ctx: InvestigationContext) -> AgentResult[ObjectActionAnalysis]:
     t0 = time.monotonic()
     settings = get_settings()
+    spec = resolve_text_spec(settings)
     events = ctx.events
 
     if not events:
@@ -25,7 +27,7 @@ async def run(ctx: InvestigationContext) -> AgentResult[ObjectActionAnalysis]:
             output=ObjectActionAnalysis(
                 reports=[],
                 events_analyzed=0,
-                model_used=settings.investigation_model,
+                model_used=spec.model,
             ),
             duration_ms=0.0,
         )
@@ -70,7 +72,7 @@ Return ONLY valid JSON:
                 output=ObjectActionAnalysis(
                     reports=[],
                     events_analyzed=0,
-                    model_used=settings.investigation_model,
+                    model_used=spec.model,
                 ),
                 duration_ms=(time.monotonic() - t0) * 1000,
                 error="Investigation model-call cap reached",
@@ -79,7 +81,8 @@ Return ONLY valid JSON:
             prompt=prompt,
             db_path=ctx.db_path,
             operation="object_action_analysis",
-            model=settings.investigation_model,
+            model=spec.model,
+            provider=spec.provider,
         )
         tokens_in, tokens_out, cost = call.tokens_in, call.tokens_out, call.cost_usd
 
@@ -107,7 +110,7 @@ Return ONLY valid JSON:
         analysis = ObjectActionAnalysis(
             reports=reports,
             events_analyzed=len(events),
-            model_used=settings.investigation_model,
+            model_used=spec.model,
         )
 
         ctx.budget_spent += cost
@@ -122,7 +125,8 @@ Return ONLY valid JSON:
             tokens_in=tokens_in if not call.mocked else None,
             tokens_out=tokens_out if not call.mocked else None,
             usage_measured=call.success and not call.mocked,
-            model_used=settings.investigation_model,
+            model_used=spec.model,
+            provider_used=call.provider,
             event_ids=[ev.get("event_id", "") for ev in events[:10]],
             retries=max(0, call.attempts - 1),
             timeouts=call.timeouts,

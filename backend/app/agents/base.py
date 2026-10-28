@@ -38,6 +38,7 @@ class AgentResult(Generic[T]):
     # True only when tokens/cost came from a provider-reported usage payload.
     usage_measured: bool = False
     model_used: Optional[str] = None
+    provider_used: Optional[str] = None
     event_ids: list[str] = field(default_factory=list)
     evidence_ids: list[str] = field(default_factory=list)
 
@@ -64,6 +65,7 @@ class AgentResult(Generic[T]):
             "tokens_out": self.tokens_out,
             "usage_measured": self.usage_measured,
             "model_used": self.model_used,
+            "provider_used": self.provider_used,
             "event_ids": self.event_ids,
             "evidence_ids": self.evidence_ids,
         }

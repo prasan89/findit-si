@@ -4,7 +4,9 @@ import time
 
 from ..agents.base import AgentResult, AgentStatus, InvestigationContext
 from ..agents.schemas import AuditReport, ClaimEvidence, EvidenceBundle, FinalReport
+from ..config import get_settings
 from ..investigate import _build_narrative
+from ..provider_config import resolve_text_spec
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,7 @@ async def run(
 ) -> AgentResult[FinalReport]:
     t0 = time.monotonic()
     try:
+        spec = resolve_text_spec(get_settings())
         investigation_result = ctx.agent_outputs.get("investigation_result")
         ts_reliable = False
         if investigation_result:
@@ -87,13 +90,12 @@ async def run(
                 verified=(ev_id in verified_event_ids) if verified_event_ids else None,
             ))
 
-        from ..config import get_settings
         report = FinalReport(
             narrative=narrative,
             key_findings=key_findings,
             uncertainty_notes=uncertainty_notes,
             evidence_citations=evidence_citations,
-            model_used=get_settings().investigation_model,
+            model_used=spec.model,
             agents_run=agents_run,
             claim_evidence=claim_evidence,
         )

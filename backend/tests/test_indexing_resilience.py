@@ -557,6 +557,51 @@ async def test_text_payload_enforces_json_object(db_path, monkeypatch):
     assert posts[0]["response_format"] == {"type": "json_object"}
 
 
+@pytest.mark.asyncio
+async def test_text_truncation_retried_once_with_more_tokens(db_path, monkeypatch):
+    """Baseten probe 2026-10-29: text reasoning exhausts small budgets."""
+    from app.agents.llm_helper import llm_json_call_ex
+    from app.config import get_settings
+    monkeypatch.setenv("MODEL_API_KEY", "test-key")
+    budget = get_settings().text_max_output_tokens
+    posts = []
+    truncated = _envelope('{"answer": ', finish_reason="length")
+    recovered = _envelope('{"answer": 1}', finish_reason="stop")
+    with _mock_http_client(posts, [truncated, recovered]):
+        result = await llm_json_call_ex("Q?", db_path, "test_op")
+    assert result.success is True
+    assert result.data == {"answer": 1}
+    assert len(posts) == 2
+    assert posts[0]["max_completion_tokens"] == budget
+    assert posts[1]["max_completion_tokens"] == budget * 2
+
+
+@pytest.mark.asyncio
+async def test_text_persistent_truncation_gives_up(db_path, monkeypatch):
+    from app.agents.llm_helper import llm_json_call_ex
+    monkeypatch.setenv("MODEL_API_KEY", "test-key")
+    posts = []
+    truncated = _envelope('{"answer": ', finish_reason="length")
+    with _mock_http_client(posts, [truncated]):
+        result = await llm_json_call_ex("Q?", db_path, "test_op")
+    assert result.success is False
+    assert result.data == {}
+    assert len(posts) == 2  # one retry only
+
+
+@pytest.mark.asyncio
+async def test_text_no_truncation_retry_at_cap(db_path, monkeypatch):
+    from app.agents.llm_helper import llm_json_call_ex
+    monkeypatch.setenv("MODEL_API_KEY", "test-key")
+    monkeypatch.setattr("app.meta_client.TEXT_TRUNCATED_RETRY_MAX_TOKENS", 100)
+    posts = []
+    truncated = _envelope('{"answer": ', finish_reason="length")
+    with _mock_http_client(posts, [truncated]):
+        result = await llm_json_call_ex("Q?", db_path, "test_op")
+    assert result.success is False
+    assert len(posts) == 1
+
+
 def test_frame_analysis_schema_validator():
     from app.meta_client import validate_frame_analysis
     assert validate_frame_analysis({"objects": [], "scene_summary": "x"})["objects"] == []

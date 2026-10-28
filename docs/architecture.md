@@ -141,3 +141,28 @@ frontend/src/components/AgentStatusPanel.tsx
 frontend/src/components/InvestigationPanel.tsx  (updated)
 frontend/src/types/index.ts                     (updated)
 ```
+
+## Model Providers (Meta + Baseten)
+
+Both LLM paths speak OpenAI-compatible `POST /chat/completions` over httpx
+(no OpenAI SDK dependency). `backend/app/provider_config.py` resolves
+`(provider, base_url, api_key, model)` per path:
+
+- Frame indexing: `VISION_PROVIDER` (`meta` default) → `VISION_MODEL`, or
+  `baseten` → `BASETEN_MODEL` (`meta-models/muse-spark-open-1026`).
+- Investigation agents: `INVESTIGATION_PROVIDER` (`meta` default) →
+  `INVESTIGATION_MODEL`, or `baseten` → `BASETEN_MODEL`.
+
+Keys: `MODEL_API_KEY`/`META_API_KEY` (+`META_API_BASE_URL`) for Meta;
+`BASETEN_API_KEY` (+`BASETEN_BASE_URL`) for Baseten. Backend only — never in
+bundles, logs, traces, or error responses. A selected provider without its key
+serves deterministic mocks (agents report `MOCKED`, vision reports `mock-v1`);
+startup logs a warning via `validate_provider_config()`.
+
+Provenance: usage rows record provider+model; traces record resolved
+provider/model per agent (`provider_used`) and per run (`model_config`).
+Frame-cache keys include the model id and investigation result-cache keys
+include both providers, so results never cross providers. Baseten token
+counts are exact when reported; cost is unavailable (contract pricing) and
+recorded as 0.0 — never presented as free. Retry, timeout, budget, and
+structured-output validation are shared across providers.

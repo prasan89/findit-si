@@ -13,6 +13,7 @@ import httpx
 from ..meta_client import (
     API_BASE_URL,
     MUSE_SPARK_MODEL,
+    ModelResponseError,
     extract_message_content,
     parse_model_json,
 )
@@ -43,6 +44,7 @@ class LLMCallResult:
     tokens_out: int
     cost_usd: float
     model: str
+    provider: str = "meta"
     mocked: bool = False
     success: bool = True
     attempts: int = 1
@@ -74,31 +76,47 @@ async def llm_json_call_ex(
     operation: str,
     model: Optional[str] = None,
     max_attempts: Optional[int] = None,
+    provider: Optional[str] = None,
 ) -> LLMCallResult:
     """
-    Make a text-only JSON-mode call to the Meta LLM.
+    Make a text-only JSON-mode call to the configured LLM provider.
     Returns an LLMCallResult with measured usage and a mocked flag.
     Falls back gracefully when no API key is set.
     Phase 6: transient failures are retried with backoff (honoring
     Retry-After); auth/malformed failures fail fast without retry.
+    Provider routing: explicit `provider` wins, else INVESTIGATION_PROVIDER
+    (default "meta"). Model defaults follow the provider unless explicit.
     """
     from ..provider import (compute_backoff_seconds, is_transient_error,
                             retry_after_seconds)
+    from ..provider_config import resolve_text_spec
 
-    api_key = (
-        os.environ.get("MODEL_API_KEY")
-        or os.environ.get("META_API_KEY")
-        or ""
-    )
-    base_url = os.environ.get("META_API_BASE_URL", API_BASE_URL)
-    model_name = model or MUSE_SPARK_MODEL
+    try:
+        from ..config import get_settings
+        settings = get_settings()
+    except Exception:
+        settings = None
+    if settings is not None:
+        spec = resolve_text_spec(settings, provider=provider, model=model)
+        api_key, base_url, model_name = spec.api_key, spec.base_url, spec.model
+        provider_name = spec.provider
+    else:  # pragma: no cover — settings import effectively infallible
+        api_key = (
+            os.environ.get("MODEL_API_KEY")
+            or os.environ.get("META_API_KEY")
+            or ""
+        )
+        base_url = os.environ.get("META_API_BASE_URL", API_BASE_URL)
+        model_name = model or MUSE_SPARK_MODEL
+        provider_name = provider or "meta"
 
     t0 = time.monotonic()
 
     if not api_key:
         logger.warning("No API key — LLM agent %s using empty fallback", operation)
         return LLMCallResult(data={}, tokens_in=0, tokens_out=0, cost_usd=0.0,
-                             model=model_name, mocked=True, success=False,
+                             model=model_name, provider=provider_name,
+                             mocked=True, success=False,
                              attempts=0, timeouts=0)
 
     connect_s, read_s, cfg_attempts, max_tokens, base_backoff, max_backoff, jitter = (
@@ -123,9 +141,12 @@ async def llm_json_call_ex(
     result: dict = {}
     attempts = 0
     timeouts = 0
+    current_tokens = max_tokens
+    truncation_retried = False
 
     for attempt in range(1, attempts_allowed + 1):
         attempts = attempt
+        payload["max_completion_tokens"] = current_tokens
         try:
             from ..guards import bounded_llm_call
             async with bounded_llm_call():
@@ -162,6 +183,27 @@ async def llm_json_call_ex(
             # Log the exception class only — never response bodies, prompts,
             # or credentials.
             logger.warning("LLM call failed for %s: %s", operation, type(exc).__name__)
+            # Truncated output gets ONE retry with a larger token budget — a
+            # changed request strategy (same policy as the vision path). The
+            # retry consumes one attempt slot, so total calls stay bounded.
+            from ..meta_client import TEXT_TRUNCATED_RETRY_MAX_TOKENS
+            if (
+                isinstance(exc, ModelResponseError)
+                and exc.code == "truncated"
+                and not truncation_retried
+                and current_tokens < TEXT_TRUNCATED_RETRY_MAX_TOKENS
+            ):
+                truncation_retried = True
+                current_tokens = min(
+                    current_tokens * 2, TEXT_TRUNCATED_RETRY_MAX_TOKENS)
+                logger.warning(
+                    "LLM response truncated; retrying once with "
+                    "max_completion_tokens=%d",
+                    current_tokens,
+                )
+                if attempt < attempts_allowed:
+                    continue
+                break
             if not is_transient_error(exc) or attempt >= attempts_allowed:
                 break
             backoff = compute_backoff_seconds(attempt, base_backoff, max_backoff, jitter)
@@ -176,7 +218,7 @@ async def llm_json_call_ex(
 
     usage_record = UsageRecord(
         usage_id=str(uuid.uuid4()),
-        provider="meta",
+        provider=provider_name,
         model=model_name,
         operation=operation,
         tokens_in=tokens_in,
@@ -192,7 +234,8 @@ async def llm_json_call_ex(
         pass
 
     return LLMCallResult(data=result, tokens_in=tokens_in, tokens_out=tokens_out,
-                         cost_usd=cost, model=model_name, mocked=False, success=success,
+                         cost_usd=cost, model=model_name, provider=provider_name,
+                         mocked=False, success=success,
                          attempts=attempts, timeouts=timeouts)
 
 
@@ -201,11 +244,13 @@ async def llm_json_call(
     db_path: str,
     operation: str,
     model: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> tuple[dict, int, int, float]:
     """
-    Make a text-only JSON-mode call to the Meta LLM.
+    Make a text-only JSON-mode call to the configured LLM provider.
     Returns (parsed_dict, tokens_in, tokens_out, cost_usd).
     Falls back gracefully when no API key is set.
     """
-    result = await llm_json_call_ex(prompt, db_path, operation, model)
+    result = await llm_json_call_ex(prompt, db_path, operation, model,
+                                    provider=provider)
     return result.data, result.tokens_in, result.tokens_out, result.cost_usd
