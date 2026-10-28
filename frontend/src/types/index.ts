@@ -111,3 +111,37 @@ export interface InvestigationResult {
   evidence_gaps: string[]
   uncertainty_summary: string
 }
+
+// ── Phase 3: Multi-agent investigation types ─────────────────────────────────
+
+export type AgentRunStatus = 'pending' | 'running' | 'completed' | 'skipped' | 'failed'
+
+export interface AgentRunResult {
+  agent_name: string
+  status: AgentRunStatus
+  duration_ms: number
+  tokens_used: number
+  cost_usd: number
+  error?: string
+  output?: Record<string, unknown>
+}
+
+export interface FinalReport {
+  narrative: string
+  key_findings: string[]
+  uncertainty_notes: string[]
+  evidence_citations: string[]
+  model_used: string
+  agents_run: string[]
+}
+
+export interface MultiAgentInvestigationResult {
+  trace_id: string
+  investigation_id: string
+  query: string
+  agents: AgentRunResult[]
+  final_report: FinalReport | null
+  total_cost_usd: number
+  total_duration_ms: number
+  status: string
+}

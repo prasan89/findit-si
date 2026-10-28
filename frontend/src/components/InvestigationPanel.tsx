@@ -1,7 +1,11 @@
 'use client'
 import { useState } from 'react'
 import EventCard from './EventCard'
-import type { Recording, InvestigationResult } from '@/types'
+import AgentStatusPanel from './AgentStatusPanel'
+import VideoPlayerModal from './VideoPlayerModal'
+import type { Recording, InvestigationResult, MultiAgentInvestigationResult } from '@/types'
+
+type Mode = 'standard' | 'multi-agent'
 
 interface Props {
   recordings: Recording[]
@@ -13,6 +17,13 @@ export default function InvestigationPanel({ recordings, investigationResult, on
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mode, setMode] = useState<Mode>('standard')
+  const [multiAgentResult, setMultiAgentResult] = useState<MultiAgentInvestigationResult | null>(null)
+  const [videoModal, setVideoModal] = useState<{ recordingId: string; timestamp: number } | null>(null)
+
+  const videoModalRecording = videoModal
+    ? recordings.find(r => r.recording_id === videoModal.recordingId) ?? null
+    : null
 
   const indexedRecordings = recordings.filter(r =>
     r.processing_status === 'INDEXED' || r.processing_status === 'PARTIAL'
@@ -30,17 +41,33 @@ export default function InvestigationPanel({ recordings, investigationResult, on
     if (!query.trim()) return
     setLoading(true)
     setError(null)
+    setMultiAgentResult(null)
+
     try {
-      const res = await fetch('/api/investigations/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query.trim() }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        setError(err.detail || 'Investigation failed')
+      if (mode === 'multi-agent') {
+        const res = await fetch('/api/investigations/multi-agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: query.trim() }),
+        })
+        if (!res.ok) {
+          const err = await res.json()
+          setError(err.detail || 'Multi-agent investigation failed')
+        } else {
+          setMultiAgentResult(await res.json())
+        }
       } else {
-        onInvestigate(await res.json())
+        const res = await fetch('/api/investigations/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: query.trim() }),
+        })
+        if (!res.ok) {
+          const err = await res.json()
+          setError(err.detail || 'Investigation failed')
+        } else {
+          onInvestigate(await res.json())
+        }
       }
     } catch {
       setError('Network error. Is the backend running?')
@@ -59,6 +86,40 @@ export default function InvestigationPanel({ recordings, investigationResult, on
             : `Investigating across ${indexedRecordings.length} indexed recording${indexedRecordings.length === 1 ? '' : 's'}.`}
         </p>
 
+        {/* Mode selector */}
+        <div className="flex gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => setMode('standard')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              mode === 'standard'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Standard
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('multi-agent')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              mode === 'multi-agent'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Multi-Agent (8 specialists)
+          </button>
+        </div>
+
+        {mode === 'multi-agent' && (
+          <p className="text-xs text-indigo-700 bg-indigo-50 rounded-lg px-3 py-2 mb-3">
+            Runs 8 specialist agents: evidence retrieval, visual intelligence, object analysis,
+            temporal reasoning, cross-camera correlation, contradiction hunting, evidence audit,
+            and report synthesis.
+          </p>
+        )}
+
         <form onSubmit={handleInvestigate} className="flex gap-2 mb-3">
           <input
             type="text"
@@ -73,7 +134,7 @@ export default function InvestigationPanel({ recordings, investigationResult, on
             disabled={loading || !query.trim()}
             className="px-5 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors whitespace-nowrap"
           >
-            {loading ? 'Investigating…' : 'Investigate'}
+            {loading ? 'Investigating…' : mode === 'multi-agent' ? 'Investigate (8 agents)' : 'Investigate'}
           </button>
         </form>
 
@@ -93,8 +154,37 @@ export default function InvestigationPanel({ recordings, investigationResult, on
         {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
       </div>
 
-      {/* Results */}
-      {investigationResult && (
+      {/* Multi-agent results */}
+      {multiAgentResult && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="font-semibold text-gray-900">
+              Multi-Agent Investigation:{' '}
+              <span className="text-indigo-700">&ldquo;{multiAgentResult.query}&rdquo;</span>
+            </h3>
+            <p className="text-sm text-gray-500">
+              {multiAgentResult.agents.filter(a => a.status === 'completed').length} of{' '}
+              {multiAgentResult.agents.length} agents completed
+              {' · '}${multiAgentResult.total_cost_usd.toFixed(5)}
+              {' · '}{(multiAgentResult.total_duration_ms / 1000).toFixed(2)}s
+            </p>
+          </div>
+
+          {multiAgentResult.final_report && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <h4 className="text-sm font-semibold text-gray-700 mb-2">Investigation Narrative</h4>
+              <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans">
+                {multiAgentResult.final_report.narrative}
+              </pre>
+            </div>
+          )}
+
+          <AgentStatusPanel result={multiAgentResult} />
+        </div>
+      )}
+
+      {/* Standard results */}
+      {investigationResult && mode === 'standard' && (
         <div className="space-y-4">
           {/* Summary bar */}
           <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -138,7 +228,13 @@ export default function InvestigationPanel({ recordings, investigationResult, on
             <div className="space-y-3">
               <h4 className="font-medium text-gray-700">Event Timeline</h4>
               {investigationResult.events.map((ev, i) => (
-                <EventCard key={ev.event_id} event={ev} index={i + 1} highlight={i === 0} />
+                <EventCard
+                  key={ev.event_id}
+                  event={ev}
+                  index={i + 1}
+                  highlight={i === 0}
+                  onPlayEvidence={(rid, ts) => setVideoModal({ recordingId: rid, timestamp: ts })}
+                />
               ))}
             </div>
           ) : (
@@ -172,6 +268,13 @@ export default function InvestigationPanel({ recordings, investigationResult, on
             </div>
           )}
         </div>
+      )}
+      {videoModalRecording && videoModal && (
+        <VideoPlayerModal
+          recording={videoModalRecording}
+          initialTimestamp={videoModal.timestamp}
+          onClose={() => setVideoModal(null)}
+        />
       )}
     </div>
   )

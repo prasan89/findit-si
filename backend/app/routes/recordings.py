@@ -128,7 +128,7 @@ async def list_recordings():
                       recording_datetime, recording_timezone,
                       camera_name, camera_location,
                       processing_status, frame_count, video_duration_seconds,
-                      thumbnail_path, processing_errors, indexing_status_detail
+                      video_path, thumbnail_path, processing_errors, indexing_status_detail
                FROM recordings ORDER BY upload_timestamp DESC"""
         )).fetchall()
 
@@ -146,6 +146,7 @@ async def list_recordings():
             processing_status=r['processing_status'],
             frame_count=r['frame_count'] or 0,
             video_duration_seconds=r['video_duration_seconds'],
+            video_path=r['video_path'],
             thumbnail_path=r['thumbnail_path'],
             processing_errors=errors,
             indexing_status_detail=r['indexing_status_detail'],
@@ -166,7 +167,7 @@ async def get_recording(recording_id: str):
                       recording_datetime, recording_timezone,
                       camera_name, camera_location,
                       processing_status, frame_count, video_duration_seconds,
-                      thumbnail_path, processing_errors, indexing_status_detail
+                      video_path, thumbnail_path, processing_errors, indexing_status_detail
                FROM recordings WHERE recording_id = ?""",
             (recording_id,)
         )).fetchone()
@@ -186,6 +187,7 @@ async def get_recording(recording_id: str):
         processing_status=row['processing_status'],
         frame_count=row['frame_count'] or 0,
         video_duration_seconds=row['video_duration_seconds'],
+        video_path=row['video_path'],
         thumbnail_path=row['thumbnail_path'],
         processing_errors=errors,
         indexing_status_detail=row['indexing_status_detail'],

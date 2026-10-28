@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef } from 'react'
 import type { Recording } from '@/types'
+import VideoPlayerModal from './VideoPlayerModal'
 
 const STATUS_COLORS: Record<string, string> = {
   UPLOADED: 'bg-yellow-100 text-yellow-800',
@@ -24,6 +25,7 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
   const [recordingTimezone, setRecordingTimezone] = useState('')
   const [cameraName, setCameraName] = useState('')
   const [cameraLocation, setCameraLocation] = useState('')
+  const [activeVideo, setActiveVideo] = useState<Recording | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -157,11 +159,20 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
           {recordings.map(r => (
             <div key={r.recording_id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-4">
               {r.thumbnail_path && (
-                <img
-                  src={`/thumbnails/${r.recording_id}.jpg`}
-                  alt="thumbnail"
-                  className="w-20 h-14 object-cover rounded-lg bg-gray-100 flex-shrink-0"
-                />
+                <button
+                  onClick={() => setActiveVideo(r)}
+                  className="relative flex-shrink-0 w-20 h-14 group focus:outline-none"
+                  aria-label={`Play ${r.original_filename}`}
+                >
+                  <img
+                    src={`/thumbnails/${r.recording_id}.jpg`}
+                    alt="thumbnail"
+                    className="w-20 h-14 object-cover rounded-lg bg-gray-100"
+                  />
+                  <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span className="text-white text-xl">▶</span>
+                  </span>
+                </button>
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -210,6 +221,9 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
             </div>
           ))}
         </div>
+      )}
+      {activeVideo && (
+        <VideoPlayerModal recording={activeVideo} onClose={() => setActiveVideo(null)} />
       )}
     </div>
   )

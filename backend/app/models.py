@@ -41,6 +41,7 @@ class RecordingStatus(BaseModel):
     processing_status: str
     frame_count: int = 0
     video_duration_seconds: Optional[float] = None
+    video_path: Optional[str] = None
     thumbnail_path: Optional[str] = None
     processing_errors: Optional[list] = None
     indexing_status_detail: Optional[str] = None

@@ -178,6 +178,28 @@ async def create_tables(db_path: str) -> None:
             ON model_usage(provider, model)
         """)
 
+        # Phase 3: Multi-agent investigation execution traces
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS investigation_traces (
+                trace_id TEXT PRIMARY KEY,
+                investigation_id TEXT NOT NULL,
+                query TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                total_duration_ms REAL,
+                total_cost_usd REAL NOT NULL DEFAULT 0.0,
+                agent_results TEXT NOT NULL DEFAULT '[]',
+                final_report TEXT,
+                recording_ids TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'RUNNING'
+            )
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_investigation_traces_status
+            ON investigation_traces(status)
+        """)
+
         # Idempotent migrations for existing databases
         try:
             await db.execute("ALTER TABLE recordings ADD COLUMN camera_name TEXT")

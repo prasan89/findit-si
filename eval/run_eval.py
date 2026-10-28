@@ -218,6 +218,48 @@ def run_query_eval(backend: str, query_def: dict, recording_ids: list[str],
     }
 
 
+def run_multi_agent_investigation(backend: str, query: str, recording_ids: Optional[list[str]] = None) -> dict:
+    body = {"query": query, "budget_usd": 5.0}
+    if recording_ids:
+        body["recording_ids"] = recording_ids
+    return http_post_json(f"{backend}/api/investigations/multi-agent", body)
+
+
+def run_multi_agent_benchmark(backend: str, queries: list[dict], recording_ids: list[str]) -> None:
+    print(f"\n{'─'*40}")
+    print("Multi-Agent Investigation Benchmark")
+    print(f"{'─'*40}")
+
+    for q in queries[:3]:
+        print(f"\n  Query: {q['query']}")
+        t0 = time.time()
+        try:
+            result = run_multi_agent_investigation(backend, q["query"], recording_ids)
+            latency = time.time() - t0
+
+            agents = result.get("agents", [])
+            completed = sum(1 for a in agents if a["status"] == "completed")
+            skipped = sum(1 for a in agents if a["status"] == "skipped")
+            failed = sum(1 for a in agents if a["status"] == "failed")
+            total_cost = result.get("total_cost_usd", 0)
+
+            print(f"  Agents: {completed} completed / {skipped} skipped / {failed} failed")
+            print(f"  Total cost: ${total_cost:.5f}")
+            print(f"  Total latency: {latency:.2f}s")
+
+            for agent in agents:
+                status_sym = "✓" if agent["status"] == "completed" else ("⊘" if agent["status"] == "skipped" else "✗")
+                ms = f"{agent['duration_ms'] / 1000:.2f}s" if agent["duration_ms"] > 0 else "—"
+                print(f"    {status_sym} {agent['agent_name']}: {agent['status']} ({ms})")
+
+            fr = result.get("final_report")
+            if fr:
+                print(f"  Key findings: {len(fr.get('key_findings', []))}")
+                print(f"  Evidence citations: {len(fr.get('evidence_citations', []))}")
+        except Exception as e:
+            print(f"  ERROR: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", default=DEFAULT_BACKEND)
@@ -225,6 +267,8 @@ def main():
                         help="Upload clips from eval/clips/ before evaluating")
     parser.add_argument("--recording-ids", nargs="+",
                         help="Use existing recording IDs instead of uploading")
+    parser.add_argument("--multi-agent", action="store_true",
+                        help="Also run multi-agent benchmark")
     args = parser.parse_args()
 
     gt = json.loads(GT_FILE.read_text())
@@ -442,6 +486,9 @@ def main():
     }
     RESULTS_FILE.write_text(json.dumps(results, indent=2))
     print(f"\nDetailed results written to: {RESULTS_FILE}")
+
+    if args.multi_agent and recording_ids:
+        run_multi_agent_benchmark(args.backend, queries, recording_ids)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ interface Props {
   event: Event
   index: number
   highlight?: boolean
+  onPlayEvidence?: (recordingId: string, timestamp: number) => void
 }
 
 function formatTs(secs: number): string {
@@ -31,7 +32,7 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   scene_change: 'Scene Change',
 }
 
-export default function EventCard({ event: ev, index, highlight }: Props) {
+export default function EventCard({ event: ev, index, highlight, onPlayEvidence }: Props) {
   const [activeFrame, setActiveFrame] = useState<EvidenceFrame | null>(
     ev.evidence_frames.find(f => f.role === 'during') ?? ev.evidence_frames[0] ?? null
   )
@@ -54,6 +55,14 @@ export default function EventCard({ event: ev, index, highlight }: Props) {
               className="w-44 h-32 object-cover rounded-lg bg-gray-100"
               onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
             />
+          )}
+          {onPlayEvidence && (
+            <button
+              onClick={() => onPlayEvidence(ev.recording_id, ev.timestamp_seconds)}
+              className="text-xs px-2 py-1 rounded border border-indigo-300 text-indigo-700 hover:bg-indigo-50 transition-colors w-full"
+            >
+              ▶ Preview
+            </button>
           )}
           {/* Before / During / After navigation */}
           {ev.evidence_frames.length > 1 && (

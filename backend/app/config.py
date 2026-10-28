@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     max_api_attempts: int = 3
     base_backoff_seconds: float = 1.0
 
+    # Phase 3: Multi-agent investigation
+    investigation_timeout_seconds: float = 120.0
+    agent_timeout_seconds: float = 30.0
+    investigation_budget_usd: float = 2.0
+    investigation_model: str = "muse-spark-1.3"
+
     @property
     def db_path(self) -> str:
         return str(Path(self.data_dir) / "findit.db")
