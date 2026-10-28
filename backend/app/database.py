@@ -74,6 +74,66 @@ async def create_tables(db_path: str) -> None:
             )
         """)
 
+        # RealityTrace: camera metadata on recordings
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS recording_camera_meta (
+                recording_id TEXT PRIMARY KEY REFERENCES recordings(recording_id) ON DELETE CASCADE,
+                camera_name TEXT,
+                camera_location TEXT
+            )
+        """)
+
+        # RealityTrace: structured events extracted from observations
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                event_id TEXT PRIMARY KEY,
+                recording_id TEXT NOT NULL REFERENCES recordings(recording_id) ON DELETE CASCADE,
+                timestamp_seconds REAL NOT NULL,
+                timestamp_absolute TEXT,
+                has_reliable_timestamp INTEGER NOT NULL DEFAULT 0,
+                event_type TEXT NOT NULL,
+                actor_description TEXT,
+                object_descriptions TEXT NOT NULL DEFAULT '[]',
+                action_description TEXT NOT NULL,
+                scene_description TEXT,
+                evidence_frames TEXT NOT NULL DEFAULT '[]',
+                confidence REAL NOT NULL DEFAULT 0.5,
+                observed_facts TEXT NOT NULL DEFAULT '[]',
+                inferred_claims TEXT NOT NULL DEFAULT '[]',
+                uncertainty_notes TEXT NOT NULL DEFAULT '[]',
+                source_observation_ids TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        # RealityTrace: cross-camera links between events
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS event_links (
+                link_id TEXT PRIMARY KEY,
+                source_event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+                target_event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+                confidence REAL NOT NULL,
+                link_type TEXT NOT NULL DEFAULT 'candidate',
+                explanation TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_events_recording_id
+            ON events(recording_id)
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_events_timestamp
+            ON events(timestamp_seconds)
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_event_links_source
+            ON event_links(source_event_id)
+        """)
+
         await db.execute("""
             CREATE INDEX IF NOT EXISTS idx_observations_recording_id
             ON observations(recording_id)
@@ -88,5 +148,15 @@ async def create_tables(db_path: str) -> None:
             CREATE INDEX IF NOT EXISTS idx_recordings_status
             ON recordings(processing_status)
         """)
+
+        # Idempotent migrations for existing databases
+        try:
+            await db.execute("ALTER TABLE recordings ADD COLUMN camera_name TEXT")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE recordings ADD COLUMN camera_location TEXT")
+        except Exception:
+            pass
 
         await db.commit()

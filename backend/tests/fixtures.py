@@ -1,4 +1,4 @@
-"""Shared test fixtures and helpers for FindIt tests."""
+"""Shared test fixtures and helpers for FindIt / RealityTrace tests."""
 import hashlib
 import json
 import uuid
@@ -90,6 +90,8 @@ async def insert_recording(
     recording_timezone: Optional[str] = None,
     processing_status: str = "INDEXED",
     video_path: str = "videos/test.mp4",
+    camera_name: Optional[str] = None,
+    camera_location: Optional[str] = None,
 ):
     """Helper to insert a recording row directly into the test DB."""
     now = now_iso()
@@ -97,12 +99,14 @@ async def insert_recording(
         """INSERT OR REPLACE INTO recordings(
             recording_id, original_filename, upload_timestamp,
             recording_datetime, recording_timezone, video_path,
-            processing_status, frame_count, created_at, updated_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            processing_status, frame_count, camera_name, camera_location,
+            created_at, updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             recording_id, filename, now,
             recording_datetime, recording_timezone, video_path,
-            processing_status, 0, now, now,
+            processing_status, 0, camera_name, camera_location,
+            now, now,
         ),
     )
     await db.commit()
@@ -143,3 +147,51 @@ async def insert_observation(
     )
     await db.commit()
     return observation_id
+
+
+async def insert_event(
+    db,
+    recording_id: str,
+    event_id: Optional[str] = None,
+    timestamp_seconds: float = 10.0,
+    event_type: str = "scene_change",
+    action_description: str = "Test event",
+    object_descriptions: Optional[list[str]] = None,
+    observed_facts: Optional[list[str]] = None,
+    inferred_claims: Optional[list[str]] = None,
+    uncertainty_notes: Optional[list[str]] = None,
+    evidence_frames: Optional[list[dict]] = None,
+    confidence: float = 0.8,
+    recording_datetime: Optional[str] = None,
+    timestamp_absolute: Optional[str] = None,
+    has_reliable_timestamp: bool = False,
+    scene_description: Optional[str] = None,
+) -> str:
+    """Helper to insert an event row directly into the test DB."""
+    eid = event_id or str(uuid.uuid4())
+    frames = evidence_frames or [{"frame_path": "frames/test/frame.jpg", "timestamp_seconds": timestamp_seconds, "role": "during"}]
+    await db.execute(
+        """INSERT OR REPLACE INTO events(
+            event_id, recording_id, timestamp_seconds, timestamp_absolute,
+            has_reliable_timestamp, event_type, actor_description,
+            object_descriptions, action_description, scene_description,
+            evidence_frames, confidence, observed_facts, inferred_claims,
+            uncertainty_notes, source_observation_ids, created_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            eid, recording_id, timestamp_seconds, timestamp_absolute,
+            1 if has_reliable_timestamp else 0, event_type, None,
+            json.dumps(object_descriptions or []),
+            action_description,
+            scene_description,
+            json.dumps(frames),
+            confidence,
+            json.dumps(observed_facts or ["Observed: test object"]),
+            json.dumps(inferred_claims or []),
+            json.dumps(uncertainty_notes or []),
+            json.dumps([]),
+            now_iso(),
+        ),
+    )
+    await db.commit()
+    return eid

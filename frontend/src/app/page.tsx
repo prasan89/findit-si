@@ -2,12 +2,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import VideoLibrary from '@/components/VideoLibrary'
 import SearchPanel from '@/components/SearchPanel'
-import type { Recording, SearchResult } from '@/types'
+import InvestigationPanel from '@/components/InvestigationPanel'
+import type { Recording, SearchResult, InvestigationResult } from '@/types'
+
+type Tab = 'library' | 'investigate' | 'search'
 
 export default function Home() {
   const [recordings, setRecordings] = useState<Recording[]>([])
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null)
-  const [activeTab, setActiveTab] = useState<'library' | 'search'>('library')
+  const [investigationResult, setInvestigationResult] = useState<InvestigationResult | null>(null)
+  const [activeTab, setActiveTab] = useState<Tab>('library')
 
   const fetchRecordings = useCallback(async () => {
     try {
@@ -22,25 +26,36 @@ export default function Home() {
     return () => clearInterval(interval)
   }, [fetchRecordings])
 
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'library', label: `Cameras (${recordings.length})` },
+    { id: 'investigate', label: 'Investigate' },
+    { id: 'search', label: 'Search' },
+  ]
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">FindIt</h1>
-        <p className="text-gray-500 mt-1">Search across your video recordings to find objects</p>
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-3xl font-bold text-gray-900">RealityTrace</h1>
+          <span className="text-sm text-gray-400 font-medium">Evidence-Backed CCTV Investigation</span>
+        </div>
+        <p className="text-gray-500 mt-1">
+          Upload CCTV recordings and investigate incidents with structured, evidence-backed event timelines.
+        </p>
       </header>
 
       <div className="flex gap-2 mb-6">
-        {(['library', 'search'] as const).map(tab => (
+        {tabs.map(tab => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === tab
-                ? 'bg-blue-600 text-white'
+              activeTab === tab.id
+                ? 'bg-indigo-600 text-white'
                 : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
             }`}
           >
-            {tab === 'library' ? `Video Library (${recordings.length})` : 'Search'}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -50,6 +65,13 @@ export default function Home() {
           recordings={recordings}
           onUploadComplete={fetchRecordings}
           onDelete={fetchRecordings}
+        />
+      )}
+      {activeTab === 'investigate' && (
+        <InvestigationPanel
+          recordings={recordings}
+          investigationResult={investigationResult}
+          onInvestigate={setInvestigationResult}
         />
       )}
       {activeTab === 'search' && (

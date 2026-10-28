@@ -32,6 +32,8 @@ async def upload_recording(
     file: UploadFile = File(...),
     recording_datetime: Optional[str] = Form(None),
     recording_timezone: Optional[str] = Form(None),
+    camera_name: Optional[str] = Form(None),
+    camera_location: Optional[str] = Form(None),
 ):
     """Upload a video for indexing."""
     settings = get_settings()
@@ -69,12 +71,15 @@ async def upload_recording(
             """INSERT INTO recordings(
                 recording_id, original_filename, upload_timestamp,
                 recording_datetime, recording_timezone, video_path,
-                processing_status, frame_count, created_at, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                processing_status, frame_count, camera_name, camera_location,
+                created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 recording_id, file.filename, now,
                 recording_datetime, recording_timezone, video_rel_path,
-                ProcessingStatus.PENDING.value, 0, now, now,
+                ProcessingStatus.PENDING.value, 0,
+                camera_name, camera_location,
+                now, now,
             ),
         )
         await db.commit()
@@ -113,6 +118,7 @@ async def list_recordings():
         rows = await (await db.execute(
             """SELECT recording_id, original_filename, upload_timestamp,
                       recording_datetime, recording_timezone,
+                      camera_name, camera_location,
                       processing_status, frame_count, video_duration_seconds,
                       thumbnail_path, processing_errors, indexing_status_detail
                FROM recordings ORDER BY upload_timestamp DESC"""
@@ -127,6 +133,8 @@ async def list_recordings():
             upload_timestamp=r['upload_timestamp'],
             recording_datetime=r['recording_datetime'],
             recording_timezone=r['recording_timezone'],
+            camera_name=r['camera_name'],
+            camera_location=r['camera_location'],
             processing_status=r['processing_status'],
             frame_count=r['frame_count'] or 0,
             video_duration_seconds=r['video_duration_seconds'],
@@ -148,6 +156,7 @@ async def get_recording(recording_id: str):
         row = await (await db.execute(
             """SELECT recording_id, original_filename, upload_timestamp,
                       recording_datetime, recording_timezone,
+                      camera_name, camera_location,
                       processing_status, frame_count, video_duration_seconds,
                       thumbnail_path, processing_errors, indexing_status_detail
                FROM recordings WHERE recording_id = ?""",
@@ -164,6 +173,8 @@ async def get_recording(recording_id: str):
         upload_timestamp=row['upload_timestamp'],
         recording_datetime=row['recording_datetime'],
         recording_timezone=row['recording_timezone'],
+        camera_name=row['camera_name'],
+        camera_location=row['camera_location'],
         processing_status=row['processing_status'],
         frame_count=row['frame_count'] or 0,
         video_duration_seconds=row['video_duration_seconds'],

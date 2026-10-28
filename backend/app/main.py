@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import get_settings
 from .database import create_tables
 from .storage import LocalStorageBackend
-from .routes import recordings, search as search_router
+from .routes import recordings, search as search_router, investigations as investigations_router
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ def create_app() -> FastAPI:
 
     app.include_router(recordings.router, prefix="/api/recordings", tags=["recordings"])
     app.include_router(search_router.router, prefix="/api/search", tags=["search"])
+    app.include_router(investigations_router.router, prefix="/api/investigations", tags=["investigations"])
 
     return app
 

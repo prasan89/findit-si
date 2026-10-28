@@ -235,6 +235,21 @@ async def process_recording(
             )
             await db.commit()
 
+        # Extract structured events from the indexed observations
+        try:
+            from .event_extractor import extract_events_for_recording
+            n_events = await extract_events_for_recording(recording_id, db_path)
+            logger.info("Extracted %d events for recording %s", n_events, recording_id)
+        except Exception as e:
+            logger.warning("Event extraction failed for %s: %s", recording_id, e)
+
+        # Run cross-camera correlation for all recordings
+        try:
+            from .correlator import correlate_across_cameras
+            await correlate_across_cameras(db_path)
+        except Exception as e:
+            logger.warning("Correlation failed after processing %s: %s", recording_id, e)
+
     except Exception as e:
         errors.append(f"Fatal processing error: {str(e)[:500]}")
         logger.exception(f"Processing failed for recording {recording_id}")

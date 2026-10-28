@@ -4,6 +4,7 @@ import type { Recording } from '@/types'
 
 const STATUS_COLORS: Record<string, string> = {
   UPLOADED: 'bg-yellow-100 text-yellow-800',
+  PENDING: 'bg-yellow-100 text-yellow-800',
   PROCESSING: 'bg-blue-100 text-blue-800',
   INDEXED: 'bg-green-100 text-green-800',
   PARTIAL: 'bg-orange-100 text-orange-800',
@@ -21,6 +22,8 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [recordingDatetime, setRecordingDatetime] = useState('')
   const [recordingTimezone, setRecordingTimezone] = useState('')
+  const [cameraName, setCameraName] = useState('')
+  const [cameraLocation, setCameraLocation] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -36,6 +39,8 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
       form.append('file', file)
       if (recordingDatetime) form.append('recording_datetime', recordingDatetime)
       if (recordingTimezone) form.append('recording_timezone', recordingTimezone)
+      if (cameraName) form.append('camera_name', cameraName)
+      if (cameraLocation) form.append('camera_location', cameraLocation)
 
       try {
         const res = await fetch('/api/recordings/upload', { method: 'POST', body: form })
@@ -68,7 +73,7 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold mb-4">Upload Video</h2>
+        <h2 className="text-lg font-semibold mb-4">Upload CCTV Recording</h2>
         <form onSubmit={handleUpload} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -79,11 +84,35 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
               type="file"
               multiple
               accept=".mp4,.mov,.avi,.mkv,.webm"
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
               required
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Camera name <span className="text-gray-400">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={cameraName}
+                onChange={e => setCameraName(e.target.value)}
+                placeholder="e.g. Entrance Camera"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Camera location <span className="text-gray-400">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={cameraLocation}
+                onChange={e => setCameraLocation(e.target.value)}
+                placeholder="e.g. Front Door"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Recording date/time <span className="text-gray-400">(optional)</span>
@@ -92,19 +121,19 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
                 type="datetime-local"
                 value={recordingDatetime}
                 onChange={e => setRecordingDatetime(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Timezone <span className="text-gray-400">(optional, e.g. America/New_York)</span>
+                Timezone <span className="text-gray-400">(e.g. America/New_York)</span>
               </label>
               <input
                 type="text"
                 value={recordingTimezone}
                 onChange={e => setRecordingTimezone(e.target.value)}
                 placeholder="UTC"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
           </div>
@@ -114,7 +143,7 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
           <button
             type="submit"
             disabled={uploading}
-            className="px-5 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="px-5 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
           >
             {uploading ? 'Uploading…' : 'Upload'}
           </button>
@@ -137,7 +166,12 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-gray-900 truncate">{r.original_filename}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[r.processing_status]}`}>
+                  {r.camera_name && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-medium">
+                      {r.camera_name}
+                    </span>
+                  )}
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[r.processing_status] ?? 'bg-gray-100 text-gray-800'}`}>
                     {r.processing_status}
                   </span>
                   {r.processing_status === 'PROCESSING' && (
@@ -145,6 +179,7 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
                   )}
                 </div>
                 <div className="text-sm text-gray-500 mt-1 space-y-0.5">
+                  {r.camera_location && <div className="text-indigo-600">{r.camera_location}</div>}
                   {r.recording_datetime ? (
                     <div>Recorded: {new Date(r.recording_datetime).toLocaleString()}{r.recording_timezone ? ` (${r.recording_timezone})` : ''}</div>
                   ) : (
@@ -158,9 +193,9 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
                 </div>
                 {(r.processing_errors ?? []).length > 0 && (
                   <details className="mt-1">
-                    <summary className="text-xs text-red-600 cursor-pointer">{r.processing_errors.length} processing warning(s)</summary>
+                    <summary className="text-xs text-red-600 cursor-pointer">{r.processing_errors!.length} processing warning(s)</summary>
                     <ul className="text-xs text-red-500 mt-1 space-y-0.5 pl-3">
-                      {r.processing_errors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+                      {r.processing_errors!.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
                     </ul>
                   </details>
                 )}
