@@ -2,21 +2,74 @@
 import asyncio
 import logging
 import os
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import get_settings
 from .database import create_tables
+from .guards import check_rate_limit, normalize_request_id
 from .storage import LocalStorageBackend
 from .routes import recordings, search as search_router, investigations as investigations_router, usage as usage_router
 from .routes import multi_agent_investigations as multi_agent_router
 from .routes import video_streaming as video_streaming_router
 
 logger = logging.getLogger(__name__)
+
+# Phase 6: expensive POST routes subject to per-IP rate limiting.
+_RATE_LIMITED_ROUTES = frozenset({
+    ("POST", "/api/investigations/"),
+    ("POST", "/api/investigations/multi-agent"),
+    ("POST", "/api/recordings/upload"),
+})
+
+
+class ObservabilityMiddleware(BaseHTTPMiddleware):
+    """Phase 6: request IDs, expensive-route rate limiting, structured logs.
+
+    Logs method/path/status/latency only — never query strings, headers,
+    bodies, or client payloads.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        request_id = normalize_request_id(
+            request.headers.get("x-request-id"), str(uuid.uuid4()))
+        request.state.request_id = request_id
+
+        settings = get_settings()
+        route_key = (request.method, request.url.path)
+        if route_key in _RATE_LIMITED_ROUTES:
+            client_host = request.client.host if request.client else "unknown"
+            allowed, retry_after = check_rate_limit(
+                f"ip:{client_host}:{route_key[1]}", settings.rate_limit_per_minute)
+            if not allowed:
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Rate limit exceeded. Slow down and retry."},
+                    headers={"Retry-After": str(int(retry_after) + 1),
+                             "X-Request-ID": request_id},
+                )
+
+        t0 = time.monotonic()
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.exception("request_id=%s %s %s failed",
+                             request_id, request.method, request.url.path)
+            raise
+        latency_ms = (time.monotonic() - t0) * 1000.0
+        response.headers["X-Request-ID"] = request_id
+        logger.info("request_id=%s %s %s status=%s latency_ms=%.1f",
+                    request_id, request.method, request.url.path,
+                    response.status_code, latency_ms)
+        return response
 
 
 @asynccontextmanager
@@ -105,6 +158,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(ObservabilityMiddleware)
 
     # Static file serving for evidence frames and thumbnails
     data_dir = Path(settings.data_dir)

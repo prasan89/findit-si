@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 EVENT_WINDOW_SECONDS = 8.0
 BEFORE_AFTER_OFFSET = 5.0  # seconds before/after the event to pull context frames
 MIN_CONFIDENCE = 0.2
+# Phase 4: an event must be confirmed by observations from at least this many
+# distinct frame timestamps. Single-frame groups are dropped — one frame
+# resembling a scene is not sufficient evidence that an event occurred.
+MIN_CONFIRMING_FRAMES = 2
 
 
 def _now() -> str:
@@ -98,37 +102,71 @@ async def extract_events_for_recording(recording_id: str, db_path: str) -> int:
         if event:
             events.append(event)
 
-    # Persist events
+    # Persist events (start/end_seconds columns added by the Phase 4
+    # migration; fall back to the legacy column set on older databases).
     async with get_db(db_path) as db:
         for ev in events:
-            await db.execute(
-                """INSERT OR REPLACE INTO events(
-                    event_id, recording_id, timestamp_seconds, timestamp_absolute,
-                    has_reliable_timestamp, event_type, actor_description,
-                    object_descriptions, action_description, scene_description,
-                    evidence_frames, confidence, observed_facts, inferred_claims,
-                    uncertainty_notes, source_observation_ids, created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    ev["event_id"],
-                    ev["recording_id"],
-                    ev["timestamp_seconds"],
-                    ev.get("timestamp_absolute"),
-                    1 if ev.get("has_reliable_timestamp") else 0,
-                    ev["event_type"],
-                    ev.get("actor_description"),
-                    json.dumps(ev["object_descriptions"]),
-                    ev["action_description"],
-                    ev.get("scene_description"),
-                    json.dumps(ev["evidence_frames"]),
-                    ev["confidence"],
-                    json.dumps(ev["observed_facts"]),
-                    json.dumps(ev["inferred_claims"]),
-                    json.dumps(ev["uncertainty_notes"]),
-                    json.dumps(ev["source_observation_ids"]),
-                    _now(),
-                ),
-            )
+            try:
+                await db.execute(
+                    """INSERT OR REPLACE INTO events(
+                        event_id, recording_id, timestamp_seconds, timestamp_absolute,
+                        has_reliable_timestamp, event_type, actor_description,
+                        object_descriptions, action_description, scene_description,
+                        evidence_frames, confidence, observed_facts, inferred_claims,
+                        uncertainty_notes, source_observation_ids, created_at,
+                        start_seconds, end_seconds
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        ev["event_id"],
+                        ev["recording_id"],
+                        ev["timestamp_seconds"],
+                        ev.get("timestamp_absolute"),
+                        1 if ev.get("has_reliable_timestamp") else 0,
+                        ev["event_type"],
+                        ev.get("actor_description"),
+                        json.dumps(ev["object_descriptions"]),
+                        ev["action_description"],
+                        ev.get("scene_description"),
+                        json.dumps(ev["evidence_frames"]),
+                        ev["confidence"],
+                        json.dumps(ev["observed_facts"]),
+                        json.dumps(ev["inferred_claims"]),
+                        json.dumps(ev["uncertainty_notes"]),
+                        json.dumps(ev["source_observation_ids"]),
+                        _now(),
+                        ev.get("start_seconds"),
+                        ev.get("end_seconds"),
+                    ),
+                )
+            except Exception:
+                await db.execute(
+                    """INSERT OR REPLACE INTO events(
+                        event_id, recording_id, timestamp_seconds, timestamp_absolute,
+                        has_reliable_timestamp, event_type, actor_description,
+                        object_descriptions, action_description, scene_description,
+                        evidence_frames, confidence, observed_facts, inferred_claims,
+                        uncertainty_notes, source_observation_ids, created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        ev["event_id"],
+                        ev["recording_id"],
+                        ev["timestamp_seconds"],
+                        ev.get("timestamp_absolute"),
+                        1 if ev.get("has_reliable_timestamp") else 0,
+                        ev["event_type"],
+                        ev.get("actor_description"),
+                        json.dumps(ev["object_descriptions"]),
+                        ev["action_description"],
+                        ev.get("scene_description"),
+                        json.dumps(ev["evidence_frames"]),
+                        ev["confidence"],
+                        json.dumps(ev["observed_facts"]),
+                        json.dumps(ev["inferred_claims"]),
+                        json.dumps(ev["uncertainty_notes"]),
+                        json.dumps(ev["source_observation_ids"]),
+                        _now(),
+                    ),
+                )
         await db.commit()
 
     logger.info(
@@ -174,7 +212,18 @@ def _build_event(
     if not group:
         return None
 
-    # Representative timestamp = middle of group
+    # Phase 4: multi-frame confirmation. Distinct frame timestamps (not raw
+    # observation rows — one frame can yield several objects).
+    distinct_frames = {o["video_timestamp_seconds"] for o in group}
+    if len(distinct_frames) < MIN_CONFIRMING_FRAMES:
+        logger.debug(
+            "Dropping single-frame group at t=%.1fs (%d obs): unconfirmed",
+            group[0]["video_timestamp_seconds"], len(group),
+        )
+        return None
+
+    # Representative timestamp = middle of group; span = group bounds.
+    # Phase 4: the span is persisted (start/end_seconds) instead of discarded.
     start_ts = group[0]["video_timestamp_seconds"]
     end_ts = group[-1]["video_timestamp_seconds"]
     mid_ts = (start_ts + end_ts) / 2.0
@@ -272,6 +321,9 @@ def _build_event(
         "camera_name": camera_name,
         "camera_location": camera_location,
         "timestamp_seconds": mid_ts,
+        "start_seconds": start_ts,
+        "end_seconds": end_ts,
+        "n_confirming_frames": len(distinct_frames),
         "timestamp_absolute": timestamp_absolute,
         "has_reliable_timestamp": has_reliable_timestamp,
         "event_type": event_type,

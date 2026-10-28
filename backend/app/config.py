@@ -35,6 +35,40 @@ class Settings(BaseSettings):
     investigation_budget_usd: float = 2.0
     investigation_model: str = "muse-spark-1.3"
 
+    # Phase 6: Meta API reliability
+    meta_connect_timeout_s: float = 10.0
+    meta_read_timeout_s: float = 60.0
+    meta_text_read_timeout_s: float = 45.0
+    meta_backoff_max_s: float = 8.0
+    meta_retry_jitter: bool = True
+    vision_max_output_tokens: int = 2000
+    text_max_output_tokens: int = 1500
+
+    # Phase 6: pipeline + cost safeguards
+    investigation_max_concurrent: int = 4
+    investigation_max_llm_calls: int = 8
+
+    # Phase 8: cost & performance
+    llm_max_concurrent: int = 2  # max parallel Meta API requests per process
+    agent_parallel_pairs: bool = True  # run independent agent pairs concurrently
+    investigation_cache_ttl_s: int = 3600  # 0 = disable result cache
+    investigation_cache_max_entries: int = 200
+
+    # Phase 6: upload hardening
+    upload_max_recordings: int = 0  # 0 = unlimited
+    upload_chunk_bytes: int = 1024 * 1024
+    ffmpeg_timeout_s: float = 300.0
+
+    # Phase 6: cache retention (0 = keep indefinitely)
+    frame_cache_retention_days: int = 0
+
+    # Phase 6: security boundaries
+    api_token: str = ""  # when set, mutating endpoints require X-API-Token
+    rate_limit_per_minute: int = 240  # per client IP, expensive POST routes; 0 = off
+    max_query_chars: int = 2000
+    max_recording_ids: int = 50
+    max_form_field_chars: int = 200
+
     @property
     def db_path(self) -> str:
         return str(Path(self.data_dir) / "findit.db")

@@ -2,6 +2,7 @@
 InvestigationOrchestrator — runs all 8 specialist agents sequentially,
 enforces budget, persists execution trace.
 """
+import asyncio
 import json
 import logging
 import time
@@ -36,10 +37,47 @@ def _code_revision() -> Optional[str]:
     return None
 
 
+AGENT_SEQUENCE = [
+    "QueryInvestigationAgent",
+    "VideoIntelligenceAgent",
+    "ObjectActionAnalystAgent",
+    "TemporalReasoningAgent",
+    "CrossCameraCorrelationAgent",
+    "ContradictionHunterAgent",
+    "EvidenceAuditorAgent",
+    "ReportSynthesisAgent",
+]
+
+
 class InvestigationOrchestrator:
-    def __init__(self, db_path: str, budget_usd: float = 2.0):
+    def __init__(
+        self,
+        db_path: str,
+        budget_usd: float = 2.0,
+        agent_timeout_s: Optional[float] = None,
+        investigation_timeout_s: Optional[float] = None,
+        max_llm_calls: Optional[int] = None,
+        parallel_pairs: Optional[bool] = None,
+    ):
         self.db_path = db_path
         self.budget_usd = budget_usd
+        # Phase 6: timeouts/LLM cap (constructor overrides win; otherwise
+        # Settings; otherwise the historical defaults).
+        agent_default, inv_default, llm_default, pairs_default = 30.0, 120.0, 8, True
+        try:
+            from ..config import get_settings
+            _settings = get_settings()
+            agent_default = _settings.agent_timeout_seconds
+            inv_default = _settings.investigation_timeout_seconds
+            llm_default = _settings.investigation_max_llm_calls
+            pairs_default = _settings.agent_parallel_pairs
+        except Exception:
+            pass
+        self.agent_timeout_s = agent_default if agent_timeout_s is None else agent_timeout_s
+        self.investigation_timeout_s = (
+            inv_default if investigation_timeout_s is None else investigation_timeout_s)
+        self.max_llm_calls = max_llm_calls if max_llm_calls is not None else llm_default
+        self.parallel_pairs = pairs_default if parallel_pairs is None else parallel_pairs
 
     async def run(
         self,
@@ -49,18 +87,10 @@ class InvestigationOrchestrator:
         """
         Execute the 8-agent pipeline and return a serializable result dict.
         Always returns; individual agent failures are recorded but do not abort the pipeline.
+        Phase 6: each agent has its own timeout and the whole pipeline has an
+        overall deadline. On deadline expiry the trace is persisted as PARTIAL
+        with explicit timed_out/skipped markers — never fabricated results.
         """
-        from . import (
-            video_intelligence,
-            object_action_analyst,
-            temporal_reasoning,
-            cross_camera_correlation,
-            query_investigation,
-            contradiction_hunter,
-            evidence_auditor,
-            report_synthesis,
-        )
-
         trace_id = str(uuid.uuid4())
         investigation_id = str(uuid.uuid4())
         started_at = _now()
@@ -71,91 +101,43 @@ class InvestigationOrchestrator:
             db_path=self.db_path,
             recording_ids=list(recording_ids or []),
             budget_usd=self.budget_usd,
+            max_llm_calls=self.max_llm_calls,
         )
 
         await self._persist_trace(trace_id, investigation_id, query,
                                    started_at, recording_ids or [], "RUNNING")
 
         results: list[AgentResult] = []
-
-        # Stage 1: QueryInvestigationAgent — populate ctx.events first
-        r5 = await self._run_agent("QueryInvestigationAgent", query_investigation.run, ctx)
-        results.append(r5)
-
-        # Stage 2-3: VideoIntelligenceAgent + ObjectActionAnalystAgent (LLM, parallel-ish but sequential for budget)
-        for agent_name, agent_module in [
-            ("VideoIntelligenceAgent", video_intelligence),
-            ("ObjectActionAnalystAgent", object_action_analyst),
-        ]:
-            if self._budget_ok(ctx):
-                r = await self._run_agent(agent_name, agent_module.run, ctx)
-            else:
-                r = AgentResult(
-                    agent_name=agent_name,
-                    status=AgentStatus.SKIPPED,
-                    output=None,
-                    duration_ms=0.0,
-                    error="Budget limit reached",
-                )
-            results.append(r)
-
-        # Stage 4: TemporalReasoningAgent (non-LLM)
-        r3 = await self._run_agent("TemporalReasoningAgent", temporal_reasoning.run, ctx)
-        results.append(r3)
-        if r3.output is not None:
-            ctx.agent_outputs["temporal_report"] = r3.output
-
-        # Stage 5: CrossCameraCorrelationAgent (non-LLM)
-        r4 = await self._run_agent("CrossCameraCorrelationAgent", cross_camera_correlation.run, ctx)
-        results.append(r4)
-
-        # Stage 6: ContradictionHunterAgent (LLM)
-        if self._budget_ok(ctx):
-            r6 = await self._run_agent("ContradictionHunterAgent", contradiction_hunter.run, ctx)
-        else:
-            r6 = AgentResult(
-                agent_name="ContradictionHunterAgent",
-                status=AgentStatus.SKIPPED,
-                output=None,
-                duration_ms=0.0,
-                error="Budget limit reached",
+        deadline_hit = False
+        try:
+            await asyncio.wait_for(
+                self._run_stages(ctx, results),
+                timeout=self.investigation_timeout_s,
             )
-        results.append(r6)
-
-        # Stage 7: EvidenceAuditorAgent (LLM)
-        if self._budget_ok(ctx):
-            r7 = await self._run_agent("EvidenceAuditorAgent", evidence_auditor.run, ctx)
-        else:
-            r7 = AgentResult(
-                agent_name="EvidenceAuditorAgent",
-                status=AgentStatus.SKIPPED,
-                output=None,
-                duration_ms=0.0,
-                error="Budget limit reached",
+        except asyncio.TimeoutError:
+            deadline_hit = True
+            logger.warning(
+                "Investigation %s hit the overall deadline (%.1fs); "
+                "persisting partial trace",
+                investigation_id[:8], self.investigation_timeout_s,
             )
-        results.append(r7)
-
-        # Stage 8: ReportSynthesisAgent (non-LLM, always runs)
-        agents_run = [
-            r.agent_name for r in results if r.status == AgentStatus.COMPLETED
-        ]
-        r8 = await report_synthesis.run(
-            ctx=ctx,
-            audit_report=r7.output,
-            evidence_bundle=r5.output,
-            agents_run=agents_run,
-        )
-        results.append(r8)
+            self._pad_unfinished_agents(results)
+            # Best-effort final report from verified evidence when retrieval
+            # finished; otherwise the report stays absent (never fabricated).
+            await self._best_effort_synthesis(ctx, results)
 
         total_duration_ms = (time.monotonic() - t0_total) * 1000
         total_cost = sum(r.cost_usd for r in results)
 
         final_report_dict = None
-        if r8.output:
-            final_report_dict = r8.output.model_dump()
+        for r in reversed(results):
+            if r.agent_name == "ReportSynthesisAgent" and r.output is not None:
+                final_report_dict = r.output.model_dump()
+                break
 
         trace_status = "COMPLETED"
-        if any(r.status == AgentStatus.FAILED for r in results):
+        if deadline_hit or any(r.status in (AgentStatus.FAILED, AgentStatus.TIMED_OUT)
+                               for r in results):
             trace_status = "PARTIAL"
 
         # Phase 5: measured provider usage + run configuration for the trace.
@@ -185,9 +167,17 @@ class InvestigationOrchestrator:
                 "vision_model": _settings.vision_model,
                 "vision_provider": _settings.vision_provider,
                 "budget_usd": self.budget_usd,
+                "agent_timeout_s": self.agent_timeout_s,
+                "investigation_timeout_s": self.investigation_timeout_s,
+                "max_llm_calls": self.max_llm_calls,
             }
         except Exception:
-            model_config = {"budget_usd": self.budget_usd}
+            model_config = {
+                "budget_usd": self.budget_usd,
+                "agent_timeout_s": self.agent_timeout_s,
+                "investigation_timeout_s": self.investigation_timeout_s,
+                "max_llm_calls": self.max_llm_calls,
+            }
         code_revision = _code_revision()
         retrieved_event_ids = sorted({eid for r in results for eid in r.event_ids})
         retrieved_evidence_ids = sorted({eid for r in results for eid in r.evidence_ids})
@@ -229,14 +219,194 @@ class InvestigationOrchestrator:
             "retrieved_event_ids": retrieved_event_ids,
             "retrieved_evidence_ids": retrieved_evidence_ids,
             "retrieved_events": retrieved_events,
+            # Phase 6: model-call accounting for this investigation.
+            "llm_calls_made": ctx.llm_calls,
+            "llm_call_cap": ctx.max_llm_calls,
+            "retries_total": sum(r.retries or 0 for r in results),
+            "timeouts_total": sum(r.timeouts or 0 for r in results),
         }
 
     def _budget_ok(self, ctx: InvestigationContext) -> bool:
         return ctx.budget_spent < ctx.budget_usd
 
+    async def _run_stages(
+        self,
+        ctx: InvestigationContext,
+        results: list[AgentResult],
+    ) -> None:
+        """Run the 8 stages in order, appending to results (survives cancel)."""
+        from . import (
+            video_intelligence,
+            object_action_analyst,
+            temporal_reasoning,
+            cross_camera_correlation,
+            query_investigation,
+            contradiction_hunter,
+            evidence_auditor,
+            report_synthesis,
+        )
+
+        # Stage 1: QueryInvestigationAgent — populate ctx.events first
+        r5 = await self._run_agent("QueryInvestigationAgent", query_investigation.run, ctx)
+        results.append(r5)
+
+        # Stages 2-3: VideoIntelligenceAgent + ObjectActionAnalystAgent.
+        # Independent (both read ctx.events, write disjoint outputs) so they
+        # run concurrently when enabled; results assemble in fixed order.
+        await self._run_llm_pair(
+            ctx, results,
+            ("VideoIntelligenceAgent", video_intelligence),
+            ("ObjectActionAnalystAgent", object_action_analyst),
+        )
+
+        # Stage 4: TemporalReasoningAgent (non-LLM)
+        r3 = await self._run_agent("TemporalReasoningAgent", temporal_reasoning.run, ctx)
+        results.append(r3)
+        if r3.output is not None:
+            ctx.agent_outputs["temporal_report"] = r3.output
+
+        # Stage 5: CrossCameraCorrelationAgent (non-LLM)
+        r4 = await self._run_agent("CrossCameraCorrelationAgent", cross_camera_correlation.run, ctx)
+        results.append(r4)
+
+        # Stages 6-7: ContradictionHunterAgent + EvidenceAuditorAgent.
+        # Independent of each other (both read ctx.events/temporal report,
+        # write disjoint outputs) so they run concurrently when enabled.
+        await self._run_llm_pair(
+            ctx, results,
+            ("ContradictionHunterAgent", contradiction_hunter),
+            ("EvidenceAuditorAgent", evidence_auditor),
+        )
+        r7 = next(r for r in results if r.agent_name == "EvidenceAuditorAgent")
+
+        # Stage 8: ReportSynthesisAgent (non-LLM, always runs)
+        agents_run = [
+            r.agent_name for r in results if r.status == AgentStatus.COMPLETED
+        ]
+        r8 = await self._run_agent(
+            "ReportSynthesisAgent",
+            lambda c: report_synthesis.run(
+                ctx=c,
+                audit_report=r7.output,
+                evidence_bundle=r5.output,
+                agents_run=agents_run,
+            ),
+            ctx,
+        )
+        results.append(r8)
+
+    async def _run_llm_pair(
+        self,
+        ctx: InvestigationContext,
+        results: list[AgentResult],
+        first: tuple[str, object],
+        second: tuple[str, object],
+    ) -> None:
+        """Run an independent LLM-agent pair, concurrently when enabled.
+
+        Budget is checked for both up front (both see pre-pair spend; the
+        per-investigation LLM-call cap still bounds total calls either way).
+        Results always append in the declared order so traces assemble
+        deterministically. Shared-context mutations are await-free (atomic
+        under asyncio), so no lock is needed.
+        """
+        rows: dict[str, AgentResult] = {}
+        runnable: list[tuple[str, object]] = []
+        for name, _module in (first, second):
+            if self._budget_ok(ctx):
+                runnable.append((name, _module))
+            else:
+                rows[name] = AgentResult(
+                    agent_name=name,
+                    status=AgentStatus.SKIPPED,
+                    output=None,
+                    duration_ms=0.0,
+                    error="Budget limit reached",
+                )
+        if self.parallel_pairs and len(runnable) == 2:
+            (n1, m1), (n2, m2) = runnable
+            r1, r2 = await asyncio.gather(
+                self._run_agent(n1, m1.run, ctx),  # type: ignore[attr-defined]
+                self._run_agent(n2, m2.run, ctx),  # type: ignore[attr-defined]
+            )
+            rows[n1], rows[n2] = r1, r2
+        else:
+            for name, module in runnable:
+                rows[name] = await self._run_agent(name, module.run, ctx)  # type: ignore[attr-defined]
+        for name, _module in (first, second):
+            results.append(rows[name])
+
+    def _pad_unfinished_agents(self, results: list[AgentResult]) -> None:
+        """Mark agents missing after a deadline with timed_out/skipped states.
+
+        The pipeline is sequential, so the first missing agent was in flight
+        (timed_out) and the rest never started (skipped). Durations reflect
+        the overall deadline; nothing is presented as completed.
+        """
+        present = {r.agent_name for r in results}
+        missing = [name for name in AGENT_SEQUENCE if name not in present]
+        for i, name in enumerate(missing):
+            status = AgentStatus.TIMED_OUT if i == 0 else AgentStatus.SKIPPED
+            results.append(AgentResult(
+                agent_name=name,
+                status=status,
+                output=None,
+                duration_ms=round(self.investigation_timeout_s * 1000, 1) if i == 0 else 0.0,
+                error="Overall investigation deadline exceeded",
+            ))
+
+    async def _best_effort_synthesis(
+        self,
+        ctx: InvestigationContext,
+        results: list[AgentResult],
+    ) -> None:
+        """Replace the padded synthesis row with a real report when possible.
+
+        Only runs when retrieval finished (ctx.events non-empty); the report
+        then reflects verified evidence only. Otherwise the padded row stands
+        and the final report stays absent.
+        """
+        if not ctx.events:
+            return
+        try:
+            from . import report_synthesis
+            agents_run = [
+                r.agent_name for r in results if r.status == AgentStatus.COMPLETED
+            ]
+            evidence_bundle = None
+            for r in results:
+                if r.agent_name == "QueryInvestigationAgent" and r.output is not None:
+                    evidence_bundle = r.output
+                    break
+            audit_report = None
+            for r in results:
+                if r.agent_name == "EvidenceAuditorAgent" and r.output is not None:
+                    audit_report = r.output
+                    break
+            r8 = await report_synthesis.run(
+                ctx=ctx,
+                audit_report=audit_report,
+                evidence_bundle=evidence_bundle,
+                agents_run=agents_run,
+            )
+            results[:] = [r for r in results if r.agent_name != "ReportSynthesisAgent"]
+            results.append(r8)
+        except Exception as exc:
+            logger.warning("Best-effort synthesis failed: %s", type(exc).__name__)
+
     async def _run_agent(self, name: str, fn, ctx: InvestigationContext) -> AgentResult:
         try:
-            return await fn(ctx)
+            return await asyncio.wait_for(fn(ctx), timeout=self.agent_timeout_s)
+        except asyncio.TimeoutError:
+            logger.warning("Agent %s timed out after %.1fs", name, self.agent_timeout_s)
+            return AgentResult(
+                agent_name=name,
+                status=AgentStatus.TIMED_OUT,
+                output=None,
+                duration_ms=round(self.agent_timeout_s * 1000, 1),
+                error=f"Agent exceeded its {self.agent_timeout_s}s execution timeout",
+                timeouts=1,
+            )
         except BudgetExceededError as exc:
             return AgentResult(
                 agent_name=name,

@@ -61,30 +61,27 @@ FIXTURE_EVENTS = {
 
 # GT-faithful synthetic scene content: disjoint descriptions per camera so
 # retrieval is unambiguous and cross-camera appearance overlap is zero.
+# Phase 4: observations (not events) are seeded — one per second across each
+# GT window — and the REAL event extractor builds the events. Single-frame
+# confirmation is covered by unit tests (backend/tests/test_phase4_visual.py).
 FIXTURE_CONTENT = {
     "GT-001": {
-        "object_descriptions": ["red person figure"],
-        "action_description": "Red person-like figure detected near entrance",
-        "scene_description": "Entrance area with a red figure",
-        "observed_facts": ["Observed: red person figure"],
-        "event_type": "person_detected",
-        "timestamp_seconds": 5.5,
+        "object_label": "person figure",
+        "object_color": "red",
+        "scene_description": "Red person-like figure detected near entrance",
+        "window": (3.0, 8.0),
     },
     "GT-002": {
-        "object_descriptions": ["blue bag object"],
-        "action_description": "Blue bag object detected in hallway",
-        "scene_description": "Hallway with a blue bag-like object",
-        "observed_facts": ["Observed: blue bag object"],
-        "event_type": "unattended_object",
-        "timestamp_seconds": 8.5,
+        "object_label": "bag object",
+        "object_color": "blue",
+        "scene_description": "Blue bag object detected in hallway",
+        "window": (5.0, 12.0),
     },
     "GT-003": {
-        "object_descriptions": ["green vehicle"],
-        "action_description": "Green vehicle detected in parking lot",
-        "scene_description": "Parking lot with a green vehicle",
-        "observed_facts": ["Observed: green vehicle"],
-        "event_type": "vehicle_detected",
-        "timestamp_seconds": 4.0,
+        "object_label": "vehicle",
+        "object_color": "green",
+        "scene_description": "Green vehicle detected in parking lot",
+        "window": (2.0, 6.0),
     },
 }
 
@@ -102,8 +99,18 @@ def _code_revision() -> str | None:
 
 
 async def _seed_fixture_db(db_path: str, ds: dict) -> None:
+    """Seed recordings + frame-level observations, then run the real pipeline.
+
+    Observations mirror 1fps model outputs across each GT window. The real
+    event extractor groups them into events (multi-frame confirmation drops
+    the single-frame noise probe), and event IDs are renamed to fixed values
+    for deterministic output.
+    """
+    from app.event_extractor import extract_events_for_recording
+
     await create_tables(db_path)
     rec_by_key = {r["key"]: r for r in ds["recordings"]}
+    gt_by_id = {e["id"]: e for e in ds["events"]}
     async with get_db(db_path) as db:
         for key, rid in FIXTURE_RECORDINGS.items():
             rec = rec_by_key[key]
@@ -119,29 +126,51 @@ async def _seed_fixture_db(db_path: str, ds: dict) -> None:
                  f"videos/{key}.mp4", "INDEXED", 10,
                  rec["camera_name"], rec["camera_location"],
                  "2024-01-15T00:00:00+00:00", "2024-01-15T00:00:00+00:00"))
-        for gt_id, eid in FIXTURE_EVENTS.items():
-            gt = next(e for e in ds["events"] if e["id"] == gt_id)
-            content = FIXTURE_CONTENT[gt_id]
+        obs_n = 0
+        for gt_id, content in FIXTURE_CONTENT.items():
+            gt = gt_by_id[gt_id]
             rid = FIXTURE_RECORDINGS[gt["recording_key"]]
-            frames = [{"frame_path": f"frames/{rid}/{eid}.jpg",
-                       "timestamp_seconds": content["timestamp_seconds"],
-                       "role": "during"}]
+            start, end = content["window"]
+            ts = start
+            while ts <= end + 1e-9:
+                await db.execute(
+                    """INSERT INTO observations(
+                        observation_id, recording_id, frame_id,
+                        video_timestamp_seconds, recording_datetime, recording_timezone,
+                        object_label, object_attributes, scene_description,
+                        source_frame_path, detection_score, model_version,
+                        index_version, content_hash, created_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (f"obs-{gt_id}-{ts:.0f}", rid, f"{rid}_{ts:.3f}", ts,
+                     rec_by_key[gt["recording_key"]]["recording_start"],
+                     rec_by_key[gt["recording_key"]]["recording_timezone"],
+                     content["object_label"],
+                     json.dumps({"color": content["object_color"]}),
+                     content["scene_description"],
+                     f"frames/{rid}/frame_{ts:.0f}.jpg", 0.8, "mock-v1",
+                     "1", f"hash-{gt_id}-{ts:.0f}",
+                     "2024-01-15T00:00:00+00:00"))
+                obs_n += 1
+                ts += 1.0
+        await db.commit()
+    print(f"  Seeded {obs_n} window observations")
+
+    # Run the real extractor per recording.
+    total_events = 0
+    for rid in FIXTURE_RECORDINGS.values():
+        total_events += await extract_events_for_recording(rid, db_path)
+    print(f"  Extractor produced {total_events} events "
+          f"(expected {len(FIXTURE_EVENTS)})")
+
+    # Rename to fixed event IDs for deterministic reference output
+    # (one event per recording in this fixture).
+    async with get_db(db_path) as db:
+        for rid in FIXTURE_RECORDINGS.values():
+            gt_id = next(e["id"] for e in ds["events"]
+                         if FIXTURE_RECORDINGS[e["recording_key"]] == rid)
             await db.execute(
-                """INSERT OR REPLACE INTO events(
-                    event_id, recording_id, timestamp_seconds, timestamp_absolute,
-                    has_reliable_timestamp, event_type, actor_description,
-                    object_descriptions, action_description, scene_description,
-                    evidence_frames, confidence, observed_facts, inferred_claims,
-                    uncertainty_notes, source_observation_ids, created_at)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (eid, rid, content["timestamp_seconds"], gt.get("absolute_start"),
-                 1, content["event_type"], None,
-                 json.dumps(content["object_descriptions"]),
-                 content["action_description"], content["scene_description"],
-                 json.dumps(frames), 0.8,
-                 json.dumps(content["observed_facts"]), json.dumps([]),
-                 json.dumps([]), json.dumps([]),
-                 "2024-01-15T00:00:00+00:00"))
+                "UPDATE events SET event_id = ? WHERE recording_id = ?",
+                (FIXTURE_EVENTS[gt_id], rid))
         await db.commit()
 
 
@@ -152,6 +181,8 @@ def _event_to_pred(ev) -> dict:
         "recording_id": d.get("recording_id"),
         "camera_name": d.get("camera_name"),
         "timestamp_seconds": d.get("timestamp_seconds"),
+        "start_seconds": d.get("start_seconds"),
+        "end_seconds": d.get("end_seconds"),
         "timestamp_absolute": d.get("timestamp_absolute"),
         "event_type": d.get("event_type"),
         "action_description": d.get("action_description"),

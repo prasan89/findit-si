@@ -1,6 +1,7 @@
 {
   "dataset_id": "realitytrace-eval",
-  "version": "2.0.0",
+  "version": "2.1.0",
+  "changelog": "2.1.0 (Phase 4): added Q9/Q10/Q11 (after/first/last temporal queries); Q4/Q7 notes updated for the fixed pure-filter behavior. All v2.0.0 IDs, expectations, and match rules unchanged.",
   "supersedes": "eval/ground_truth.json (unversioned v1)",
   "_comment": "Phase 5 versioned evaluation dataset. Extends v1 (same 3 clips, GT-001..GT-003, Q1..Q4 preserved verbatim where possible) with per-example recording linkage, video-relative boundaries, absolute timestamps, evidence references, negative/ambiguous/temporal queries, and labeled cross-camera associations. ALL footage is synthetic FFmpeg color blocks — see limitations.",
 
@@ -160,7 +161,7 @@
       "expected_events": ["GT-001"],
       "expected_not_returned": [],
       "ambiguous_events": [],
-      "notes": "Time filter uses video-relative seconds (00:00-00:15 -> 0-15s). V1 expectation preserved: only GT-001. KNOWN BEHAVIOR GAP (kept as temporal regression case): investigate() scores temporal queries by leftover keyword terms ('all','00','15') instead of treating them as pure time filters, so on the deterministic fixture Q4 returns [GT-002] via the substring 'all' in 'hallway' (precision 0, recall 0). The v1 live run returned all three events (precision 1/3) because real-model text matched more terms. Expectation encodes intent (pure time filter), not current implementation."
+      "notes": "Time filter uses video-relative seconds (00:00-00:15 -> 0-15s). V1 expectation preserved: only GT-001. Phase 4: temporal queries are now pure time filters, so Q4 returns all three GT events whose midpoints fall in 0-15s (precision 1/3, recall 1) — matching the v1 live run. Pre-fix behavior returned only [GT-002] (P=R=0) via the substring 'all' in 'hallway' (see Phase 5 report). Expectation kept as a v1-quirk regression case."
     },
     {
       "id": "Q5",
@@ -187,7 +188,7 @@
       "expected_events": ["GT-001", "GT-003"],
       "expected_not_returned": ["GT-002"],
       "ambiguous_events": [],
-      "notes": "Temporal filter regression: GT midpoints 5.5 (in), 8.5 (out), 4.0 (in). Uses video-relative seconds. Expectation encodes intent (pure time filter). KNOWN GAP: leftover keyword terms ('all','00','06') dominate scoring, so the deterministic fixture returns [] (recall 0) — same root cause as Q4."
+      "notes": "Temporal filter regression: GT midpoints 5.5 (in), 8.5 (out), 4.0 (in). Uses video-relative seconds. Phase 4: pure time filter now returns [GT-001, GT-003] (P=R=1). Pre-fix behavior returned [] (recall 0) — see Phase 5 report."
     },
     {
       "id": "Q8",
@@ -197,6 +198,33 @@
       "expected_not_returned": ["GT-001", "GT-002", "GT-003"],
       "ambiguous_events": [],
       "notes": "Temporal negative: all GT midpoints (5.5, 8.5, 4.0) fall outside 12-15s. Any returned event is a false positive."
+    },
+    {
+      "id": "Q9",
+      "query": "show all events after 00:06",
+      "kind": "temporal",
+      "expected_events": ["GT-002"],
+      "expected_not_returned": ["GT-001", "GT-003"],
+      "ambiguous_events": [],
+      "notes": "Phase 4 'after' regression: GT midpoints 5.5 (out), 8.5 (in), 4.0 (out). Video-relative seconds."
+    },
+    {
+      "id": "Q10",
+      "query": "show the first event",
+      "kind": "temporal",
+      "expected_events": ["GT-001"],
+      "expected_not_returned": ["GT-002", "GT-003"],
+      "ambiguous_events": [],
+      "notes": "Phase 4 'first' regression: absolute-chronological earliest is GT-001 (2024-01-15T10:00:05.5Z). Requires absolute ordering across recordings."
+    },
+    {
+      "id": "Q11",
+      "query": "show the last event",
+      "kind": "temporal",
+      "expected_events": ["GT-002"],
+      "expected_not_returned": ["GT-001", "GT-003"],
+      "ambiguous_events": [],
+      "notes": "Phase 4 'last' regression: absolute-chronological latest is GT-002 (2024-01-15T10:02:08.5Z)."
     }
   ],
 
@@ -242,7 +270,8 @@
     "Tiny sample: 3 GT events, 8 queries. Per-event-type statistics are reported with sample counts and flagged low-sample (n<5).",
     "No coverage for occlusion, low light, incomplete footage, unsynchronized camera clocks, or timestamp uncertainty (synthetic timestamps are exact).",
     "No confirmed-valid cross-camera pair exists, so cross-camera recall is undefined; only false-association rate is measurable.",
-    "Q4/Q7/Q8 encode pure-time-filter intent, but investigate() scores leftover keyword terms; see per-query notes for the observed behavior gap."
+    "Temporal queries (between/before/after/first/last) use video-relative MM:SS and pure time filtering since Phase 4; absolute clock-time queries (e.g. 'between 10:00 and 10:15' as wall time) remain unsupported.",
+    "Q4 preserves a v1 expectation quirk ([GT-001] though all three midpoints fall in 0-15s); see its notes."
   ],
 
   "methodology": {

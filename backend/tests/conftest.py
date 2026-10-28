@@ -78,6 +78,23 @@ def _strip_api_keys_for_non_live_tests(request, monkeypatch):
         monkeypatch.delenv("META_API_BASE_URL", raising=False)
 
 
+# Phase 6: each test starts with clean guard state (rate buckets, slots).
+@pytest.fixture(autouse=True)
+def _reset_operational_guards():
+    from app.guards import (reset_investigation_slots, reset_llm_semaphore,
+                            reset_rate_limiter)
+    from app.investigation_cache import reset_investigation_cache_state
+    reset_rate_limiter()
+    reset_investigation_slots()
+    reset_llm_semaphore()
+    reset_investigation_cache_state()
+    yield
+    reset_rate_limiter()
+    reset_investigation_slots()
+    reset_llm_semaphore()
+    reset_investigation_cache_state()
+
+
 # FastAPI test client fixture
 @pytest_asyncio.fixture
 async def client(tmp_data_dir, db_path):

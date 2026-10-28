@@ -15,6 +15,8 @@ class AgentStatus(str, Enum):
     # Phase 5: agent produced heuristic/fallback output without a live model
     # call (e.g. no API key configured). Output shape is unchanged.
     MOCKED = "mocked"
+    # Phase 6: agent exceeded its execution timeout and was cancelled.
+    TIMED_OUT = "timed_out"
 
 
 @dataclass
@@ -77,3 +79,13 @@ class InvestigationContext:
     budget_spent: float = 0.0
     events: list[dict] = field(default_factory=list)
     agent_outputs: dict = field(default_factory=dict)
+    # Phase 6: per-investigation model-call accounting.
+    llm_calls: int = 0
+    max_llm_calls: int = 8
+
+    def claim_llm_call(self) -> bool:
+        """Reserve one model call. Returns False when the cap is exhausted."""
+        if self.llm_calls >= self.max_llm_calls:
+            return False
+        self.llm_calls += 1
+        return True

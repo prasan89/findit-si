@@ -38,7 +38,8 @@ async def create_tables(db_path: str) -> None:
                 processing_errors TEXT,
                 indexing_status_detail TEXT,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                content_hash TEXT
             )
         """)
 
@@ -68,9 +69,10 @@ async def create_tables(db_path: str) -> None:
             CREATE TABLE IF NOT EXISTS frame_cache (
                 content_hash TEXT NOT NULL,
                 model_version TEXT NOT NULL,
+                prompt_version TEXT NOT NULL DEFAULT '2',
                 analysis_result TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                PRIMARY KEY (content_hash, model_version)
+                PRIMARY KEY (content_hash, model_version, prompt_version)
             )
         """)
 
@@ -102,7 +104,9 @@ async def create_tables(db_path: str) -> None:
                 inferred_claims TEXT NOT NULL DEFAULT '[]',
                 uncertainty_notes TEXT NOT NULL DEFAULT '[]',
                 source_observation_ids TEXT NOT NULL DEFAULT '[]',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                start_seconds REAL,
+                end_seconds REAL
             )
         """)
 
@@ -180,6 +184,21 @@ async def create_tables(db_path: str) -> None:
 
         # Phase 3: Multi-agent investigation execution traces
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS investigation_cache (
+                cache_key TEXT PRIMARY KEY,
+                mode TEXT NOT NULL,
+                response_json TEXT NOT NULL,
+                idempotency_key TEXT,
+                created_at TEXT NOT NULL,
+                hits INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_investigation_cache_idem
+            ON investigation_cache(idempotency_key)
+        """)
+
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS investigation_traces (
                 trace_id TEXT PRIMARY KEY,
                 investigation_id TEXT NOT NULL,
@@ -214,6 +233,14 @@ async def create_tables(db_path: str) -> None:
             "ALTER TABLE investigation_traces ADD COLUMN code_revision TEXT",
             "ALTER TABLE investigation_traces ADD COLUMN model_config TEXT",
             "ALTER TABLE investigation_traces ADD COLUMN usage_summary TEXT",
+            # Phase 4: event span columns (nullable; older DBs migrate on boot)
+            "ALTER TABLE events ADD COLUMN start_seconds REAL",
+            "ALTER TABLE events ADD COLUMN end_seconds REAL",
+            # Phase 6: upload content hash for duplicate detection/reporting
+            "ALTER TABLE recordings ADD COLUMN content_hash TEXT",
+            # Phase 6: prompt-versioned cache keys (existing rows default to v1
+            # and never hit under the current prompt version)
+            "ALTER TABLE frame_cache ADD COLUMN prompt_version TEXT DEFAULT '1'",
         ):
             try:
                 await db.execute(_ddl)

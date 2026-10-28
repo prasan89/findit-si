@@ -4,6 +4,8 @@ from typing import Optional
 
 from pydantic import BaseModel, field_validator
 
+from .config import get_settings
+
 
 class ProcessingStatus(str, Enum):
     PENDING = "PENDING"
@@ -97,6 +99,9 @@ class Event(BaseModel):
     camera_name: Optional[str] = None
     camera_location: Optional[str] = None
     timestamp_seconds: float
+    # Phase 4: event span (group bounds); None for legacy rows.
+    start_seconds: Optional[float] = None
+    end_seconds: Optional[float] = None
     timestamp_absolute: Optional[str] = None
     has_reliable_timestamp: bool = False
     event_type: str
@@ -126,6 +131,37 @@ class InvestigationRequest(BaseModel):
     time_start_seconds: Optional[float] = None
     time_end_seconds: Optional[float] = None
 
+    @field_validator("query")
+    @classmethod
+    def query_bounded(cls, v: str) -> str:
+        try:
+            max_chars = get_settings().max_query_chars
+        except Exception:
+            max_chars = 2000
+        if len(v) > max_chars:
+            raise ValueError(f"query exceeds {max_chars} characters")
+        return v
+
+    @field_validator("recording_ids")
+    @classmethod
+    def recording_ids_bounded(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+        if v is None:
+            return v
+        try:
+            max_ids = get_settings().max_recording_ids
+        except Exception:
+            max_ids = 50
+        if len(v) > max_ids:
+            raise ValueError(f"recording_ids exceeds {max_ids} entries")
+        return v
+
+    @field_validator("time_start_seconds", "time_end_seconds")
+    @classmethod
+    def times_non_negative(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v < 0:
+            raise ValueError("time bounds must be >= 0")
+        return v
+
 
 class InvestigationResult(BaseModel):
     investigation_id: str
@@ -138,3 +174,7 @@ class InvestigationResult(BaseModel):
     total_events_found: int = 0
     evidence_gaps: list[str] = []
     uncertainty_summary: str = ""
+    # Phase 6: echoes the request ID assigned by middleware (observability).
+    request_id: Optional[str] = None
+    # Phase 8: True when this response was served from the result cache.
+    cache_hit: bool = False

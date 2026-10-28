@@ -8,6 +8,7 @@ const STATUS_STYLES: Record<string, string> = {
   running: 'bg-blue-100 text-blue-700',
   pending: 'bg-gray-100 text-gray-500',
   mocked: 'bg-purple-100 text-purple-700',
+  timed_out: 'bg-orange-100 text-orange-700',
 }
 
 const AGENT_DESCRIPTIONS: Record<string, string> = {

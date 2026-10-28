@@ -82,6 +82,20 @@ Return ONLY valid JSON:
   ]
 }}"""
 
+        if not ctx.claim_llm_call():
+            return AgentResult(
+                agent_name=AGENT_NAME,
+                status=AgentStatus.SKIPPED,
+                output=AuditReport(
+                    claims_verified=0,
+                    claims_rejected=0,
+                    rejected_items=[],
+                    verified_events=[],
+                    model_used=settings.investigation_model,
+                ),
+                duration_ms=(time.monotonic() - t0) * 1000,
+                error="Investigation model-call cap reached",
+            )
         call = await llm_json_call_ex(
             prompt=prompt,
             db_path=ctx.db_path,
@@ -142,6 +156,8 @@ Return ONLY valid JSON:
             usage_measured=call.success and not call.mocked,
             model_used=settings.investigation_model,
             event_ids=[ev.get("event_id", "") for ev in events[:10]],
+            retries=max(0, call.attempts - 1),
+            timeouts=call.timeouts,
         )
     except Exception as exc:
         logger.exception("EvidenceAuditorAgent failed")

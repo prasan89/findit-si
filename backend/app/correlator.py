@@ -209,6 +209,10 @@ def _correlation_score(ev_a: dict, ev_b: dict) -> tuple[float, str]:
     """
     Composite score. Important constraints:
     - Similar clothing/appearance does NOT prove same individual.
+    - Temporal proximity alone is NOT sufficient evidence for a link:
+      pairs with no shared appearance tokens AND different event types
+      never link (Phase 4 fix for the measured temporal-only false
+      associations — see eval regression tests).
     - Score < CONFIRMED_THRESHOLD → "candidate" link, not confirmed.
     """
     t_score, t_expl = _temporal_score(ev_a, ev_b)
@@ -217,6 +221,12 @@ def _correlation_score(ev_a: dict, ev_b: dict) -> tuple[float, str]:
 
     a_score, a_expl = _appearance_score(ev_a, ev_b)
     et_score, et_expl = _event_type_score(ev_a, ev_b)
+
+    if a_score == 0.0 and et_score == 0.0:
+        return 0.0, (
+            f"{t_expl}; {a_expl} — temporal proximity alone is insufficient "
+            "for a cross-camera link (no shared appearance, different event types)"
+        )
 
     total = t_score + a_score + et_score
 

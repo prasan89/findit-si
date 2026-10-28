@@ -2,15 +2,15 @@
   "evaluation_mode": "offline",
   "dataset": {
     "dataset_id": "realitytrace-eval",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "n_recordings": 3,
     "n_recordings_synthetic": 3,
     "n_recordings_real": 0,
     "n_events": 3,
-    "n_queries": 8,
+    "n_queries": 11,
     "queries_by_kind": {
       "positive": 3,
-      "temporal": 3,
+      "temporal": 6,
       "negative": 1,
       "ambiguous": 1
     },
@@ -18,13 +18,13 @@
     "n_cc_invalid": 2,
     "n_cc_ambiguous": 1
   },
-  "code_revision": "48da5b7",
+  "code_revision": "01c156f",
   "model_config": {
     "investigation_model": "muse-spark-1.3",
     "vision_model": "muse-spark-1.3",
     "mode": "offline-mocked (no API keys; zero live calls)"
   },
-  "evaluation_timestamp": "2026-10-28T13:35:42Z",
+  "evaluation_timestamp": "2026-10-28T14:25:07Z",
   "cache": {
     "cold_warm_separated": false,
     "note": "Offline fixture performs no frame processing; frame-cache hits/misses unavailable."
@@ -103,18 +103,19 @@
           "expected_events": [
             "GT-001"
           ],
-          "n_returned": 1,
-          "true_positives": [],
-          "false_negatives": [
+          "n_returned": 3,
+          "true_positives": [
             "GT-001"
           ],
+          "false_negatives": [],
           "false_positive_pred_indices": [
-            0
+            1,
+            2
           ],
           "ambiguous_hits": [],
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "f1": 0.5,
           "negative_case_passed": null
         },
         {
@@ -160,17 +161,17 @@
             "GT-001",
             "GT-003"
           ],
-          "n_returned": 0,
-          "true_positives": [],
-          "false_negatives": [
+          "n_returned": 2,
+          "true_positives": [
             "GT-001",
             "GT-003"
           ],
+          "false_negatives": [],
           "false_positive_pred_indices": [],
           "ambiguous_hits": [],
-          "precision": null,
-          "recall": 0.0,
-          "f1": null,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
           "negative_case_passed": null
         },
         {
@@ -187,18 +188,75 @@
           "recall": null,
           "f1": null,
           "negative_case_passed": null
+        },
+        {
+          "query_id": "Q9",
+          "query": "show all events after 00:06",
+          "kind": "temporal",
+          "expected_events": [
+            "GT-002"
+          ],
+          "n_returned": 1,
+          "true_positives": [
+            "GT-002"
+          ],
+          "false_negatives": [],
+          "false_positive_pred_indices": [],
+          "ambiguous_hits": [],
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "negative_case_passed": null
+        },
+        {
+          "query_id": "Q10",
+          "query": "show the first event",
+          "kind": "temporal",
+          "expected_events": [
+            "GT-001"
+          ],
+          "n_returned": 1,
+          "true_positives": [
+            "GT-001"
+          ],
+          "false_negatives": [],
+          "false_positive_pred_indices": [],
+          "ambiguous_hits": [],
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "negative_case_passed": null
+        },
+        {
+          "query_id": "Q11",
+          "query": "show the last event",
+          "kind": "temporal",
+          "expected_events": [
+            "GT-002"
+          ],
+          "n_returned": 1,
+          "true_positives": [
+            "GT-002"
+          ],
+          "false_negatives": [],
+          "false_positive_pred_indices": [],
+          "ambiguous_hits": [],
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "negative_case_passed": null
         }
       ],
       "failed_queries": [],
       "query_precision_macro": {
-        "mean": 0.75,
-        "n_defined": 4,
-        "n_queries": 8
+        "mean": 0.9166666666666667,
+        "n_defined": 8,
+        "n_queries": 11
       },
       "query_recall_macro": {
-        "mean": 0.6,
-        "n_defined": 5,
-        "n_queries": 8
+        "mean": 1.0,
+        "n_defined": 8,
+        "n_queries": 11
       },
       "event_detection": {
         "matching": {
@@ -323,21 +381,21 @@
         },
         "start_boundary_error": {
           "n": 3,
-          "mean": 2.6666666666666665,
-          "median": 2.5,
+          "mean": 0.0,
+          "median": 0.0,
           "p90": null,
           "p90_note": "n<10: high percentile not meaningful",
-          "min": 2.0,
-          "max": 3.5
+          "min": 0.0,
+          "max": 0.0
         },
         "end_boundary_error": {
           "n": 3,
-          "mean": 2.6666666666666665,
-          "median": 2.5,
+          "mean": 0.0,
+          "median": 0.0,
           "p90": null,
           "p90_note": "n<10: high percentile not meaningful",
-          "min": 2.0,
-          "max": 3.5
+          "min": 0.0,
+          "max": 0.0
         },
         "n_matched": 3,
         "n_missing_absolute": 0,
@@ -348,65 +406,56 @@
             "gt_id": "GT-001",
             "relative_error_seconds": 0.0,
             "absolute_error_seconds": 0.0,
-            "start_boundary_error_seconds": 2.5,
-            "end_boundary_error_seconds": -2.5
+            "start_boundary_error_seconds": 0.0,
+            "end_boundary_error_seconds": 0.0
           },
           {
             "gt_id": "GT-002",
             "relative_error_seconds": 0.0,
             "absolute_error_seconds": 0.0,
-            "start_boundary_error_seconds": 3.5,
-            "end_boundary_error_seconds": -3.5
+            "start_boundary_error_seconds": 0.0,
+            "end_boundary_error_seconds": 0.0
           },
           {
             "gt_id": "GT-003",
             "relative_error_seconds": 0.0,
             "absolute_error_seconds": 0.0,
-            "start_boundary_error_seconds": 2.0,
-            "end_boundary_error_seconds": -2.0
+            "start_boundary_error_seconds": 0.0,
+            "end_boundary_error_seconds": 0.0
           }
         ]
       },
       "cross_camera": {
-        "n_predicted": 2,
+        "n_predicted": 0,
         "n_valid_labeled": 0,
         "n_invalid_labeled": 2,
         "n_ambiguous_labeled": 1,
         "n_excluded": 0,
         "true_positives": [],
-        "false_associations": [
-          [
-            "GT-001",
-            "GT-003"
-          ],
-          [
-            "GT-002",
-            "GT-003"
-          ]
-        ],
-        "false_association_count": 2,
-        "false_association_rate": 1.0,
-        "false_association_denominator": 2,
+        "false_associations": [],
+        "false_association_count": 0,
+        "false_association_rate": null,
+        "false_association_denominator": 0,
         "ambiguous_hits": [],
         "unlabeled_predictions": [],
         "false_negatives": [],
-        "precision": 0.0,
+        "precision": null,
         "recall": null,
         "f1": null,
-        "n_directed_links": 4,
+        "n_directed_links": 0,
         "n_unmapped_links": 0
       },
       "evidence_quality": {
-        "n_claims": 5,
-        "claims_with_evidence": 5,
+        "n_claims": 12,
+        "claims_with_evidence": 12,
         "claims_without_evidence": [],
         "evidence_coverage": 1.0,
-        "n_references": 5,
-        "n_valid_references": 5,
+        "n_references": 12,
+        "n_valid_references": 12,
         "reference_validity_rate": 1.0,
         "invalid_references": [],
         "n_annotated": 0,
-        "n_unannotated": 5,
+        "n_unannotated": 12,
         "evidence_support_rate": null,
         "unsupported_claim_rate": null,
         "contradiction_rate": null,
@@ -422,14 +471,17 @@
       },
       "latency_ms": {
         "per_query_noncomparable": [
-          1.8,
-          1.9,
-          1.9,
-          1.8,
+          1.6,
+          2.0,
           2.0,
           1.8,
-          1.9,
-          1.7
+          1.8,
+          2.0,
+          2.0,
+          1.8,
+          1.8,
+          2.0,
+          1.8
         ],
         "note": "Wall-clock on the local machine; not comparable across machines."
       }
@@ -500,18 +552,19 @@
           "expected_events": [
             "GT-001"
           ],
-          "n_returned": 1,
-          "true_positives": [],
-          "false_negatives": [
+          "n_returned": 3,
+          "true_positives": [
             "GT-001"
           ],
+          "false_negatives": [],
           "false_positive_pred_indices": [
-            0
+            1,
+            2
           ],
           "ambiguous_hits": [],
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "f1": 0.5,
           "negative_case_passed": null
         },
         {
@@ -557,17 +610,17 @@
             "GT-001",
             "GT-003"
           ],
-          "n_returned": 0,
-          "true_positives": [],
-          "false_negatives": [
+          "n_returned": 2,
+          "true_positives": [
             "GT-001",
             "GT-003"
           ],
+          "false_negatives": [],
           "false_positive_pred_indices": [],
           "ambiguous_hits": [],
-          "precision": null,
-          "recall": 0.0,
-          "f1": null,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
           "negative_case_passed": null
         },
         {
@@ -584,18 +637,75 @@
           "recall": null,
           "f1": null,
           "negative_case_passed": null
+        },
+        {
+          "query_id": "Q9",
+          "query": "show all events after 00:06",
+          "kind": "temporal",
+          "expected_events": [
+            "GT-002"
+          ],
+          "n_returned": 1,
+          "true_positives": [
+            "GT-002"
+          ],
+          "false_negatives": [],
+          "false_positive_pred_indices": [],
+          "ambiguous_hits": [],
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "negative_case_passed": null
+        },
+        {
+          "query_id": "Q10",
+          "query": "show the first event",
+          "kind": "temporal",
+          "expected_events": [
+            "GT-001"
+          ],
+          "n_returned": 1,
+          "true_positives": [
+            "GT-001"
+          ],
+          "false_negatives": [],
+          "false_positive_pred_indices": [],
+          "ambiguous_hits": [],
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "negative_case_passed": null
+        },
+        {
+          "query_id": "Q11",
+          "query": "show the last event",
+          "kind": "temporal",
+          "expected_events": [
+            "GT-002"
+          ],
+          "n_returned": 1,
+          "true_positives": [
+            "GT-002"
+          ],
+          "false_negatives": [],
+          "false_positive_pred_indices": [],
+          "ambiguous_hits": [],
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "negative_case_passed": null
         }
       ],
       "failed_queries": [],
       "query_precision_macro": {
-        "mean": 0.75,
-        "n_defined": 4,
-        "n_queries": 8
+        "mean": 0.9166666666666667,
+        "n_defined": 8,
+        "n_queries": 11
       },
       "query_recall_macro": {
-        "mean": 0.6,
-        "n_defined": 5,
-        "n_queries": 8
+        "mean": 1.0,
+        "n_defined": 8,
+        "n_queries": 11
       },
       "event_detection": {
         "matching": {
@@ -720,21 +830,21 @@
         },
         "start_boundary_error": {
           "n": 3,
-          "mean": 2.6666666666666665,
-          "median": 2.5,
+          "mean": 0.0,
+          "median": 0.0,
           "p90": null,
           "p90_note": "n<10: high percentile not meaningful",
-          "min": 2.0,
-          "max": 3.5
+          "min": 0.0,
+          "max": 0.0
         },
         "end_boundary_error": {
           "n": 3,
-          "mean": 2.6666666666666665,
-          "median": 2.5,
+          "mean": 0.0,
+          "median": 0.0,
           "p90": null,
           "p90_note": "n<10: high percentile not meaningful",
-          "min": 2.0,
-          "max": 3.5
+          "min": 0.0,
+          "max": 0.0
         },
         "n_matched": 3,
         "n_missing_absolute": 0,
@@ -745,81 +855,73 @@
             "gt_id": "GT-001",
             "relative_error_seconds": 0.0,
             "absolute_error_seconds": 0.0,
-            "start_boundary_error_seconds": 2.5,
-            "end_boundary_error_seconds": -2.5
+            "start_boundary_error_seconds": 0.0,
+            "end_boundary_error_seconds": 0.0
           },
           {
             "gt_id": "GT-002",
             "relative_error_seconds": 0.0,
             "absolute_error_seconds": 0.0,
-            "start_boundary_error_seconds": 3.5,
-            "end_boundary_error_seconds": -3.5
+            "start_boundary_error_seconds": 0.0,
+            "end_boundary_error_seconds": 0.0
           },
           {
             "gt_id": "GT-003",
             "relative_error_seconds": 0.0,
             "absolute_error_seconds": 0.0,
-            "start_boundary_error_seconds": 2.0,
-            "end_boundary_error_seconds": -2.0
+            "start_boundary_error_seconds": 0.0,
+            "end_boundary_error_seconds": 0.0
           }
         ]
       },
       "cross_camera": {
-        "n_predicted": 2,
+        "n_predicted": 0,
         "n_valid_labeled": 0,
         "n_invalid_labeled": 2,
         "n_ambiguous_labeled": 1,
         "n_excluded": 0,
         "true_positives": [],
-        "false_associations": [
-          [
-            "GT-001",
-            "GT-003"
-          ],
-          [
-            "GT-002",
-            "GT-003"
-          ]
-        ],
-        "false_association_count": 2,
-        "false_association_rate": 1.0,
-        "false_association_denominator": 2,
+        "false_associations": [],
+        "false_association_count": 0,
+        "false_association_rate": null,
+        "false_association_denominator": 0,
         "ambiguous_hits": [],
         "unlabeled_predictions": [],
         "false_negatives": [],
-        "precision": 0.0,
+        "precision": null,
         "recall": null,
         "f1": null,
-        "n_directed_links": 4,
+        "n_directed_links": 0,
         "n_unmapped_links": 0
       },
       "evidence_quality": {
-        "n_claims": 10,
-        "claims_with_evidence": 10,
+        "n_claims": 24,
+        "claims_with_evidence": 24,
         "claims_without_evidence": [],
         "evidence_coverage": 1.0,
-        "n_references": 10,
-        "n_valid_references": 10,
+        "n_references": 24,
+        "n_valid_references": 24,
         "reference_validity_rate": 1.0,
         "invalid_references": [],
         "n_annotated": 0,
-        "n_unannotated": 10,
+        "n_unannotated": 24,
         "evidence_support_rate": null,
         "unsupported_claim_rate": null,
         "contradiction_rate": null,
         "support_note": "Support/contradiction computed from human annotations only; reference existence is NOT treated as support.",
-        "n_report_claims": 5,
-        "auditor_verified_true": 5,
+        "n_report_claims": 12,
+        "auditor_verified_true": 12,
         "auditor_verified_false": 0,
         "auditor_verified_null": 0
       },
       "observability": {
-        "n_agents": 64,
+        "n_agents": 88,
         "by_status": {
-          "completed": 34,
-          "skipped": 15,
+          "completed": 51,
+          "skipped": 10,
           "failed": 0,
-          "mocked": 15
+          "mocked": 27,
+          "timed_out": 0
         },
         "unknown_statuses": [],
         "skip_reasons": [
@@ -862,39 +964,19 @@
           {
             "agent": "EvidenceAuditorAgent",
             "reason": "unknown"
-          },
-          {
-            "agent": "VideoIntelligenceAgent",
-            "reason": "unknown"
-          },
-          {
-            "agent": "ObjectActionAnalystAgent",
-            "reason": "unknown"
-          },
-          {
-            "agent": "TemporalReasoningAgent",
-            "reason": "unknown"
-          },
-          {
-            "agent": "ContradictionHunterAgent",
-            "reason": "unknown"
-          },
-          {
-            "agent": "EvidenceAuditorAgent",
-            "reason": "unknown"
           }
         ],
         "failures": [],
-        "total_duration_ms": 48.33016896736808,
+        "total_duration_ms": 45.29133599862689,
         "duration_by_agent_ms": {
-          "QueryInvestigationAgent": 1.5686250044382177,
-          "VideoIntelligenceAgent": 0.0,
-          "ObjectActionAnalystAgent": 0.0,
-          "TemporalReasoningAgent": 0.0,
-          "CrossCameraCorrelationAgent": 5.128583004989196,
-          "ContradictionHunterAgent": 0.0,
-          "EvidenceAuditorAgent": 0.0,
-          "ReportSynthesisAgent": 0.009708994184620678
+          "QueryInvestigationAgent": 1.931999999214895,
+          "VideoIntelligenceAgent": 0.10695899982238188,
+          "ObjectActionAnalystAgent": 0.03158299659844488,
+          "TemporalReasoningAgent": 0.009458002750761807,
+          "CrossCameraCorrelationAgent": 2.1022499931859784,
+          "ContradictionHunterAgent": 0.051875002100132406,
+          "EvidenceAuditorAgent": 0.004582994733937085,
+          "ReportSynthesisAgent": 0.019082996004726738
         },
         "tokens_in_measured": 0,
         "tokens_out_measured": 0,
@@ -925,21 +1007,27 @@
           "EV-REF-003"
         ],
         "evidence_ids": [
+          "EV-REF-001@eval-ref-entrance:3.0s",
           "EV-REF-001@eval-ref-entrance:5.5s",
+          "EV-REF-002@eval-ref-hallway:5.0s",
           "EV-REF-002@eval-ref-hallway:8.5s",
+          "EV-REF-003@eval-ref-parking:2.0s",
           "EV-REF-003@eval-ref-parking:4.0s"
         ]
       },
       "latency_ms": {
         "per_query_noncomparable": [
-          36.0,
-          25.1,
-          24.6,
-          24.6,
-          24.4,
-          24.1,
-          23.3,
-          25.6
+          32.3,
+          22.5,
+          22.4,
+          22.1,
+          21.3,
+          23.4,
+          22.4,
+          22.7,
+          21.2,
+          22.9,
+          22.9
         ],
         "note": "Wall-clock on the local machine; not comparable across machines."
       }
@@ -950,8 +1038,8 @@
     "precision": "TP / (TP + FP); None when the denominator is 0.",
     "recall": "TP / (TP + FN); None when the denominator is 0.",
     "f1": "2*P*R / (P + R); 0.0 when P and R are defined but P + R == 0; None when P or R is undefined (zero denominator).",
-    "timestamp_error": "For matched events: |pred_ts - gt_midpoint| in video-relative seconds. Absolute-timestamp error uses parsed ISO timestamps when BOTH sides provide valid absolute times; otherwise the case is reported under unavailable counts.",
-    "boundary_error": "Signed (pred_point - gt_start) and (pred_point - gt_end) in seconds, where pred_point is the prediction timestamp (or predicted start/end when provided). None when GT provides no boundaries.",
+    "timestamp_error": "For matched events: |pred_ts - gt_midpoint| in video-relative seconds. Absolute-timestamp error is |pred_abs - gt_midpoint_abs|, where gt_midpoint_abs is the midpoint of GT absolute_start/absolute_end when both parse (else whichever bound parses). Cases with missing or malformed absolute times are counted under unavailable counts, not filled.",
+    "boundary_error": "Signed (pred_start - gt_start) and (pred_end - gt_end) in seconds when the prediction carries start/end_seconds; otherwise falls back to (pred_point - gt_start) and (pred_point - gt_end) using the single prediction timestamp. None when GT provides no boundaries.",
     "evidence_coverage": "Claims with >= 1 syntactically valid evidence reference / total claims.",
     "evidence_reference_validity": "References whose recording exists AND 0 <= timestamp <= recording duration / total references. Validity is existence only \u2014 it does NOT imply the evidence supports the claim.",
     "evidence_support_rate": "Human-annotated supported claims / human-annotated claims. Computed ONLY from explicit human annotations (supported true/false); unannotated claims are excluded and counted separately.",
@@ -977,6 +1065,7 @@
     "Tiny sample: 3 GT events, 8 queries. Per-event-type statistics are reported with sample counts and flagged low-sample (n<5).",
     "No coverage for occlusion, low light, incomplete footage, unsynchronized camera clocks, or timestamp uncertainty (synthetic timestamps are exact).",
     "No confirmed-valid cross-camera pair exists, so cross-camera recall is undefined; only false-association rate is measurable.",
-    "Q4/Q7/Q8 encode pure-time-filter intent, but investigate() scores leftover keyword terms; see per-query notes for the observed behavior gap."
+    "Temporal queries (between/before/after/first/last) use video-relative MM:SS and pure time filtering since Phase 4; absolute clock-time queries (e.g. 'between 10:00 and 10:15' as wall time) remain unsupported.",
+    "Q4 preserves a v1 expectation quirk ([GT-001] though all three midpoints fall in 0-15s); see its notes."
   ]
 }

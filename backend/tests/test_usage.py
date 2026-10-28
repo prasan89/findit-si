@@ -214,7 +214,9 @@ async def test_budget_only_counts_successful_calls(db_path):
 
 @pytest.mark.asyncio
 async def test_retry_succeeds_on_second_attempt(db_path):
-    """Delegate fails once then succeeds; client returns the successful result."""
+    """Delegate fails once (transient) then succeeds; client returns success."""
+    import httpx
+
     call_count = 0
 
     class FlakyAnalyzer:
@@ -224,7 +226,8 @@ async def test_retry_succeeds_on_second_attempt(db_path):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise RuntimeError("transient error")
+                # Phase 6: only transient failures are retried.
+                raise httpx.ConnectError("transient error")
             return _empty_response()
 
     client = AccountedFrameAnalyzer(
@@ -244,6 +247,8 @@ async def test_retry_succeeds_on_second_attempt(db_path):
 @pytest.mark.asyncio
 async def test_retry_records_failure_then_success(db_path):
     """Both the failed attempt and the success are recorded in model_usage."""
+    import httpx
+
     call_count = 0
 
     class FlakyAnalyzer:
@@ -253,7 +258,8 @@ async def test_retry_records_failure_then_success(db_path):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise RuntimeError("oops")
+                # Phase 6: only transient failures are retried.
+                raise httpx.ConnectError("oops")
             return _empty_response()
 
     client = AccountedFrameAnalyzer(
@@ -278,12 +284,15 @@ async def test_retry_records_failure_then_success(db_path):
 
 @pytest.mark.asyncio
 async def test_all_attempts_fail_raises_last_exception(db_path):
-    """After max_attempts failures, the last exception is re-raised."""
+    """After max_attempts transient failures, the last exception is re-raised."""
+    import httpx
+
     class AlwaysFailAnalyzer:
         model_version = "always-fail"
 
         async def analyze_frame(self, frame_data: bytes) -> dict:
-            raise ValueError("always broken")
+            # Phase 6: transient failure, retried until attempts exhausted.
+            raise httpx.ConnectError("always broken")
 
     client = AccountedFrameAnalyzer(
         delegate=AlwaysFailAnalyzer(),
@@ -294,18 +303,21 @@ async def test_all_attempts_fail_raises_last_exception(db_path):
         max_attempts=2,
         base_backoff=0.0,
     )
-    with pytest.raises(ValueError, match="always broken"):
+    with pytest.raises(httpx.ConnectError, match="always broken"):
         await client.analyze_frame(b"frame")
 
 
 @pytest.mark.asyncio
 async def test_all_attempts_failure_records_all(db_path):
     """Each failed attempt gets its own model_usage row."""
+    import httpx
+
     class AlwaysFailAnalyzer:
         model_version = "always-fail"
 
         async def analyze_frame(self, frame_data: bytes) -> dict:
-            raise RuntimeError("boom")
+            # Phase 6: transient failure, retried until attempts exhausted.
+            raise httpx.ConnectError("boom")
 
     client = AccountedFrameAnalyzer(
         delegate=AlwaysFailAnalyzer(),
@@ -318,7 +330,7 @@ async def test_all_attempts_failure_records_all(db_path):
     )
     try:
         await client.analyze_frame(b"frame")
-    except RuntimeError:
+    except httpx.ConnectError:
         pass
 
     async with get_db(db_path) as db:

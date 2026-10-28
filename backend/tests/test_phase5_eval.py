@@ -354,6 +354,13 @@ class TestCrossCameraRegression:
     """Reproduce the recorded false associations against the real correlator."""
 
     async def test_parking_links_are_false_positives(self, db_path):
+        """Phase 4 fix: temporal-only pairs must NOT link (was: 4 false links).
+
+        Phase 5 evidence (comparison_report baseline): GT-001<->GT-003 and
+        GT-002<->GT-003 linked with conf 0.40/0.39 from temporal proximity
+        alone despite zero shared appearance tokens. The correlator now gates
+        on appearance-or-type agreement, so no links form here.
+        """
         rec1, rec2, rec3 = "reg-entrance", "reg-hallway", "reg-parking"
         async with get_db(db_path) as db:
             import aiosqlite
@@ -364,44 +371,68 @@ class TestCrossCameraRegression:
                                    recording_datetime="2024-01-15T10:02:00")
             await insert_recording(db, rec3, camera_name="Parking Camera",
                                    recording_datetime="2024-01-15T10:01:00")
-            e1 = await insert_event(db, rec1, timestamp_seconds=5.5,
-                                    event_type="person_detected",
-                                    action_description="Red figure near entrance",
-                                    object_descriptions=["red person figure"],
-                                    observed_facts=["Observed: red person figure"])
-            e2 = await insert_event(db, rec2, timestamp_seconds=8.5,
-                                    event_type="unattended_object",
-                                    action_description="Blue bag in hallway",
-                                    object_descriptions=["blue bag object"],
-                                    observed_facts=["Observed: blue bag object"])
-            e3 = await insert_event(db, rec3, timestamp_seconds=4.0,
-                                    event_type="vehicle_detected",
-                                    action_description="Green vehicle in lot",
-                                    object_descriptions=["green vehicle"],
-                                    observed_facts=["Observed: green vehicle"])
+            await insert_event(db, rec1, timestamp_seconds=5.5,
+                               event_type="person_detected",
+                               action_description="Red figure near entrance",
+                               object_descriptions=["red person figure"],
+                               observed_facts=["Observed: red person figure"])
+            await insert_event(db, rec2, timestamp_seconds=8.5,
+                               event_type="unattended_object",
+                               action_description="Blue bag in hallway",
+                               object_descriptions=["blue bag object"],
+                               observed_facts=["Observed: blue bag object"])
+            await insert_event(db, rec3, timestamp_seconds=4.0,
+                               event_type="vehicle_detected",
+                               action_description="Green vehicle in lot",
+                               object_descriptions=["green vehicle"],
+                               observed_facts=["Observed: green vehicle"])
 
         n_links = await correlate_across_cameras(db_path, [rec1, rec2, rec3])
-        # Root cause pinned: temporal-only scores (0.40/0.39) exceed the 0.3
-        # threshold despite zero shared appearance tokens — 2 pairs x 2 directions.
-        assert n_links == 4
+        assert n_links == 0
 
-        import aiosqlite
-        async with get_db(db_path) as db:
-            db.row_factory = aiosqlite.Row
-            rows = await (await db.execute(
-                "SELECT source_event_id, target_event_id, explanation FROM event_links"
-            )).fetchall()
-        pairs = {tuple(sorted((r["source_event_id"], r["target_event_id"]))) for r in rows}
-        assert pairs == {tuple(sorted((e1, e3))), tuple(sorted((e2, e3)))}
-        assert all("No shared appearance tokens" in r["explanation"] for r in rows)
+        # The gate reason is explicit at the scoring-function level.
+        from app.correlator import _correlation_score
+        score, expl = _correlation_score(
+            {"abs_ts": 1000.0, "object_descriptions": ["red person figure"],
+             "event_type": "person_detected"},
+            {"abs_ts": 1058.0, "object_descriptions": ["green vehicle"],
+             "event_type": "vehicle_detected"})
+        assert score == 0.0
+        assert "temporal proximity alone is insufficient" in expl
 
-        # Score in GT-id space: both invalid pairs predicted.
+        # Score in GT-id space: no pairs predicted -> zero false associations.
         ds = load_v2()
         cc = ds["cross_camera_associations"]
-        r = M.score_cross_camera([["GT-001", "GT-003"], ["GT-002", "GT-003"]],
-                                 cc["valid"], cc["invalid"], cc["ambiguous"])
-        assert r["false_association_count"] == 2
-        assert r["false_association_rate"] == pytest.approx(1.0)
+        r = M.score_cross_camera([], cc["valid"], cc["invalid"], cc["ambiguous"])
+        assert r["false_association_count"] == 0
+        assert r["false_association_rate"] is None  # no pairs predicted
+
+    async def test_shared_appearance_still_links(self, db_path):
+        """The gate must not break legitimate appearance-supported links."""
+        rec1, rec2 = "gate-cam1", "gate-cam2"
+        async with get_db(db_path) as db:
+            import aiosqlite
+            db.row_factory = aiosqlite.Row
+            await insert_recording(db, rec1, camera_name="Cam 1",
+                                   recording_datetime="2024-01-15T10:00:00")
+            await insert_recording(db, rec2, camera_name="Cam 2",
+                                   recording_datetime="2024-01-15T10:02:00")
+            await insert_event(db, rec1, timestamp_seconds=5.0,
+                               event_type="person_detected",
+                               action_description="red figure",
+                               object_descriptions=["red person figure"])
+            await insert_event(db, rec2, timestamp_seconds=6.0,
+                               event_type="person_detected",
+                               action_description="red figure again",
+                               object_descriptions=["red person figure"])
+        n_links = await correlate_across_cameras(db_path, [rec1, rec2])
+        assert n_links == 2  # one pair x two directions
+        async with get_db(db_path) as db:
+            import aiosqlite
+            db.row_factory = aiosqlite.Row
+            rows = await (await db.execute(
+                "SELECT link_type FROM event_links")).fetchall()
+        assert {r["link_type"] for r in rows} == {"candidate"}
 
     async def test_expected_pair_does_not_link_on_temporal_only(self, db_path):
         """GT-001<->GT-002 (123s gap -> temporal score 0.295 < 0.3) forms no link."""
@@ -446,7 +477,8 @@ class TestAgentObservability:
             _agent("D", "mocked"),
         ]
         s = M.summarize_agent_runs(agents)
-        assert s["by_status"] == {"completed": 1, "skipped": 1, "failed": 1, "mocked": 1}
+        assert s["by_status"] == {"completed": 1, "skipped": 1, "failed": 1,
+                                  "mocked": 1, "timed_out": 0}
         assert s["skip_reasons"] == [{"agent": "B", "reason": "Budget limit reached"}]
         assert s["failures"] == [{"agent": "C", "reason": "boom"}]
         assert s["unknown_statuses"] == []
@@ -642,12 +674,12 @@ class TestDatasetLoader:
     def test_v2_loads_and_validates(self):
         ds = load_v2()
         assert ds["dataset_id"] == "realitytrace-eval"
-        assert ds["version"] == "2.0.0"
+        assert ds["version"] == "2.1.0"
         comp = composition(ds)
         assert comp["n_recordings_synthetic"] == 3
         assert comp["n_recordings_real"] == 0
         assert comp["n_events"] == 3
-        assert comp["n_queries"] == 8
+        assert comp["n_queries"] == 11  # v2.1.0 adds Q9/Q10/Q11
         assert comp["n_cc_invalid"] == 2
         assert comp["n_cc_ambiguous"] == 1
 
@@ -698,4 +730,4 @@ class TestStableReports:
         std_ids = [q["query_id"] for q in report["modes"]["standard"]["queries"]]
         ma_ids = [q["query_id"] for q in report["modes"]["multi_agent"]["queries"]]
         assert std_ids == ma_ids
-        assert len(std_ids) == 8
+        assert len(std_ids) == 11

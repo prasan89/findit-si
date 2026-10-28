@@ -12,9 +12,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 
 from ..config import get_settings
 from ..database import create_tables, get_db
+from ..guards import content_sha256, require_api_token
 from ..models import ProcessingStatus, RecordingStatus, RecordingUploadResponse
 from ..processor import process_recording
-from ..storage import LocalStorageBackend, validate_video_extension
+from ..storage import LocalStorageBackend, sniff_video_container, validate_video_extension
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,35 @@ def get_storage():
     return LocalStorageBackend(Path(settings.data_dir))
 
 
-@router.post("/upload", response_model=RecordingUploadResponse, status_code=status.HTTP_202_ACCEPTED)
+def _validate_upload_form(
+    recording_datetime: Optional[str],
+    recording_timezone: Optional[str],
+    camera_name: Optional[str],
+    camera_location: Optional[str],
+    max_chars: int,
+) -> None:
+    """Phase 6: bound form fields and validate the recording datetime format."""
+    for label, value in (
+        ("recording_datetime", recording_datetime),
+        ("recording_timezone", recording_timezone),
+        ("camera_name", camera_name),
+        ("camera_location", camera_location),
+    ):
+        if value is not None and len(value) > max_chars:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Form field {label!r} exceeds {max_chars} characters.")
+    if recording_datetime:
+        try:
+            datetime.fromisoformat(recording_datetime)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=400,
+                detail="recording_datetime must be ISO-8601 (e.g. 2024-01-15T10:00:00).")
+
+
+@router.post("/upload", response_model=RecordingUploadResponse, status_code=status.HTTP_202_ACCEPTED,
+             dependencies=[Depends(require_api_token)])
 async def upload_recording(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -45,43 +74,94 @@ async def upload_recording(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Read and check size
-    data = await file.read()
-    if len(data) > settings.max_video_size_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large. Max {settings.findit_max_video_size_mb}MB."
-        )
-    if len(data) == 0:
-        raise HTTPException(status_code=400, detail="Empty file uploaded.")
-
-    recording_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+    _validate_upload_form(recording_datetime, recording_timezone,
+                          camera_name, camera_location,
+                          settings.max_form_field_chars)
 
     # Ensure storage dirs and db exist
     await storage.ensure_dirs()
     await create_tables(settings.db_path)
+
+    # Phase 6: optional upload quota (count-based).
+    if settings.upload_max_recordings > 0:
+        async with get_db(settings.db_path) as db:
+            row = await (await db.execute(
+                "SELECT COUNT(*) FROM recordings")).fetchone()
+            if row and row[0] >= settings.upload_max_recordings:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Recording quota reached. Delete old recordings first.",
+                    headers={"Retry-After": "60"},
+                )
+
+    # Phase 6: stream the upload in chunks so an oversized file is rejected
+    # without buffering the whole body in memory first.
+    chunks: list[bytes] = []
+    total = 0
+    chunk_size = max(64 * 1024, settings.upload_chunk_bytes)
+    while True:
+        piece = await file.read(chunk_size)
+        if not piece:
+            break
+        total += len(piece)
+        if total > settings.max_video_size_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Max {settings.findit_max_video_size_mb}MB."
+            )
+        chunks.append(piece)
+    data = b"".join(chunks)
+    if len(data) == 0:
+        raise HTTPException(status_code=400, detail="Empty file uploaded.")
+
+    # Phase 6: magic-bytes check rejects clearly mislabeled content early.
+    try:
+        sniff_video_container(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    recording_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    file_hash = content_sha256(data)
 
     # Save video to disk
     video_rel_path = await storage.save_video(recording_id, file.filename or "upload.mp4", data)
 
     # Insert recording row
     async with get_db(settings.db_path) as db:
-        await db.execute(
-            """INSERT INTO recordings(
-                recording_id, original_filename, upload_timestamp,
-                recording_datetime, recording_timezone, video_path,
-                processing_status, frame_count, camera_name, camera_location,
-                created_at, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                recording_id, file.filename, now,
-                recording_datetime, recording_timezone, video_rel_path,
-                ProcessingStatus.PENDING.value, 0,
-                camera_name, camera_location,
-                now, now,
-            ),
-        )
+        try:
+            await db.execute(
+                """INSERT INTO recordings(
+                    recording_id, original_filename, upload_timestamp,
+                    recording_datetime, recording_timezone, video_path,
+                    processing_status, frame_count, camera_name, camera_location,
+                    created_at, updated_at, file_size_bytes, content_hash
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    recording_id, file.filename, now,
+                    recording_datetime, recording_timezone, video_rel_path,
+                    ProcessingStatus.PENDING.value, 0,
+                    camera_name, camera_location,
+                    now, now, len(data), file_hash,
+                ),
+            )
+        except Exception:
+            # Older database without the Phase 6 column.
+            await db.execute(
+                """INSERT INTO recordings(
+                    recording_id, original_filename, upload_timestamp,
+                    recording_datetime, recording_timezone, video_path,
+                    processing_status, frame_count, camera_name, camera_location,
+                    created_at, updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    recording_id, file.filename, now,
+                    recording_datetime, recording_timezone, video_rel_path,
+                    ProcessingStatus.PENDING.value, 0,
+                    camera_name, camera_location,
+                    now, now,
+                ),
+            )
         await db.commit()
 
     # Start background indexing
@@ -194,9 +274,14 @@ async def get_recording(recording_id: str):
     )
 
 
-@router.delete("/{recording_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{recording_id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_api_token)])
 async def delete_recording(recording_id: str):
-    """Delete a recording, its frames, thumbnail, and observations."""
+    """Delete a recording, its frames, thumbnail, and observations.
+
+    Content-hash-keyed model analyses in frame_cache are retained per the
+    frame-cache retention policy (see prune_frame_cache).
+    """
     settings = get_settings()
     storage = get_storage()
     await create_tables(settings.db_path)

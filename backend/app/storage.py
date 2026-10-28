@@ -4,6 +4,7 @@ import re
 import os
 import uuid
 from pathlib import Path
+from typing import Optional
 import aiofiles
 import aiofiles.os
 
@@ -31,6 +32,32 @@ def validate_video_extension(filename: str) -> str:
     if ext not in ALLOWED_VIDEO_EXTENSIONS:
         raise ValueError(f"Extension {ext!r} not allowed. Allowed: {ALLOWED_VIDEO_EXTENSIONS}")
     return ext
+
+
+def sniff_video_container(data: bytes) -> Optional[str]:
+    """Identify a video container from magic bytes, or reject clear non-video.
+
+    Returns 'mp4' (covers .mp4/.mov), 'avi', 'mkv' (covers .mkv/.webm), or
+    None when the bytes are unrecognized (allowed — the decoder decides).
+    Raises ValueError only when the content is clearly not video (text, HTML,
+    JSON, PDF, still images), so mislabeled uploads fail fast at the edge.
+    """
+    head = bytes(data[:12])
+    if len(head) < 8:
+        return None
+    if head[4:8] == b"ftyp":
+        return "mp4"
+    if head[:4] == b"RIFF" and head[8:12] == b"AVI ":
+        return "avi"
+    if head[:4] == b"\x1a\x45\xdf\xa3":
+        return "mkv"
+    _NON_VIDEO_PREFIXES = (
+        b"{", b"[", b"<", b"%PDF", b"GIF8", b"\x89PNG", b"\xff\xd8\xff",
+        b"BM", b"%!", b"MZ",
+    )
+    if head.startswith(_NON_VIDEO_PREFIXES):
+        raise ValueError("File content does not look like a video file.")
+    return None
 
 class StorageBackend(abc.ABC):
     @abc.abstractmethod
@@ -70,7 +97,13 @@ class LocalStorageBackend(StorageBackend):
             raise ValueError(f"Invalid recording_id: {recording_id!r}")
         return self.frames_dir / recording_id
 
+    @staticmethod
+    def _validate_recording_id(recording_id: str) -> None:
+        if not re.match(r'^[0-9a-fA-F\-]{36}$', recording_id or ""):
+            raise ValueError(f"Invalid recording_id: {recording_id!r}")
+
     async def save_video(self, recording_id: str, filename: str, data: bytes) -> str:
+        self._validate_recording_id(recording_id)
         safe = sanitize_filename(filename)
         ext = validate_video_extension(safe)
         dest = self.videos_dir / f"{recording_id}{ext}"
@@ -88,22 +121,31 @@ class LocalStorageBackend(StorageBackend):
         return str(dest.relative_to(self.data_dir))
 
     async def save_thumbnail(self, recording_id: str, data: bytes) -> str:
+        self._validate_recording_id(recording_id)
         dest = self.thumbnails_dir / f"{recording_id}.jpg"
         async with aiofiles.open(dest, 'wb') as f:
             await f.write(data)
         return str(dest.relative_to(self.data_dir))
 
-    async def get_video_path(self, relative_path: str) -> Path:
+    def _resolve_within_data_dir(self, relative_path: str) -> Path:
+        # Phase 6: is_relative_to instead of str.startswith — the prefix
+        # check wrongly allowed siblings such as "<data_dir>_evil/...".
+        # Empty paths and the base directory itself are rejected too.
+        if not relative_path or not str(relative_path).strip():
+            raise ValueError("Path traversal detected: empty path")
+        base = self.data_dir.resolve()
         p = (self.data_dir / relative_path).resolve()
-        if not str(p).startswith(str(self.data_dir.resolve())):
+        if p != base and not p.is_relative_to(base):
+            raise ValueError("Path traversal detected")
+        if p == base:
             raise ValueError("Path traversal detected")
         return p
 
+    async def get_video_path(self, relative_path: str) -> Path:
+        return self._resolve_within_data_dir(relative_path)
+
     async def get_frame_path(self, relative_path: str) -> Path:
-        p = (self.data_dir / relative_path).resolve()
-        if not str(p).startswith(str(self.data_dir.resolve())):
-            raise ValueError("Path traversal detected")
-        return p
+        return self._resolve_within_data_dir(relative_path)
 
     async def delete_video(self, relative_path: str) -> None:
         p = await self.get_video_path(relative_path)
@@ -117,7 +159,8 @@ class LocalStorageBackend(StorageBackend):
             shutil.rmtree(frame_dir)
 
     async def delete_thumbnail(self, relative_path: str) -> None:
-        p = (self.data_dir / relative_path).resolve()
+        # Phase 6: traversal check added (previously resolved + unlinked raw).
+        p = self._resolve_within_data_dir(relative_path)
         if p.exists():
             p.unlink()
 

@@ -22,6 +22,26 @@ from .provider import AccountedFrameAnalyzer, BudgetExceededError
 logger = logging.getLogger(__name__)
 
 # Frame extraction
+def _ffmpeg_timeout_s() -> float:
+    try:
+        from .config import get_settings
+        return get_settings().ffmpeg_timeout_s
+    except Exception:
+        return 300.0
+
+
+async def _communicate_with_timeout(proc, timeout_s: float, what: str):
+    """Wait for a decoder subprocess with a kill-on-timeout guard (Phase 6)."""
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        raise RuntimeError(f"{what} timed out after {timeout_s:.0f}s")
+
+
 async def extract_frames(
     video_path: Path,
     output_dir: Path,
@@ -49,7 +69,8 @@ async def extract_frames(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, stderr = await proc.communicate()
+    _, stderr = await _communicate_with_timeout(
+        proc, _ffmpeg_timeout_s(), "ffmpeg frame extraction")
 
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {stderr.decode()[:500]}")
@@ -76,11 +97,97 @@ async def get_video_duration(video_path: Path) -> Optional[float]:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        out, _ = await proc.communicate()
+        out, _ = await asyncio.wait_for(
+            proc.communicate(), timeout=min(_ffmpeg_timeout_s(), 60.0))
         info = json.loads(out)
         return float(info['format']['duration'])
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except (ProcessLookupError, NameError):
+            pass
+        return None
     except Exception:
         return None
+
+
+# Phase 6: cache keys are (content_hash, model_version, prompt_version) so
+# cached analyses can never be reused across incompatible prompts/models.
+# Bumped to "2" for the Phase 4 prompt rewrite; v1 rows simply never hit.
+PROMPT_VERSION = "2"
+LEGACY_PROMPT_VERSION = "1"
+
+
+async def get_cached_analysis(
+    db,
+    content_hash: str,
+    model_version: str,
+    prompt_version: str = PROMPT_VERSION,
+) -> Optional[dict]:
+    """Fetch a cached analysis scoped to content+model+prompt. None on miss.
+
+    Tolerates pre-Phase-6 databases without the prompt_version column.
+    """
+    try:
+        row = await (await db.execute(
+            "SELECT analysis_result FROM frame_cache "
+            "WHERE content_hash=? AND model_version=? AND prompt_version=?",
+            (content_hash, model_version, prompt_version)
+        )).fetchone()
+    except Exception:
+        row = await (await db.execute(
+            "SELECT analysis_result FROM frame_cache "
+            "WHERE content_hash=? AND model_version=?",
+            (content_hash, model_version)
+        )).fetchone()
+    if row:
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return None
+    return None
+
+
+async def store_cached_analysis(
+    db,
+    content_hash: str,
+    model_version: str,
+    analysis: dict,
+    prompt_version: str = PROMPT_VERSION,
+) -> None:
+    """Store an analysis under the versioned cache key (with legacy fallback)."""
+    try:
+        await db.execute(
+            "INSERT OR REPLACE INTO frame_cache("
+            "content_hash, model_version, prompt_version, analysis_result, created_at"
+            ") VALUES(?,?,?,?,?)",
+            (content_hash, model_version, prompt_version,
+             json.dumps(analysis), _now())
+        )
+    except Exception:
+        await db.execute(
+            "INSERT OR REPLACE INTO frame_cache("
+            "content_hash, model_version, analysis_result, created_at"
+            ") VALUES(?,?,?,?)",
+            (content_hash, model_version, json.dumps(analysis), _now())
+        )
+
+
+async def prune_frame_cache(db_path: str, retention_days: int) -> int:
+    """Delete cache rows older than retention_days. Returns rows deleted.
+
+    retention_days <= 0 keeps everything. Analyses contain model output only
+    (no credentials); callers decide policy via frame_cache_retention_days.
+    """
+    if retention_days <= 0:
+        return 0
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    async with get_db(db_path) as db:
+        cursor = await db.execute(
+            "DELETE FROM frame_cache WHERE created_at < ?", (cutoff,))
+        await db.commit()
+        return cursor.rowcount if cursor.rowcount is not None else 0
 
 
 async def process_recording(
@@ -136,6 +243,7 @@ async def process_recording(
         frames = await extract_frames(video_path, tmp_dir, fps=fps, max_frames=max_frames)
 
         api_calls = 0
+        cache_hits = 0
         for (ts, frame_path) in frames:
             async with aiofiles.open(frame_path, 'rb') as f:
                 frame_data = await f.read()
@@ -143,15 +251,13 @@ async def process_recording(
             content_hash = compute_content_hash(frame_data)
             model_version = meta_client.model_version
 
-            # Check cache
+            # Check cache (content + model + prompt scoped)
             cached_analysis = None
             async with get_db(db_path) as db:
-                cache_row = await (await db.execute(
-                    "SELECT analysis_result FROM frame_cache WHERE content_hash=? AND model_version=?",
-                    (content_hash, model_version)
-                )).fetchone()
-                if cache_row:
-                    cached_analysis = json.loads(cache_row[0])
+                cached_analysis = await get_cached_analysis(
+                    db, content_hash, model_version)
+            if cached_analysis is not None:
+                cache_hits += 1
 
             if cached_analysis is None and api_calls < max_api_calls:
                 try:
@@ -159,10 +265,8 @@ async def process_recording(
                     api_calls += 1
                     # Store in cache
                     async with get_db(db_path) as db:
-                        await db.execute(
-                            "INSERT OR REPLACE INTO frame_cache(content_hash, model_version, analysis_result, created_at) VALUES(?,?,?,?)",
-                            (content_hash, model_version, json.dumps(cached_analysis), _now())
-                        )
+                        await store_cached_analysis(
+                            db, content_hash, model_version, cached_analysis)
                         await db.commit()
                 except BudgetExceededError as e:
                     errors.append(f"Budget limit reached at frame {ts:.1f}s: {str(e)[:200]}")
@@ -238,7 +342,8 @@ async def process_recording(
                    WHERE recording_id=?""",
                 (
                     status.value, frame_count, json.dumps(errors),
-                    f"Indexed {frame_count} frames, {api_calls} API calls",
+                    f"Indexed {frame_count} frames, {api_calls} API calls, "
+                    f"{cache_hits} cache hits",
                     _now(), recording_id
                 )
             )
@@ -302,10 +407,29 @@ def _parse_observations(
       "scene_summary": "Kitchen with wooden furniture"
     }
     """
+    if not isinstance(analysis, dict):
+        return []
     objects = analysis.get('objects', [])
+    if not isinstance(objects, list):
+        return []
     result = []
     for obj in objects:
+        # Phase 4: harden against malformed model responses — skip unusable
+        # entries, coerce and clamp the rest. Never crash the pipeline.
+        if not isinstance(obj, dict):
+            continue
         attrs = obj.get('attributes', {})
+        if not isinstance(attrs, dict):
+            attrs = {}
+        try:
+            confidence = float(obj.get('confidence', 0.5))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        confidence = max(0.0, min(1.0, confidence))
+        label = obj.get('label', 'unknown')
+        label = str(label)[:500] if label is not None else 'unknown'
+        scene = obj.get('scene_description') or analysis.get('scene_summary')
+        scene = str(scene)[:2000] if scene is not None else None
         result.append({
             'observation_id': str(uuid.uuid4()),
             'recording_id': recording_id,
@@ -313,11 +437,11 @@ def _parse_observations(
             'video_timestamp_seconds': video_timestamp_seconds,
             'recording_datetime': recording_datetime,
             'recording_timezone': recording_timezone,
-            'object_label': obj.get('label', 'unknown'),
-            'object_attributes': attrs if isinstance(attrs, dict) else {},
-            'scene_description': obj.get('scene_description') or analysis.get('scene_summary'),
+            'object_label': label or 'unknown',
+            'object_attributes': attrs,
+            'scene_description': scene,
             'source_frame_path': source_frame_path,
-            'detection_score': float(obj.get('confidence', 0.5)),
+            'detection_score': confidence,
             'model_version': model_version,
             'index_version': '1',
             'content_hash': content_hash,

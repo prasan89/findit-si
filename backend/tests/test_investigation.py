@@ -197,7 +197,8 @@ class TestBuildEvent:
         assert "after" in roles
 
     def test_absolute_timestamp_computed(self):
-        obs = [self._obs(60.0)]
+        # Phase 4: two confirming frames (single-frame groups are dropped).
+        obs = [self._obs(60.0), self._obs(61.0)]
         ev = _build_event(
             group=obs,
             recording_id=RECORDING_ID_1,
@@ -207,7 +208,7 @@ class TestBuildEvent:
             camera_name=None,
             camera_location=None,
             all_frame_paths_by_ts=self._all_paths(obs),
-            sorted_timestamps=[60.0],
+            sorted_timestamps=[60.0, 61.0],
         )
         assert ev["has_reliable_timestamp"] is True
         assert ev["timestamp_absolute"] is not None
@@ -215,7 +216,7 @@ class TestBuildEvent:
         assert "10:01" in ev["timestamp_absolute"]
 
     def test_no_recording_datetime_flags_uncertainty(self):
-        obs = [self._obs(10.0)]
+        obs = [self._obs(10.0), self._obs(11.0)]
         for o in obs:
             o["recording_datetime"] = None
         ev = _build_event(
@@ -248,7 +249,8 @@ class TestBuildEvent:
         assert ev is None
 
     def test_observed_facts_not_inferred(self):
-        obs = [self._obs(10.0, label="blue backpack")]
+        obs = [self._obs(10.0, label="blue backpack"),
+               self._obs(11.0, label="blue backpack")]
         ev = _build_event(
             group=obs,
             recording_id=RECORDING_ID_1,
@@ -288,12 +290,14 @@ class TestExtractEventsForRecording:
 
     async def test_events_stored_in_db(self, test_db, db_path):
         await insert_recording(test_db, RECORDING_ID_1)
-        await insert_observation(
-            test_db, RECORDING_ID_1,
-            object_label="red bag",
-            video_timestamp_seconds=10.0,
-            source_frame_path="frames/r1/10.jpg",
-        )
+        # Phase 4: two confirming frames (single-frame groups are dropped).
+        for ts in (10.0, 11.0):
+            await insert_observation(
+                test_db, RECORDING_ID_1,
+                object_label="red bag",
+                video_timestamp_seconds=ts,
+                source_frame_path=f"frames/r1/{ts:.0f}.jpg",
+            )
         n = await extract_events_for_recording(RECORDING_ID_1, db_path)
         assert n >= 1
         async with get_db(db_path) as db:
@@ -306,15 +310,18 @@ class TestExtractEventsForRecording:
 
     async def test_idempotent_rerun(self, test_db, db_path):
         await insert_recording(test_db, RECORDING_ID_1)
-        await insert_observation(
-            test_db, RECORDING_ID_1,
-            object_label="person",
-            video_timestamp_seconds=10.0,
-            source_frame_path="frames/r1/10.jpg",
-        )
+        # Phase 4: two confirming frames (single-frame groups are dropped).
+        for ts in (10.0, 11.0):
+            await insert_observation(
+                test_db, RECORDING_ID_1,
+                object_label="person",
+                video_timestamp_seconds=ts,
+                source_frame_path=f"frames/r1/{ts:.0f}.jpg",
+            )
         n1 = await extract_events_for_recording(RECORDING_ID_1, db_path)
         n2 = await extract_events_for_recording(RECORDING_ID_1, db_path)
         assert n1 == n2
+        assert n1 >= 1
 
     async def test_source_frame_path_in_evidence(self, test_db, db_path):
         await insert_recording(test_db, RECORDING_ID_1)
@@ -323,6 +330,13 @@ class TestExtractEventsForRecording:
             object_label="car",
             video_timestamp_seconds=5.0,
             source_frame_path="frames/r1/5.jpg",
+        )
+        # Phase 4: second confirming frame (single-frame groups are dropped).
+        await insert_observation(
+            test_db, RECORDING_ID_1,
+            object_label="car",
+            video_timestamp_seconds=6.0,
+            source_frame_path="frames/r1/6.jpg",
         )
         await extract_events_for_recording(RECORDING_ID_1, db_path)
         async with get_db(db_path) as db:

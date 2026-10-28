@@ -1,0 +1,1311 @@
+{
+  "dataset": {
+    "dataset_id": "realitytrace-eval",
+    "version": "2.1.0",
+    "n_recordings": 3,
+    "n_recordings_synthetic": 3,
+    "n_recordings_real": 0,
+    "n_events": 3,
+    "n_queries": 11,
+    "queries_by_kind": {
+      "positive": 3,
+      "temporal": 6,
+      "negative": 1,
+      "ambiguous": 1
+    },
+    "n_cc_valid": 0,
+    "n_cc_invalid": 2,
+    "n_cc_ambiguous": 1
+  },
+  "code_revision": "01c156f",
+  "evaluation_timestamp": "2026-10-28T14:25:08Z",
+  "config": {
+    "repeats": 3,
+    "passes": [
+      "cold",
+      "warm_1",
+      "warm_2"
+    ],
+    "llm_mode": "mocked (no API keys; 0 live calls, $0)",
+    "transport": "in-process ASGI (no network)"
+  },
+  "summary": {
+    "standard": {
+      "cold": {
+        "latency": {
+          "n": 11,
+          "min_ms": 8.39,
+          "median_ms": 8.76,
+          "max_ms": 14.72,
+          "p95_ms": null,
+          "p95_note": "n<20: p95 not meaningful"
+        },
+        "cache_hits": 0,
+        "n_queries": 11,
+        "llm_calls_new": 0,
+        "llm_calls_avoided": 0
+      },
+      "warm_1": {
+        "latency": {
+          "n": 11,
+          "min_ms": 5.27,
+          "median_ms": 5.57,
+          "max_ms": 6.2,
+          "p95_ms": null,
+          "p95_note": "n<20: p95 not meaningful"
+        },
+        "cache_hits": 11,
+        "n_queries": 11,
+        "llm_calls_new": 0,
+        "llm_calls_avoided": 0
+      },
+      "warm_2": {
+        "latency": {
+          "n": 11,
+          "min_ms": 5.21,
+          "median_ms": 5.57,
+          "max_ms": 6.5,
+          "p95_ms": null,
+          "p95_note": "n<20: p95 not meaningful"
+        },
+        "cache_hits": 11,
+        "n_queries": 11,
+        "llm_calls_new": 0,
+        "llm_calls_avoided": 0
+      }
+    },
+    "multi_agent": {
+      "cold": {
+        "latency": {
+          "n": 11,
+          "min_ms": 29.49,
+          "median_ms": 30.75,
+          "max_ms": 36.45,
+          "p95_ms": null,
+          "p95_note": "n<20: p95 not meaningful"
+        },
+        "cache_hits": 0,
+        "n_queries": 11,
+        "llm_calls_new": 27,
+        "llm_calls_avoided": 0
+      },
+      "warm_1": {
+        "latency": {
+          "n": 11,
+          "min_ms": 5.45,
+          "median_ms": 5.88,
+          "max_ms": 6.71,
+          "p95_ms": null,
+          "p95_note": "n<20: p95 not meaningful"
+        },
+        "cache_hits": 11,
+        "n_queries": 11,
+        "llm_calls_new": 0,
+        "llm_calls_avoided": 27
+      },
+      "warm_2": {
+        "latency": {
+          "n": 11,
+          "min_ms": 5.47,
+          "median_ms": 6.05,
+          "max_ms": 6.23,
+          "p95_ms": null,
+          "p95_note": "n<20: p95 not meaningful"
+        },
+        "cache_hits": 11,
+        "n_queries": 11,
+        "llm_calls_new": 0,
+        "llm_calls_avoided": 27
+      }
+    }
+  },
+  "agent_duration_median_ms_cold": {
+    "ContradictionHunterAgent": 0.03,
+    "CrossCameraCorrelationAgent": 0.0,
+    "EvidenceAuditorAgent": 0.0,
+    "ObjectActionAnalystAgent": 0.03,
+    "QueryInvestigationAgent": 2.21,
+    "ReportSynthesisAgent": 0.02,
+    "TemporalReasoningAgent": 0.01,
+    "VideoIntelligenceAgent": 0.09
+  },
+  "passes": {
+    "cold": {
+      "standard": {
+        "Q1": {
+          "status_code": 200,
+          "latency_ms": 14.72,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q2": {
+          "status_code": 200,
+          "latency_ms": 8.76,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q3": {
+          "status_code": 200,
+          "latency_ms": 8.82,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q4": {
+          "status_code": 200,
+          "latency_ms": 8.64,
+          "cache_hit": false,
+          "n_events": 3,
+          "llm_calls": 0
+        },
+        "Q5": {
+          "status_code": 200,
+          "latency_ms": 9.24,
+          "cache_hit": false,
+          "n_events": 0,
+          "llm_calls": 0
+        },
+        "Q6": {
+          "status_code": 200,
+          "latency_ms": 8.76,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q7": {
+          "status_code": 200,
+          "latency_ms": 8.39,
+          "cache_hit": false,
+          "n_events": 2,
+          "llm_calls": 0
+        },
+        "Q8": {
+          "status_code": 200,
+          "latency_ms": 8.59,
+          "cache_hit": false,
+          "n_events": 0,
+          "llm_calls": 0
+        },
+        "Q9": {
+          "status_code": 200,
+          "latency_ms": 8.4,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q10": {
+          "status_code": 200,
+          "latency_ms": 8.94,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q11": {
+          "status_code": 200,
+          "latency_ms": 8.63,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 0
+        }
+      },
+      "multi_agent": {
+        "Q1": {
+          "status_code": 200,
+          "latency_ms": 36.45,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.4039999989327043,
+            "VideoIntelligenceAgent": 0.08154199895216152,
+            "ObjectActionAnalystAgent": 0.03708300209837034,
+            "TemporalReasoningAgent": 0.008583003364037722,
+            "CrossCameraCorrelationAgent": 0.00316700607072562,
+            "ContradictionHunterAgent": 0.03470799856586382,
+            "EvidenceAuditorAgent": 0.003291999746579677,
+            "ReportSynthesisAgent": 0.016375000996049494
+          },
+          "orchestrator_ms": 7.4
+        },
+        "Q2": {
+          "status_code": 200,
+          "latency_ms": 32.26,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.248208998935297,
+            "VideoIntelligenceAgent": 0.09520899766357616,
+            "ObjectActionAnalystAgent": 0.03995800216216594,
+            "TemporalReasoningAgent": 0.007916998583823442,
+            "CrossCameraCorrelationAgent": 0.005500005499925464,
+            "ContradictionHunterAgent": 0.04983400140190497,
+            "EvidenceAuditorAgent": 0.004125002305954695,
+            "ReportSynthesisAgent": 0.01966700074262917
+          },
+          "orchestrator_ms": 4.3
+        },
+        "Q3": {
+          "status_code": 200,
+          "latency_ms": 31.15,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.1857089959667064,
+            "VideoIntelligenceAgent": 0.09804199362406507,
+            "ObjectActionAnalystAgent": 0.04529200668912381,
+            "TemporalReasoningAgent": 0.008500006515532732,
+            "CrossCameraCorrelationAgent": 0.0028329959604889154,
+            "ContradictionHunterAgent": 0.028542002837639302,
+            "EvidenceAuditorAgent": 0.0036670026020146906,
+            "ReportSynthesisAgent": 0.01575000351294875
+          },
+          "orchestrator_ms": 4.3
+        },
+        "Q4": {
+          "status_code": 200,
+          "latency_ms": 32.1,
+          "cache_hit": false,
+          "n_events": 3,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.044749999186024,
+            "VideoIntelligenceAgent": 0.08504099969286472,
+            "ObjectActionAnalystAgent": 0.03670799924293533,
+            "TemporalReasoningAgent": 0.014375000318977982,
+            "CrossCameraCorrelationAgent": 0.0024999972083605826,
+            "ContradictionHunterAgent": 0.03737500082934275,
+            "EvidenceAuditorAgent": 0.006375004886649549,
+            "ReportSynthesisAgent": 0.019499995687510818
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q5": {
+          "status_code": 200,
+          "latency_ms": 30.67,
+          "cache_hit": false,
+          "n_events": 0,
+          "llm_calls": 0,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "skipped",
+            "ObjectActionAnalystAgent": "skipped",
+            "TemporalReasoningAgent": "skipped",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "skipped",
+            "EvidenceAuditorAgent": "skipped",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.3904159970697947,
+            "VideoIntelligenceAgent": 0.0,
+            "ObjectActionAnalystAgent": 0.0,
+            "TemporalReasoningAgent": 0.0,
+            "CrossCameraCorrelationAgent": 0.002959000994451344,
+            "ContradictionHunterAgent": 0.0,
+            "EvidenceAuditorAgent": 0.0,
+            "ReportSynthesisAgent": 0.010124997061211616
+          },
+          "orchestrator_ms": 4.3
+        },
+        "Q6": {
+          "status_code": 200,
+          "latency_ms": 29.84,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.1136250070412643,
+            "VideoIntelligenceAgent": 0.08625000191386789,
+            "ObjectActionAnalystAgent": 0.03312499757157639,
+            "TemporalReasoningAgent": 0.007333001121878624,
+            "CrossCameraCorrelationAgent": 0.002583001332823187,
+            "ContradictionHunterAgent": 0.027417001547291875,
+            "EvidenceAuditorAgent": 0.0034580007195472717,
+            "ReportSynthesisAgent": 0.017708000086713582
+          },
+          "orchestrator_ms": 4.0
+        },
+        "Q7": {
+          "status_code": 200,
+          "latency_ms": 32.13,
+          "cache_hit": false,
+          "n_events": 2,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.209875005064532,
+            "VideoIntelligenceAgent": 0.08762500510783866,
+            "ObjectActionAnalystAgent": 0.037750003684777766,
+            "TemporalReasoningAgent": 0.010374998964834958,
+            "CrossCameraCorrelationAgent": 0.0024170003598555923,
+            "ContradictionHunterAgent": 0.034083001082763076,
+            "EvidenceAuditorAgent": 0.0035420016502030194,
+            "ReportSynthesisAgent": 0.016707999748177826
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q8": {
+          "status_code": 200,
+          "latency_ms": 30.25,
+          "cache_hit": false,
+          "n_events": 0,
+          "llm_calls": 0,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "skipped",
+            "ObjectActionAnalystAgent": "skipped",
+            "TemporalReasoningAgent": "skipped",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "skipped",
+            "EvidenceAuditorAgent": "skipped",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.2184999979799613,
+            "VideoIntelligenceAgent": 0.0,
+            "ObjectActionAnalystAgent": 0.0,
+            "TemporalReasoningAgent": 0.0,
+            "CrossCameraCorrelationAgent": 0.0028330032364465296,
+            "ContradictionHunterAgent": 0.0,
+            "EvidenceAuditorAgent": 0.0,
+            "ReportSynthesisAgent": 0.00895900302566588
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q9": {
+          "status_code": 200,
+          "latency_ms": 29.49,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.0331660052761436,
+            "VideoIntelligenceAgent": 0.0857499981066212,
+            "ObjectActionAnalystAgent": 0.034167002013418823,
+            "TemporalReasoningAgent": 0.007458998879883438,
+            "CrossCameraCorrelationAgent": 0.002583001332823187,
+            "ContradictionHunterAgent": 0.03149999974993989,
+            "EvidenceAuditorAgent": 0.003334003849886358,
+            "ReportSynthesisAgent": 0.01341600000159815
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q10": {
+          "status_code": 200,
+          "latency_ms": 30.75,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.644000000145752,
+            "VideoIntelligenceAgent": 0.07883299986133352,
+            "ObjectActionAnalystAgent": 0.029999995604157448,
+            "TemporalReasoningAgent": 0.00687500141793862,
+            "CrossCameraCorrelationAgent": 0.002291999408043921,
+            "ContradictionHunterAgent": 0.028750000637955964,
+            "EvidenceAuditorAgent": 0.004875000740867108,
+            "ReportSynthesisAgent": 0.013666998711414635
+          },
+          "orchestrator_ms": 4.7
+        },
+        "Q11": {
+          "status_code": 200,
+          "latency_ms": 29.76,
+          "cache_hit": false,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 1.9980419965577312,
+            "VideoIntelligenceAgent": 0.07837500015739352,
+            "ObjectActionAnalystAgent": 0.03149999974993989,
+            "TemporalReasoningAgent": 0.00687500141793862,
+            "CrossCameraCorrelationAgent": 0.002749999111983925,
+            "ContradictionHunterAgent": 0.02600000152597204,
+            "EvidenceAuditorAgent": 0.0030420051189139485,
+            "ReportSynthesisAgent": 0.013125005352776498
+          },
+          "orchestrator_ms": 3.9
+        }
+      }
+    },
+    "warm_1": {
+      "standard": {
+        "Q1": {
+          "status_code": 200,
+          "latency_ms": 5.54,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q2": {
+          "status_code": 200,
+          "latency_ms": 5.44,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q3": {
+          "status_code": 200,
+          "latency_ms": 5.68,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q4": {
+          "status_code": 200,
+          "latency_ms": 5.44,
+          "cache_hit": true,
+          "n_events": 3,
+          "llm_calls": 0
+        },
+        "Q5": {
+          "status_code": 200,
+          "latency_ms": 5.27,
+          "cache_hit": true,
+          "n_events": 0,
+          "llm_calls": 0
+        },
+        "Q6": {
+          "status_code": 200,
+          "latency_ms": 5.44,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q7": {
+          "status_code": 200,
+          "latency_ms": 5.81,
+          "cache_hit": true,
+          "n_events": 2,
+          "llm_calls": 0
+        },
+        "Q8": {
+          "status_code": 200,
+          "latency_ms": 5.81,
+          "cache_hit": true,
+          "n_events": 0,
+          "llm_calls": 0
+        },
+        "Q9": {
+          "status_code": 200,
+          "latency_ms": 5.58,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q10": {
+          "status_code": 200,
+          "latency_ms": 5.57,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q11": {
+          "status_code": 200,
+          "latency_ms": 6.2,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        }
+      },
+      "multi_agent": {
+        "Q1": {
+          "status_code": 200,
+          "latency_ms": 5.88,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.4039999989327043,
+            "VideoIntelligenceAgent": 0.08154199895216152,
+            "ObjectActionAnalystAgent": 0.03708300209837034,
+            "TemporalReasoningAgent": 0.008583003364037722,
+            "CrossCameraCorrelationAgent": 0.00316700607072562,
+            "ContradictionHunterAgent": 0.03470799856586382,
+            "EvidenceAuditorAgent": 0.003291999746579677,
+            "ReportSynthesisAgent": 0.016375000996049494
+          },
+          "orchestrator_ms": 7.4
+        },
+        "Q2": {
+          "status_code": 200,
+          "latency_ms": 6.71,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.248208998935297,
+            "VideoIntelligenceAgent": 0.09520899766357616,
+            "ObjectActionAnalystAgent": 0.03995800216216594,
+            "TemporalReasoningAgent": 0.007916998583823442,
+            "CrossCameraCorrelationAgent": 0.005500005499925464,
+            "ContradictionHunterAgent": 0.04983400140190497,
+            "EvidenceAuditorAgent": 0.004125002305954695,
+            "ReportSynthesisAgent": 0.01966700074262917
+          },
+          "orchestrator_ms": 4.3
+        },
+        "Q3": {
+          "status_code": 200,
+          "latency_ms": 6.41,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.1857089959667064,
+            "VideoIntelligenceAgent": 0.09804199362406507,
+            "ObjectActionAnalystAgent": 0.04529200668912381,
+            "TemporalReasoningAgent": 0.008500006515532732,
+            "CrossCameraCorrelationAgent": 0.0028329959604889154,
+            "ContradictionHunterAgent": 0.028542002837639302,
+            "EvidenceAuditorAgent": 0.0036670026020146906,
+            "ReportSynthesisAgent": 0.01575000351294875
+          },
+          "orchestrator_ms": 4.3
+        },
+        "Q4": {
+          "status_code": 200,
+          "latency_ms": 6.3,
+          "cache_hit": true,
+          "n_events": 3,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.044749999186024,
+            "VideoIntelligenceAgent": 0.08504099969286472,
+            "ObjectActionAnalystAgent": 0.03670799924293533,
+            "TemporalReasoningAgent": 0.014375000318977982,
+            "CrossCameraCorrelationAgent": 0.0024999972083605826,
+            "ContradictionHunterAgent": 0.03737500082934275,
+            "EvidenceAuditorAgent": 0.006375004886649549,
+            "ReportSynthesisAgent": 0.019499995687510818
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q5": {
+          "status_code": 200,
+          "latency_ms": 5.91,
+          "cache_hit": true,
+          "n_events": 0,
+          "llm_calls": 0,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "skipped",
+            "ObjectActionAnalystAgent": "skipped",
+            "TemporalReasoningAgent": "skipped",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "skipped",
+            "EvidenceAuditorAgent": "skipped",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.3904159970697947,
+            "VideoIntelligenceAgent": 0.0,
+            "ObjectActionAnalystAgent": 0.0,
+            "TemporalReasoningAgent": 0.0,
+            "CrossCameraCorrelationAgent": 0.002959000994451344,
+            "ContradictionHunterAgent": 0.0,
+            "EvidenceAuditorAgent": 0.0,
+            "ReportSynthesisAgent": 0.010124997061211616
+          },
+          "orchestrator_ms": 4.3
+        },
+        "Q6": {
+          "status_code": 200,
+          "latency_ms": 6.39,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.1136250070412643,
+            "VideoIntelligenceAgent": 0.08625000191386789,
+            "ObjectActionAnalystAgent": 0.03312499757157639,
+            "TemporalReasoningAgent": 0.007333001121878624,
+            "CrossCameraCorrelationAgent": 0.002583001332823187,
+            "ContradictionHunterAgent": 0.027417001547291875,
+            "EvidenceAuditorAgent": 0.0034580007195472717,
+            "ReportSynthesisAgent": 0.017708000086713582
+          },
+          "orchestrator_ms": 4.0
+        },
+        "Q7": {
+          "status_code": 200,
+          "latency_ms": 5.71,
+          "cache_hit": true,
+          "n_events": 2,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.209875005064532,
+            "VideoIntelligenceAgent": 0.08762500510783866,
+            "ObjectActionAnalystAgent": 0.037750003684777766,
+            "TemporalReasoningAgent": 0.010374998964834958,
+            "CrossCameraCorrelationAgent": 0.0024170003598555923,
+            "ContradictionHunterAgent": 0.034083001082763076,
+            "EvidenceAuditorAgent": 0.0035420016502030194,
+            "ReportSynthesisAgent": 0.016707999748177826
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q8": {
+          "status_code": 200,
+          "latency_ms": 5.52,
+          "cache_hit": true,
+          "n_events": 0,
+          "llm_calls": 0,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "skipped",
+            "ObjectActionAnalystAgent": "skipped",
+            "TemporalReasoningAgent": "skipped",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "skipped",
+            "EvidenceAuditorAgent": "skipped",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.2184999979799613,
+            "VideoIntelligenceAgent": 0.0,
+            "ObjectActionAnalystAgent": 0.0,
+            "TemporalReasoningAgent": 0.0,
+            "CrossCameraCorrelationAgent": 0.0028330032364465296,
+            "ContradictionHunterAgent": 0.0,
+            "EvidenceAuditorAgent": 0.0,
+            "ReportSynthesisAgent": 0.00895900302566588
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q9": {
+          "status_code": 200,
+          "latency_ms": 5.45,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.0331660052761436,
+            "VideoIntelligenceAgent": 0.0857499981066212,
+            "ObjectActionAnalystAgent": 0.034167002013418823,
+            "TemporalReasoningAgent": 0.007458998879883438,
+            "CrossCameraCorrelationAgent": 0.002583001332823187,
+            "ContradictionHunterAgent": 0.03149999974993989,
+            "EvidenceAuditorAgent": 0.003334003849886358,
+            "ReportSynthesisAgent": 0.01341600000159815
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q10": {
+          "status_code": 200,
+          "latency_ms": 5.64,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.644000000145752,
+            "VideoIntelligenceAgent": 0.07883299986133352,
+            "ObjectActionAnalystAgent": 0.029999995604157448,
+            "TemporalReasoningAgent": 0.00687500141793862,
+            "CrossCameraCorrelationAgent": 0.002291999408043921,
+            "ContradictionHunterAgent": 0.028750000637955964,
+            "EvidenceAuditorAgent": 0.004875000740867108,
+            "ReportSynthesisAgent": 0.013666998711414635
+          },
+          "orchestrator_ms": 4.7
+        },
+        "Q11": {
+          "status_code": 200,
+          "latency_ms": 5.85,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 1.9980419965577312,
+            "VideoIntelligenceAgent": 0.07837500015739352,
+            "ObjectActionAnalystAgent": 0.03149999974993989,
+            "TemporalReasoningAgent": 0.00687500141793862,
+            "CrossCameraCorrelationAgent": 0.002749999111983925,
+            "ContradictionHunterAgent": 0.02600000152597204,
+            "EvidenceAuditorAgent": 0.0030420051189139485,
+            "ReportSynthesisAgent": 0.013125005352776498
+          },
+          "orchestrator_ms": 3.9
+        }
+      }
+    },
+    "warm_2": {
+      "standard": {
+        "Q1": {
+          "status_code": 200,
+          "latency_ms": 5.88,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q2": {
+          "status_code": 200,
+          "latency_ms": 5.29,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q3": {
+          "status_code": 200,
+          "latency_ms": 5.4,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q4": {
+          "status_code": 200,
+          "latency_ms": 5.33,
+          "cache_hit": true,
+          "n_events": 3,
+          "llm_calls": 0
+        },
+        "Q5": {
+          "status_code": 200,
+          "latency_ms": 5.34,
+          "cache_hit": true,
+          "n_events": 0,
+          "llm_calls": 0
+        },
+        "Q6": {
+          "status_code": 200,
+          "latency_ms": 6.06,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q7": {
+          "status_code": 200,
+          "latency_ms": 5.57,
+          "cache_hit": true,
+          "n_events": 2,
+          "llm_calls": 0
+        },
+        "Q8": {
+          "status_code": 200,
+          "latency_ms": 6.01,
+          "cache_hit": true,
+          "n_events": 0,
+          "llm_calls": 0
+        },
+        "Q9": {
+          "status_code": 200,
+          "latency_ms": 6.15,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q10": {
+          "status_code": 200,
+          "latency_ms": 6.5,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        },
+        "Q11": {
+          "status_code": 200,
+          "latency_ms": 5.21,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 0
+        }
+      },
+      "multi_agent": {
+        "Q1": {
+          "status_code": 200,
+          "latency_ms": 6.14,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.4039999989327043,
+            "VideoIntelligenceAgent": 0.08154199895216152,
+            "ObjectActionAnalystAgent": 0.03708300209837034,
+            "TemporalReasoningAgent": 0.008583003364037722,
+            "CrossCameraCorrelationAgent": 0.00316700607072562,
+            "ContradictionHunterAgent": 0.03470799856586382,
+            "EvidenceAuditorAgent": 0.003291999746579677,
+            "ReportSynthesisAgent": 0.016375000996049494
+          },
+          "orchestrator_ms": 7.4
+        },
+        "Q2": {
+          "status_code": 200,
+          "latency_ms": 6.17,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.248208998935297,
+            "VideoIntelligenceAgent": 0.09520899766357616,
+            "ObjectActionAnalystAgent": 0.03995800216216594,
+            "TemporalReasoningAgent": 0.007916998583823442,
+            "CrossCameraCorrelationAgent": 0.005500005499925464,
+            "ContradictionHunterAgent": 0.04983400140190497,
+            "EvidenceAuditorAgent": 0.004125002305954695,
+            "ReportSynthesisAgent": 0.01966700074262917
+          },
+          "orchestrator_ms": 4.3
+        },
+        "Q3": {
+          "status_code": 200,
+          "latency_ms": 6.15,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.1857089959667064,
+            "VideoIntelligenceAgent": 0.09804199362406507,
+            "ObjectActionAnalystAgent": 0.04529200668912381,
+            "TemporalReasoningAgent": 0.008500006515532732,
+            "CrossCameraCorrelationAgent": 0.0028329959604889154,
+            "ContradictionHunterAgent": 0.028542002837639302,
+            "EvidenceAuditorAgent": 0.0036670026020146906,
+            "ReportSynthesisAgent": 0.01575000351294875
+          },
+          "orchestrator_ms": 4.3
+        },
+        "Q4": {
+          "status_code": 200,
+          "latency_ms": 6.23,
+          "cache_hit": true,
+          "n_events": 3,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.044749999186024,
+            "VideoIntelligenceAgent": 0.08504099969286472,
+            "ObjectActionAnalystAgent": 0.03670799924293533,
+            "TemporalReasoningAgent": 0.014375000318977982,
+            "CrossCameraCorrelationAgent": 0.0024999972083605826,
+            "ContradictionHunterAgent": 0.03737500082934275,
+            "EvidenceAuditorAgent": 0.006375004886649549,
+            "ReportSynthesisAgent": 0.019499995687510818
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q5": {
+          "status_code": 200,
+          "latency_ms": 5.7,
+          "cache_hit": true,
+          "n_events": 0,
+          "llm_calls": 0,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "skipped",
+            "ObjectActionAnalystAgent": "skipped",
+            "TemporalReasoningAgent": "skipped",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "skipped",
+            "EvidenceAuditorAgent": "skipped",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.3904159970697947,
+            "VideoIntelligenceAgent": 0.0,
+            "ObjectActionAnalystAgent": 0.0,
+            "TemporalReasoningAgent": 0.0,
+            "CrossCameraCorrelationAgent": 0.002959000994451344,
+            "ContradictionHunterAgent": 0.0,
+            "EvidenceAuditorAgent": 0.0,
+            "ReportSynthesisAgent": 0.010124997061211616
+          },
+          "orchestrator_ms": 4.3
+        },
+        "Q6": {
+          "status_code": 200,
+          "latency_ms": 5.61,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.1136250070412643,
+            "VideoIntelligenceAgent": 0.08625000191386789,
+            "ObjectActionAnalystAgent": 0.03312499757157639,
+            "TemporalReasoningAgent": 0.007333001121878624,
+            "CrossCameraCorrelationAgent": 0.002583001332823187,
+            "ContradictionHunterAgent": 0.027417001547291875,
+            "EvidenceAuditorAgent": 0.0034580007195472717,
+            "ReportSynthesisAgent": 0.017708000086713582
+          },
+          "orchestrator_ms": 4.0
+        },
+        "Q7": {
+          "status_code": 200,
+          "latency_ms": 5.93,
+          "cache_hit": true,
+          "n_events": 2,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.209875005064532,
+            "VideoIntelligenceAgent": 0.08762500510783866,
+            "ObjectActionAnalystAgent": 0.037750003684777766,
+            "TemporalReasoningAgent": 0.010374998964834958,
+            "CrossCameraCorrelationAgent": 0.0024170003598555923,
+            "ContradictionHunterAgent": 0.034083001082763076,
+            "EvidenceAuditorAgent": 0.0035420016502030194,
+            "ReportSynthesisAgent": 0.016707999748177826
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q8": {
+          "status_code": 200,
+          "latency_ms": 5.47,
+          "cache_hit": true,
+          "n_events": 0,
+          "llm_calls": 0,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "skipped",
+            "ObjectActionAnalystAgent": "skipped",
+            "TemporalReasoningAgent": "skipped",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "skipped",
+            "EvidenceAuditorAgent": "skipped",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.2184999979799613,
+            "VideoIntelligenceAgent": 0.0,
+            "ObjectActionAnalystAgent": 0.0,
+            "TemporalReasoningAgent": 0.0,
+            "CrossCameraCorrelationAgent": 0.0028330032364465296,
+            "ContradictionHunterAgent": 0.0,
+            "EvidenceAuditorAgent": 0.0,
+            "ReportSynthesisAgent": 0.00895900302566588
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q9": {
+          "status_code": 200,
+          "latency_ms": 6.22,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.0331660052761436,
+            "VideoIntelligenceAgent": 0.0857499981066212,
+            "ObjectActionAnalystAgent": 0.034167002013418823,
+            "TemporalReasoningAgent": 0.007458998879883438,
+            "CrossCameraCorrelationAgent": 0.002583001332823187,
+            "ContradictionHunterAgent": 0.03149999974993989,
+            "EvidenceAuditorAgent": 0.003334003849886358,
+            "ReportSynthesisAgent": 0.01341600000159815
+          },
+          "orchestrator_ms": 4.1
+        },
+        "Q10": {
+          "status_code": 200,
+          "latency_ms": 6.0,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 2.644000000145752,
+            "VideoIntelligenceAgent": 0.07883299986133352,
+            "ObjectActionAnalystAgent": 0.029999995604157448,
+            "TemporalReasoningAgent": 0.00687500141793862,
+            "CrossCameraCorrelationAgent": 0.002291999408043921,
+            "ContradictionHunterAgent": 0.028750000637955964,
+            "EvidenceAuditorAgent": 0.004875000740867108,
+            "ReportSynthesisAgent": 0.013666998711414635
+          },
+          "orchestrator_ms": 4.7
+        },
+        "Q11": {
+          "status_code": 200,
+          "latency_ms": 6.05,
+          "cache_hit": true,
+          "n_events": 1,
+          "llm_calls": 3,
+          "agent_statuses": {
+            "QueryInvestigationAgent": "completed",
+            "VideoIntelligenceAgent": "mocked",
+            "ObjectActionAnalystAgent": "mocked",
+            "TemporalReasoningAgent": "completed",
+            "CrossCameraCorrelationAgent": "skipped",
+            "ContradictionHunterAgent": "mocked",
+            "EvidenceAuditorAgent": "completed",
+            "ReportSynthesisAgent": "completed"
+          },
+          "agent_durations_ms": {
+            "QueryInvestigationAgent": 1.9980419965577312,
+            "VideoIntelligenceAgent": 0.07837500015739352,
+            "ObjectActionAnalystAgent": 0.03149999974993989,
+            "TemporalReasoningAgent": 0.00687500141793862,
+            "CrossCameraCorrelationAgent": 0.002749999111983925,
+            "ContradictionHunterAgent": 0.02600000152597204,
+            "EvidenceAuditorAgent": 0.0030420051189139485,
+            "ReportSynthesisAgent": 0.013125005352776498
+          },
+          "orchestrator_ms": 3.9
+        }
+      }
+    }
+  },
+  "honesty": {
+    "latency_measures": "Framework overhead only (retrieval, orchestration, serialization, cache) with instant mocked model calls. Not comparable across machines; not production capacity.",
+    "live_costs": "Token/cost figures are unavailable offline (null/0). Use compare.py --live for provider-measured usage."
+  }
+}

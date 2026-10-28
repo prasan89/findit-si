@@ -35,3 +35,9 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Playwright E2E runtime artifacts (seeded data, reports, traces)
+frontend/e2e/.e2e-data/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/

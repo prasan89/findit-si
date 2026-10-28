@@ -19,13 +19,18 @@ logger = logging.getLogger(__name__)
 API_BASE_URL = "https://api.meta.ai/v1"
 MUSE_SPARK_MODEL = "muse-spark-1.3"
 
-ANALYSIS_PROMPT = """You are analyzing a CCTV video frame for a security investigation. Describe what is OBSERVED — not inferred.
+ANALYSIS_PROMPT = """You are analyzing a CCTV video frame for a security investigation. Describe what is OBSERVED — not inferred. This frame may be one of several analyzed from the same clip; describe only this frame.
 
 Report:
-1. Any people or vehicles present — appearance (clothing color, size, gait), position, and what they are doing
+1. Any people or vehicles present — appearance (clothing color, size, gait), position in the frame, and directly visible posture or motion cues (standing, walking with direction, sitting, entering/exiting a doorway if the doorway and crossing are both visible)
 2. Any notable objects — bags, packages, equipment, vehicles — with color, size, and location
 3. Scene context — location type (entrance, corridor, parking, etc.), lighting, and any unusual features
-4. Activity or motion — entry, exit, movement direction, stationary, interacting with something
+4. Movement evidence — for each subject state whether it appears stationary or moving and what visible cue shows this (posture, motion blur, position). Do NOT infer identity, intent, or cause.
+
+Rules:
+- Observed facts only. If something is occluded, low-resolution, or ambiguous, say so in scene_summary and lower the confidence instead of guessing.
+- Never identify individuals; describe appearance only.
+- One frame cannot prove entry/exit, appearance, or disappearance — describe the visible state and let the timeline decide.
 
 Return ONLY valid JSON — no prose, no markdown fences:
 {
@@ -68,6 +73,9 @@ class MuseSparkClient:
         api_key: str,
         base_url: str = API_BASE_URL,
         model: str = MUSE_SPARK_MODEL,
+        connect_timeout_s: Optional[float] = None,
+        read_timeout_s: Optional[float] = None,
+        max_output_tokens: Optional[int] = None,
     ):
         if not api_key:
             raise ValueError("MODEL_API_KEY is required for MuseSparkClient")
@@ -75,6 +83,28 @@ class MuseSparkClient:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.model_version = model
+        # Phase 6: configurable timeouts/token cap (constructor overrides win;
+        # otherwise Settings; otherwise the historical defaults).
+        connect_default, read_default, tokens_default = 10.0, 60.0, 2000
+        try:
+            from .config import get_settings
+            _settings = get_settings()
+            connect_default = _settings.meta_connect_timeout_s
+            read_default = _settings.meta_read_timeout_s
+            tokens_default = _settings.vision_max_output_tokens
+        except Exception:
+            pass
+        self.connect_timeout_s = connect_default if connect_timeout_s is None else connect_timeout_s
+        self.read_timeout_s = read_default if read_timeout_s is None else read_timeout_s
+        self.max_output_tokens = tokens_default if max_output_tokens is None else max_output_tokens
+
+    def _httpx_timeout(self) -> "httpx.Timeout":
+        return httpx.Timeout(
+            connect=self.connect_timeout_s,
+            read=self.read_timeout_s,
+            write=self.read_timeout_s,
+            pool=self.connect_timeout_s,
+        )
 
     async def analyze_frame(self, frame_data: bytes) -> dict:
         b64 = base64.b64encode(frame_data).decode("utf-8")
@@ -96,24 +126,35 @@ class MuseSparkClient:
                     ],
                 }
             ],
-            "max_completion_tokens": 2000,
+            "max_completion_tokens": self.max_output_tokens,
             "temperature": 0.1,
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        from .guards import bounded_llm_call
+        async with bounded_llm_call():
+            async with httpx.AsyncClient(timeout=self._httpx_timeout()) as client:
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
 
-        content = data["choices"][0]["message"]["content"]
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            raise ValueError("Model response missing choices[0].message.content")
         parsed = _parse_json_response(content)
+
+        # Phase 6: validate shape before the result reaches agents. A valid
+        # analysis is a dict with an "objects" list; anything else fails fast
+        # (ValueError is non-retryable — the same request would fail again).
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("objects"), list):
+            raise ValueError("Model response missing required 'objects' list")
 
         # Attach actual token usage so the accounting layer can record it.
         usage = data.get("usage") or {}

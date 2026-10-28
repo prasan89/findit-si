@@ -31,13 +31,16 @@ METRIC_DEFINITIONS: dict[str, str] = {
              "None when P or R is undefined (zero denominator)."),
     "timestamp_error": (
         "For matched events: |pred_ts - gt_midpoint| in video-relative seconds. "
-        "Absolute-timestamp error uses parsed ISO timestamps when BOTH sides provide "
-        "valid absolute times; otherwise the case is reported under unavailable counts."
+        "Absolute-timestamp error is |pred_abs - gt_midpoint_abs|, where "
+        "gt_midpoint_abs is the midpoint of GT absolute_start/absolute_end when "
+        "both parse (else whichever bound parses). Cases with missing or "
+        "malformed absolute times are counted under unavailable counts, not filled."
     ),
     "boundary_error": (
-        "Signed (pred_point - gt_start) and (pred_point - gt_end) in seconds, where "
-        "pred_point is the prediction timestamp (or predicted start/end when provided). "
-        "None when GT provides no boundaries."
+        "Signed (pred_start - gt_start) and (pred_end - gt_end) in seconds when "
+        "the prediction carries start/end_seconds; otherwise falls back to "
+        "(pred_point - gt_start) and (pred_point - gt_end) using the single "
+        "prediction timestamp. None when GT provides no boundaries."
     ),
     "evidence_coverage": "Claims with >= 1 syntactically valid evidence reference / total claims.",
     "evidence_reference_validity": (
@@ -268,9 +271,23 @@ def score_temporal_accuracy(
         rel_errors.append(float(m["timestamp_error_seconds"]))
 
         # Absolute error requires valid ISO timestamps on BOTH sides.
-        gt_abs_raw = gt.get("absolute_start") or gt.get("timestamp_absolute")
+        # The GT reference is the midpoint of its absolute bounds (Phase 4
+        # correction: predictions carry midpoint times, so comparing against
+        # the GT start bound measured window convention, not accuracy).
+        gt_start_raw = gt.get("absolute_start")
+        gt_end_raw = gt.get("absolute_end") or gt.get("timestamp_absolute")
+        gt_start_abs = _parse_abs(gt_start_raw)
+        gt_end_abs = _parse_abs(gt_end_raw)
+        if gt_start_abs is not None and gt_end_abs is not None:
+            gt_abs: float | None = (gt_start_abs + gt_end_abs) / 2.0
+            gt_abs_raw: Any = "midpoint(absolute_start, absolute_end)"
+        elif gt_start_abs is not None:
+            gt_abs, gt_abs_raw = gt_start_abs, gt_start_raw
+        elif gt_end_abs is not None:
+            gt_abs, gt_abs_raw = gt_end_abs, gt_end_raw
+        else:
+            gt_abs, gt_abs_raw = None, gt_start_raw or gt_end_raw
         pred_abs_raw = pred.get("timestamp_absolute")
-        gt_abs = _parse_abs(gt_abs_raw)
         pred_abs = _parse_abs(pred_abs_raw)
         abs_err: float | None = None
         if gt_abs_raw is None or pred_abs_raw is None:
@@ -281,16 +298,20 @@ def score_temporal_accuracy(
             abs_err = abs(pred_abs - gt_abs)
             abs_errors.append(abs_err)
 
-        # Boundary errors.
+        # Boundary errors. Prefer the predicted span when the prediction
+        # carries one (Phase 4 events persist start/end_seconds); otherwise
+        # fall back to the single prediction timestamp as a point estimate.
         gt_start = _as_float(gt.get("start_seconds"))
         gt_end = _as_float(gt.get("end_seconds"))
         pred_point = _as_float(pred.get("timestamp_seconds"))
+        pred_start = _as_float(pred.get("start_seconds"))
+        pred_end = _as_float(pred.get("end_seconds"))
         start_err = end_err = None
         if gt_start is None or gt_end is None or pred_point is None:
             missing_boundary += 1
         else:
-            start_err = pred_point - gt_start
-            end_err = pred_point - gt_end
+            start_err = (pred_start if pred_start is not None else pred_point) - gt_start
+            end_err = (pred_end if pred_end is not None else pred_point) - gt_end
             start_errors.append(abs(start_err))
             end_errors.append(abs(end_err))
 
@@ -506,7 +527,7 @@ def score_cross_camera(
 
 
 # -------------------------------------------------------------- observability --
-AGENT_STATUSES = ("completed", "skipped", "failed", "mocked")
+AGENT_STATUSES = ("completed", "skipped", "failed", "mocked", "timed_out")
 
 
 def summarize_agent_runs(agent_dicts: list[dict[str, Any]]) -> dict[str, Any]:

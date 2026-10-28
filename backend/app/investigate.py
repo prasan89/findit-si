@@ -44,8 +44,14 @@ async def investigate(
     Returns a chronological, evidence-backed InvestigationResult.
     """
     investigation_id = str(uuid.uuid4())
-    query_terms = _tokenize(query)
     temporal_filter = _parse_temporal_query(query)
+    query_terms = _tokenize(query)
+    if temporal_filter:
+        # Phase 4: numeric tokens in a temporal query are time-phrase residue
+        # ("00", "15"), not content — drop them so the time filter (plus any
+        # remaining content terms) decides. With no terms left, scoring falls
+        # through to the pure-filter path (_score_event([]) == 1.0).
+        query_terms = [t for t in query_terms if not t.isdigit()]
 
     async with get_db(db_path) as db:
         db.row_factory = aiosqlite.Row
@@ -55,7 +61,8 @@ async def investigate(
             placeholders = ",".join("?" * len(recording_ids))
             rec_rows = await (await db.execute(
                 f"""SELECT recording_id, original_filename, recording_datetime,
-                           recording_timezone, camera_name, camera_location
+                           recording_timezone, camera_name, camera_location,
+                           video_duration_seconds
                     FROM recordings
                     WHERE recording_id IN ({placeholders})
                       AND processing_status IN ('INDEXED', 'PARTIAL')""",
@@ -64,7 +71,8 @@ async def investigate(
         else:
             rec_rows = await (await db.execute(
                 """SELECT recording_id, original_filename, recording_datetime,
-                          recording_timezone, camera_name, camera_location
+                          recording_timezone, camera_name, camera_location,
+                          video_duration_seconds
                    FROM recordings
                    WHERE processing_status IN ('INDEXED', 'PARTIAL')
                    ORDER BY upload_timestamp""",
@@ -102,11 +110,15 @@ async def investigate(
             eligible_ids,
         )).fetchall()
 
-        # Load cross-camera links
+        # Load cross-camera links for the eligible recordings only
+        # (Phase 4: previously scanned the whole table on every query).
         link_rows = await (await db.execute(
-            """SELECT l.*, e.recording_id as target_rec_id
+            f"""SELECT l.*, e.recording_id as target_rec_id
                FROM event_links l
-               JOIN events e ON l.target_event_id = e.event_id""",
+               JOIN events e ON l.target_event_id = e.event_id
+               JOIN events se ON l.source_event_id = se.event_id
+               WHERE se.recording_id IN ({placeholders})""",
+            eligible_ids,
         )).fetchall()
 
     if not event_rows:
@@ -136,6 +148,11 @@ async def investigate(
 
     # Score and filter events
     scored_events: list[tuple[float, dict]] = []
+    n_time_excluded = 0
+    has_time_bounds = (
+        time_start_seconds is not None or time_end_seconds is not None
+        or "start" in temporal_filter or "end" in temporal_filter
+    )
     for row in event_rows:
         ev_dict = dict(row)
         ev_dict["object_descriptions"] = _load_json(ev_dict.get("object_descriptions", "[]"), [])
@@ -149,8 +166,10 @@ async def investigate(
         eff_start = time_start_seconds if time_start_seconds is not None else temporal_filter.get("start")
         eff_end = time_end_seconds if time_end_seconds is not None else temporal_filter.get("end")
         if eff_start is not None and ts < eff_start:
+            n_time_excluded += 1
             continue
         if eff_end is not None and ts > eff_end:
+            n_time_excluded += 1
             continue
 
         score = _score_event(query_terms, ev_dict)
@@ -158,6 +177,14 @@ async def investigate(
             scored_events.append((score, ev_dict))
 
     if not scored_events:
+        gaps = [f"No events matched the query '{query}'."]
+        if has_time_bounds and n_time_excluded > 0:
+            # Phase 4: say explicitly when the time window — not the content —
+            # is what excluded everything.
+            gaps.append(
+                f"{n_time_excluded} event(s) exist outside the requested time "
+                f"range and were excluded by the time filter."
+            )
         return InvestigationResult(
             investigation_id=investigation_id,
             query=query,
@@ -170,7 +197,7 @@ async def investigate(
             ordering_explanation="No matching events.",
             searched_recordings=len(eligible_ids),
             total_events_found=0,
-            evidence_gaps=[f"No events matched the query '{query}'."],
+            evidence_gaps=gaps,
             uncertainty_summary="",
         )
 
@@ -200,6 +227,14 @@ async def investigate(
         )
         ts_reliable = False
 
+    # Phase 4: first/last selection follows the displayed ordering
+    # (chronological when timestamps allow, relevance otherwise).
+    select = temporal_filter.get("select")
+    if select == "first" and scored_events:
+        scored_events = scored_events[:1]
+    elif select == "last" and scored_events:
+        scored_events = scored_events[-1:]
+
     # Cap results
     total_before_cap = len(scored_events)
     scored_events = scored_events[:MAX_EVENTS_RETURNED]
@@ -208,6 +243,13 @@ async def investigate(
     events: list[Event] = []
     all_uncertainty_notes: list[str] = []
     for _score, ev_dict in scored_events:
+        # Phase 4: validate evidence references against the recording
+        # (in-memory only — stored rows are untouched).
+        rec_duration = rec_meta.get(ev_dict["recording_id"], {}).get("video_duration_seconds")
+        frame_problems = validate_evidence_frames(ev_dict["evidence_frames"], rec_duration)
+        if frame_problems:
+            ev_dict["uncertainty_notes"] = ev_dict["uncertainty_notes"] + frame_problems
+
         event_links = links_by_source.get(ev_dict["event_id"], [])
         cc_links = [
             CrossCameraLink(
@@ -241,6 +283,8 @@ async def investigate(
             camera_name=cam_name,
             camera_location=ev_dict.get("cam_loc") or ev_dict.get("camera_location"),
             timestamp_seconds=ev_dict["timestamp_seconds"],
+            start_seconds=ev_dict.get("start_seconds"),
+            end_seconds=ev_dict.get("end_seconds"),
             timestamp_absolute=ev_dict.get("timestamp_absolute"),
             has_reliable_timestamp=bool(ev_dict.get("has_reliable_timestamp")),
             event_type=ev_dict["event_type"],
@@ -298,20 +342,44 @@ def _tokenize(query: str) -> list[str]:
         "video", "appears", "are", "there", "any", "what", "happened",
         "before", "after", "between", "show", "trace", "across", "camera",
         "cameras", "events", "and", "or", "in", "on", "at", "to", "of",
+        # Phase 4: generic words that carry no retrieval signal. "all" in
+        # particular matched "hallway"/"small" as a substring and broke
+        # temporal queries (eval Q4); "first"/"last"/"event" are operators.
+        "all", "event", "first",
     }
     return [w for w in words if w not in stopwords]
 
 
 def _parse_temporal_query(query: str) -> dict:
-    """Extract time constraints like 'between 10:00 and 10:15' from query."""
+    """Extract time constraints from a query.
+
+    Supported (all video-relative seconds, consistent with stored
+    timestamp_seconds):
+    - 'between MM:SS and MM:SS' -> {"start", "end"}
+    - 'before MM:SS'             -> {"end"}
+    - 'after MM:SS'              -> {"start"}
+    - 'first ...' / '... last'   -> {"select": "first"/"last"}
+
+    Returns {} when no temporal operator is present. Clock-time (absolute)
+    queries are NOT supported — MM:SS always means video-relative.
+    """
     result: dict = {}
-    pattern = r"between\s+(\d{1,2}):(\d{2})\s+and\s+(\d{1,2}):(\d{2})"
-    m = re.search(pattern, query.lower())
+    q = query.lower()
+    m = re.search(r"between\s+(\d{1,2}):(\d{2})\s+and\s+(\d{1,2}):(\d{2})", q)
     if m:
-        start_m, start_s = int(m.group(1)), int(m.group(2))
-        end_m, end_s = int(m.group(3)), int(m.group(4))
-        result["start"] = start_m * 60 + start_s
-        result["end"] = end_m * 60 + end_s
+        result["start"] = int(m.group(1)) * 60 + int(m.group(2))
+        result["end"] = int(m.group(3)) * 60 + int(m.group(4))
+    else:
+        m_before = re.search(r"before\s+(\d{1,2}):(\d{2})", q)
+        if m_before:
+            result["end"] = int(m_before.group(1)) * 60 + int(m_before.group(2))
+        m_after = re.search(r"after\s+(\d{1,2}):(\d{2})", q)
+        if m_after:
+            result["start"] = int(m_after.group(1)) * 60 + int(m_after.group(2))
+    if re.search(r"\bfirst\b", q):
+        result["select"] = "first"
+    elif re.search(r"\blast\b", q):
+        result["select"] = "last"
     return result
 
 
@@ -347,6 +415,42 @@ def _sort_key(ev: dict) -> float:
         except Exception:
             pass
     return ev["timestamp_seconds"]
+
+
+def validate_evidence_frames(
+    frames: list[dict],
+    video_duration_seconds: Optional[float] = None,
+) -> list[str]:
+    """Phase 4: check that evidence frames resolve to usable references.
+
+    Returns a list of human-readable problems (empty == valid). Checks that
+    each frame has a non-empty path and a finite timestamp >= 0, and — when
+    the recording duration is known — that the timestamp falls within it.
+    Validity here is resolvability only; it does NOT mean the frame supports
+    any particular claim.
+    """
+    import math
+
+    problems: list[str] = []
+    for i, frame in enumerate(frames):
+        if not isinstance(frame, dict):
+            problems.append(f"evidence frame #{i} is malformed (not an object)")
+            continue
+        path = frame.get("frame_path")
+        if not path or not isinstance(path, str):
+            problems.append(f"evidence frame #{i} has no frame_path")
+        ts = frame.get("timestamp_seconds")
+        if isinstance(ts, bool) or not isinstance(ts, (int, float)) or not math.isfinite(ts):
+            problems.append(f"evidence frame #{i} has an invalid timestamp: {ts!r}")
+            continue
+        if ts < 0:
+            problems.append(f"evidence frame #{i} has a negative timestamp ({ts}s)")
+        elif video_duration_seconds is not None and ts > video_duration_seconds:
+            problems.append(
+                f"evidence frame #{i} timestamp ({ts:.1f}s) exceeds the "
+                f"recording duration ({video_duration_seconds:.1f}s)"
+            )
+    return problems
 
 
 def _identify_evidence_gaps(

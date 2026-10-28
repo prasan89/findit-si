@@ -18,7 +18,7 @@ EVAL_DIR = Path(__file__).parent
 DATASET_V2_FILE = EVAL_DIR / "dataset_v2.json"
 GROUND_TRUTH_V1_FILE = EVAL_DIR / "ground_truth.json"
 
-CURRENT_VERSION = "2.0.0"
+CURRENT_VERSION = "2.1.0"
 CURRENT_DATASET_ID = "realitytrace-eval"
 
 
