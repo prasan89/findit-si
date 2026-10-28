@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { readFileSync } from 'fs'
 import path from 'path'
 
@@ -13,11 +13,11 @@ test.describe.configure({ mode: 'serial' })
 const FIXTURE = path.join(__dirname, 'fixtures', 'cctv_sample.mp4')
 const UPLOAD_NAME = 'cctv_e2e_upload.mp4'
 
-async function gotoInvestigate(page) {
+async function gotoInvestigate(page: Page) {
   await page.getByRole('button', { name: 'Investigate', exact: true }).click()
 }
 
-async function submitQuery(page, query: string) {
+async function submitQuery(page: Page, query: string) {
   await page.getByPlaceholder(/What happened before the person left/).fill(query)
   await page.locator('form button[type="submit"]').click()
 }

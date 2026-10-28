@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom'
 import { render, screen } from '@testing-library/react'
 import AgentStatusPanel from '../AgentStatusPanel'
 import type { AgentRunResult, MultiAgentInvestigationResult } from '@/types'

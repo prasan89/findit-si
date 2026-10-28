@@ -19,6 +19,7 @@ from typing import Optional
 import aiosqlite
 
 from .database import get_db
+from .event_extractor import PERSON_SUBJECTS, VEHICLE_SUBJECTS, contains_word
 from .models import (
     CrossCameraLink,
     EvidenceFrame,
@@ -249,6 +250,9 @@ async def investigate(
         frame_problems = validate_evidence_frames(ev_dict["evidence_frames"], rec_duration)
         if frame_problems:
             ev_dict["uncertainty_notes"] = ev_dict["uncertainty_notes"] + frame_problems
+        category_problems = validate_category_support(ev_dict)
+        if category_problems:
+            ev_dict["uncertainty_notes"] = ev_dict["uncertainty_notes"] + category_problems
 
         event_links = links_by_source.get(ev_dict["event_id"], [])
         cc_links = [
@@ -395,13 +399,66 @@ def _score_event(terms: list[str], ev: dict) -> float:
         " ".join(ev.get("object_descriptions", [])),
         " ".join(ev.get("observed_facts", [])),
     ]).lower()
+    # Description text without the stored category: a stored type must never
+    # justify itself (a mislabeled row would otherwise match its own label).
+    descriptive = " ".join([
+        ev.get("action_description", ""),
+        ev.get("scene_description", "") or "",
+        " ".join(ev.get("object_descriptions", [])),
+        " ".join(ev.get("observed_facts", [])),
+    ])
 
-    hits = sum(1 for t in terms if t in searchable)
+    # Subject gate: a query about people (or vehicles) must match subject
+    # evidence in the description — not a generic token like "detected",
+    # which appears in every `*_detected` type label. Subject synonyms cover
+    # each other ("human" matches an event describing a "person").
+    query_person = any(t in PERSON_SUBJECTS for t in terms)
+    query_vehicle = any(t in VEHICLE_SUBJECTS for t in terms)
+    if query_person and not contains_word(descriptive, PERSON_SUBJECTS):
+        return 0.0
+    if query_vehicle and not contains_word(descriptive, VEHICLE_SUBJECTS):
+        return 0.0
+
+    hits = 0
+    for t in terms:
+        if t in PERSON_SUBJECTS:
+            # Covered by the gate above: any person word satisfies it.
+            hits += 1
+        elif t in VEHICLE_SUBJECTS:
+            hits += 1
+        elif t in searchable:
+            hits += 1
     # Require at least one keyword hit — confidence alone doesn't justify a result
     if hits == 0:
         return 0.0
     score = (hits / len(terms)) * 0.7 + ev.get("confidence", 0.5) * 0.3
     return min(score, 1.0)
+
+
+def validate_category_support(ev_dict: dict) -> list[str]:
+    """Flag a stored category the event description does not support.
+
+    Defense-in-depth for rows labeled before the inference fix (or by a
+    confused model): the row is still returned when relevant, but the
+    contradiction is surfaced instead of presented as confirmed. The stored
+    confidence score is never altered here.
+    """
+    text = " ".join([
+        ev_dict.get("action_description", ""),
+        ev_dict.get("scene_description", "") or "",
+        " ".join(ev_dict.get("object_descriptions", []) or []),
+        " ".join(ev_dict.get("observed_facts", []) or []),
+    ])
+    event_type = ev_dict.get("event_type", "")
+    if event_type == "person_detected" and not contains_word(text, PERSON_SUBJECTS):
+        return ["Stored category 'person' is not supported by the event "
+                "description — verify visually before treating this as a "
+                "person detection"]
+    if event_type == "vehicle_detected" and not contains_word(text, VEHICLE_SUBJECTS):
+        return ["Stored category 'vehicle' is not supported by the event "
+                "description — verify visually before treating this as a "
+                "vehicle detection"]
+    return []
 
 
 def _sort_key(ev: dict) -> float:

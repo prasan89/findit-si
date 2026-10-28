@@ -16,6 +16,7 @@ observations so it can be re-run without extra API calls.
 """
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -31,6 +32,45 @@ MIN_CONFIDENCE = 0.2
 # distinct frame timestamps. Single-frame groups are dropped — one frame
 # resembling a scene is not sufficient evidence that an event occurred.
 MIN_CONFIRMING_FRAMES = 2
+
+# Subject classes shared by category inference and query relevance.
+# Person words are strong, person-denoting terms only. Weak words like
+# "individual"/"figure" also describe animals and objects (the model wrote
+# "multiple individuals" about ants), and substring matching on them labeled
+# a bird event `person_detected`.
+PERSON_SUBJECTS = frozenset({
+    "person", "persons", "people", "human", "humans",
+    "man", "men", "woman", "women",
+})
+VEHICLE_SUBJECTS = frozenset({
+    "car", "cars", "vehicle", "vehicles", "truck", "trucks",
+    "van", "vans", "motorcycle", "motorcycles", "bike", "bikes",
+})
+OBJECT_SUBJECTS = frozenset({
+    "bag", "bags", "backpack", "backpacks", "suitcase", "suitcases",
+    "luggage", "package", "packages",
+})
+ENTRY_SUBJECTS = frozenset({
+    "door", "doors", "gate", "gates", "entrance", "entrances",
+    "exit", "exits",
+})
+
+_PATTERN_CACHE: dict = {}
+
+
+def contains_word(text: str, words: frozenset) -> bool:
+    """Word-boundary match of any word in `words` against `text`.
+
+    Unlike substring search, "individuals" does not match "individual",
+    and "man" does not match "mannequin", "performance", or "woman".
+    """
+    if not text:
+        return False
+    pat = _PATTERN_CACHE.get(words)
+    if pat is None:
+        pat = re.compile(r"\b(?:" + "|".join(sorted(words)) + r")\b")
+        _PATTERN_CACHE[words] = pat
+    return pat.search(text.lower()) is not None
 
 
 def _now() -> str:
@@ -341,16 +381,20 @@ def _build_event(
 
 
 def _infer_event_type(object_labels: list[str], scene_parts: list[str]) -> str:
-    """Heuristic event type from labels and scene context."""
-    combined = " ".join(object_labels + scene_parts).lower()
+    """Heuristic event type from labels and scene context.
 
-    if any(w in combined for w in ["person", "people", "man", "woman", "individual", "figure"]):
+    Word-boundary matching only: unknown or ambiguous subjects fall through
+    to `scene_change` rather than being forced into a person/vehicle claim.
+    """
+    combined = " ".join(object_labels + scene_parts)
+
+    if contains_word(combined, PERSON_SUBJECTS):
         return "person_detected"
-    if any(w in combined for w in ["car", "vehicle", "truck", "van", "motorcycle", "bike"]):
+    if contains_word(combined, VEHICLE_SUBJECTS):
         return "vehicle_detected"
-    if any(w in combined for w in ["bag", "backpack", "suitcase", "luggage", "package"]):
+    if contains_word(combined, OBJECT_SUBJECTS):
         return "unattended_object"
-    if any(w in combined for w in ["door", "gate", "entrance", "exit"]):
+    if contains_word(combined, ENTRY_SUBJECTS):
         return "entry_exit_detected"
     return "scene_change"
 
