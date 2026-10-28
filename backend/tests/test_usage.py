@@ -50,8 +50,9 @@ def test_estimate_cost_mock_is_zero():
 
 
 def test_estimate_cost_muse_spark():
-    cost = _estimate_cost("muse-spark-1.3", tokens_in=0, tokens_out=0, images=1)
-    assert cost == pytest.approx(0.001, abs=1e-6)
+    # 1K input tokens at $1.25/1M = $0.00125/1K; images billed as tokens (no flat fee)
+    cost = _estimate_cost("muse-spark-1.3", tokens_in=1000, tokens_out=0, images=0)
+    assert cost == pytest.approx(0.00125, abs=1e-7)
 
 
 def test_estimate_cost_tokens_add():

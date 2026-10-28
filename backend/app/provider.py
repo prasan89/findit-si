@@ -22,19 +22,30 @@ from .meta_client import FrameAnalyzer
 
 logger = logging.getLogger(__name__)
 
-# Cost estimates per 1K tokens (input / output) for Meta Muse Spark 1.3.
-# Update when official pricing is published.
+# Cost per 1K tokens — source: dev.meta.ai/docs/pricing-rate-limits
+# Standard mode: input $1.25/1M = $0.00125/1K, output $4.25/1M = $0.00425/1K
+# Contributor mode: input $0.10/1M = $0.0001/1K, output $0.20/1M = $0.0002/1K
+# Using standard mode rates; switch to contributor IDs if access granted.
 _COST_PER_1K_TOKENS_IN: dict[str, float] = {
-    "muse-spark-1.3": 0.0003,
+    "muse-spark-1.3": 0.00125,
+    "muse-spark-1.2": 0.00125,
+    "muse-spark-1.3-contributor": 0.0001,
+    "muse-spark-1.2-contributor": 0.0001,
     "mock-v1": 0.0,
 }
 _COST_PER_1K_TOKENS_OUT: dict[str, float] = {
-    "muse-spark-1.3": 0.0006,
+    "muse-spark-1.3": 0.00425,
+    "muse-spark-1.2": 0.00425,
+    "muse-spark-1.3-contributor": 0.0002,
+    "muse-spark-1.2-contributor": 0.0002,
     "mock-v1": 0.0,
 }
-# Flat per-image estimate for vision calls (no separate image pricing announced).
+# Vision: images billed as tokens; no separate flat per-image fee published.
 _COST_PER_IMAGE: dict[str, float] = {
-    "muse-spark-1.3": 0.001,
+    "muse-spark-1.3": 0.0,
+    "muse-spark-1.2": 0.0,
+    "muse-spark-1.3-contributor": 0.0,
+    "muse-spark-1.2-contributor": 0.0,
     "mock-v1": 0.0,
 }
 
@@ -206,8 +217,9 @@ class AccountedFrameAnalyzer:
                 result = await self.delegate.analyze_frame(frame_data)
                 latency_ms = (time.monotonic() - t0) * 1000.0
 
-                # Estimate tokens from response size (no token count in header yet).
-                # Use a conservative heuristic: 4 chars ≈ 1 token.
+                # Heuristic: 4 chars ≈ 1 token for JSON output.
+                # Input tokens (prompt + image) are not returned on this path;
+                # real usage would need the API's usage.prompt_tokens field.
                 import json as _json
                 response_text = _json.dumps(result)
                 tokens_out_est = max(1, len(response_text) // 4)
