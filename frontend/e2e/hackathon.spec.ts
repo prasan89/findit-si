@@ -92,6 +92,27 @@ test('4. opens a finding and plays the evidence at the right timestamp', async (
   await expect(video).toBeHidden()
 })
 
+test('6. persists library state across reload; traces and usage are reported', async ({ page, request }) => {
+  await page.goto('/')
+  await expect(page.getByText('cctv_seed.mp4')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByText(UPLOAD_NAME)).toBeVisible({ timeout: 15000 })
+
+  // Usage reporting is visible without asserting exact spend.
+  await expect(page.getByText(/\$[0-9]+\.[0-9]+ \/ \$/)).toBeVisible()
+
+  // Multi-agent trace from journey 3 persisted server-side.
+  const traces = await request.get('/api/investigations/traces?limit=5')
+  expect(traces.ok()).toBeTruthy()
+  const body = await traces.json()
+  const items = Array.isArray(body) ? body : body.traces ?? body.items ?? []
+  expect(items.length).toBeGreaterThan(0)
+
+  // Reload: persisted library state survives; client-side results do not need to.
+  await page.reload()
+  await expect(page.getByText('cctv_seed.mp4')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByText(UPLOAD_NAME)).toBeVisible({ timeout: 15000 })
+})
+
 test('5. reports an unanswerable query honestly without inventing conclusions', async ({ page }) => {
   await page.goto('/')
   await gotoInvestigate(page)
