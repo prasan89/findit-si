@@ -86,7 +86,15 @@ async def upload_recording(
 
     # Start background indexing
     from ..meta_client import get_meta_client
-    meta_client = get_meta_client()
+    from ..provider import build_accounted_client
+    raw_client = get_meta_client()
+    meta_client = build_accounted_client(
+        delegate=raw_client,
+        db_path=settings.db_path,
+        provider=settings.vision_provider,
+        budget_limit_usd=settings.budget_limit_usd,
+        budget_reserve_usd=settings.budget_reserve_usd,
+    )
     background_tasks.add_task(
         process_recording,
         recording_id=recording_id,

@@ -17,6 +17,7 @@ import aiosqlite
 from .database import get_db
 from .models import ProcessingStatus
 from .storage import LocalStorageBackend
+from .provider import AccountedFrameAnalyzer, BudgetExceededError
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,10 @@ async def process_recording(
     errors = []
     frame_count = 0
 
+    # Bind recording_id to the accounted client if it supports it.
+    if isinstance(meta_client, AccountedFrameAnalyzer):
+        meta_client = meta_client.with_recording_id(recording_id)
+
     async with get_db(db_path) as db:
         row = await (await db.execute(
             "SELECT video_path, recording_datetime, recording_timezone FROM recordings WHERE recording_id = ?",
@@ -159,6 +164,10 @@ async def process_recording(
                             (content_hash, model_version, json.dumps(cached_analysis), _now())
                         )
                         await db.commit()
+                except BudgetExceededError as e:
+                    errors.append(f"Budget limit reached at frame {ts:.1f}s: {str(e)[:200]}")
+                    logger.warning("Budget exceeded during processing of %s: %s", recording_id, e)
+                    break
                 except Exception as e:
                     errors.append(f"Frame {ts:.1f}s: model error: {str(e)[:200]}")
                     continue

@@ -149,6 +149,35 @@ async def create_tables(db_path: str) -> None:
             ON recordings(processing_status)
         """)
 
+        # Phase 2: AI usage accounting
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS model_usage (
+                usage_id TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                recording_id TEXT,
+                tokens_in INTEGER NOT NULL DEFAULT 0,
+                tokens_out INTEGER NOT NULL DEFAULT 0,
+                images_processed INTEGER NOT NULL DEFAULT 0,
+                latency_ms REAL NOT NULL DEFAULT 0,
+                success INTEGER NOT NULL DEFAULT 1,
+                estimated_cost_usd REAL NOT NULL DEFAULT 0.0,
+                fallback_from TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_model_usage_created_at
+            ON model_usage(created_at)
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_model_usage_provider_model
+            ON model_usage(provider, model)
+        """)
+
         # Idempotent migrations for existing databases
         try:
             await db.execute("ALTER TABLE recordings ADD COLUMN camera_name TEXT")

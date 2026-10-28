@@ -17,6 +17,18 @@ class Settings(BaseSettings):
     findit_max_frames_per_video: int = 300
     findit_max_api_calls_per_video: int = 300
 
+    # AI credit budget safeguards
+    budget_limit_usd: float = 150.0
+    budget_reserve_usd: float = 10.0
+
+    # Model routing
+    vision_provider: str = "meta"
+    vision_model: str = "muse-spark-1.3"
+
+    # Retry settings
+    max_api_attempts: int = 3
+    base_backoff_seconds: float = 1.0
+
     @property
     def db_path(self) -> str:
         return str(Path(self.data_dir) / "findit.db")
