@@ -42,6 +42,12 @@ test('does not label a bird scene_change event as Person', () => {
   expect(screen.getByText(/standing on dark soil/)).toBeInTheDocument()
 })
 
+test('labels a bird event as Bird', () => {
+  render(<EventCard event={makeEvent({ event_type: 'bird_detected' })} index={1} />)
+  expect(screen.getByText('Bird')).toBeInTheDocument()
+  expect(screen.queryByText('Person')).not.toBeInTheDocument()
+})
+
 test('surfaces category-contradiction uncertainty notes', () => {
   render(
     <EventCard

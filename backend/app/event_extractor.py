@@ -46,6 +46,9 @@ VEHICLE_SUBJECTS = frozenset({
     "car", "cars", "vehicle", "vehicles", "truck", "trucks",
     "van", "vans", "motorcycle", "motorcycles", "bike", "bikes",
 })
+# Deliberately bird-only: broader "animal" words must not auto-classify
+# (or auto-match) other species, and other animals must not render as Bird.
+BIRD_SUBJECTS = frozenset({"bird", "birds"})
 OBJECT_SUBJECTS = frozenset({
     "bag", "bags", "backpack", "backpacks", "suitcase", "suitcases",
     "luggage", "package", "packages",
@@ -392,6 +395,8 @@ def _infer_event_type(object_labels: list[str], scene_parts: list[str]) -> str:
         return "person_detected"
     if contains_word(combined, VEHICLE_SUBJECTS):
         return "vehicle_detected"
+    if contains_word(combined, BIRD_SUBJECTS):
+        return "bird_detected"
     if contains_word(combined, OBJECT_SUBJECTS):
         return "unattended_object"
     if contains_word(combined, ENTRY_SUBJECTS):

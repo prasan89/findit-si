@@ -28,7 +28,7 @@ BIRD_FACTS = [
 
 class TestPersonTypeInference:
     def test_bird_with_individuals_is_not_person(self):
-        assert _infer_event_type(BIRD_OBJECTS, [BIRD_ACTION]) == "scene_change"
+        assert _infer_event_type(BIRD_OBJECTS, [BIRD_ACTION]) == "bird_detected"
 
     def test_person_labels_still_detected(self):
         assert _infer_event_type(["red person"], []) == "person_detected"
@@ -205,5 +205,5 @@ class TestConfidenceSemantics:
             all_frame_paths_by_ts=paths,
             sorted_timestamps=sorted(paths.keys()),
         )
-        assert ev["event_type"] == "scene_change"
+        assert ev["event_type"] == "bird_detected"
         assert ev["confidence"] == pytest.approx(0.94)

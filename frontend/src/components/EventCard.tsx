@@ -27,6 +27,7 @@ function confidenceLabel(score: number): { text: string; cls: string } {
 const EVENT_TYPE_LABELS: Record<string, string> = {
   person_detected: 'Person',
   vehicle_detected: 'Vehicle',
+  bird_detected: 'Bird',
   unattended_object: 'Object',
   entry_exit_detected: 'Entry/Exit',
   scene_change: 'Scene Change',

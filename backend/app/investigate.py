@@ -19,7 +19,9 @@ from typing import Optional
 import aiosqlite
 
 from .database import get_db
-from .event_extractor import PERSON_SUBJECTS, VEHICLE_SUBJECTS, contains_word
+from .event_extractor import (
+    BIRD_SUBJECTS, PERSON_SUBJECTS, VEHICLE_SUBJECTS, contains_word,
+)
 from .models import (
     CrossCameraLink,
     EvidenceFrame,
@@ -408,15 +410,19 @@ def _score_event(terms: list[str], ev: dict) -> float:
         " ".join(ev.get("observed_facts", [])),
     ])
 
-    # Subject gate: a query about people (or vehicles) must match subject
-    # evidence in the description — not a generic token like "detected",
-    # which appears in every `*_detected` type label. Subject synonyms cover
-    # each other ("human" matches an event describing a "person").
+    # Subject gate: a query about people, vehicles, or birds must match
+    # subject evidence in the description — not a generic token like
+    # "detected", which appears in every `*_detected` type label. Subject
+    # synonyms cover each other ("human" matches an event describing a
+    # "person"; "birds" matches "bird").
     query_person = any(t in PERSON_SUBJECTS for t in terms)
     query_vehicle = any(t in VEHICLE_SUBJECTS for t in terms)
+    query_bird = any(t in BIRD_SUBJECTS for t in terms)
     if query_person and not contains_word(descriptive, PERSON_SUBJECTS):
         return 0.0
     if query_vehicle and not contains_word(descriptive, VEHICLE_SUBJECTS):
+        return 0.0
+    if query_bird and not contains_word(descriptive, BIRD_SUBJECTS):
         return 0.0
 
     hits = 0
@@ -425,6 +431,8 @@ def _score_event(terms: list[str], ev: dict) -> float:
             # Covered by the gate above: any person word satisfies it.
             hits += 1
         elif t in VEHICLE_SUBJECTS:
+            hits += 1
+        elif t in BIRD_SUBJECTS:
             hits += 1
         elif t in searchable:
             hits += 1
@@ -458,6 +466,10 @@ def validate_category_support(ev_dict: dict) -> list[str]:
         return ["Stored category 'vehicle' is not supported by the event "
                 "description — verify visually before treating this as a "
                 "vehicle detection"]
+    if event_type == "bird_detected" and not contains_word(text, BIRD_SUBJECTS):
+        return ["Stored category 'bird' is not supported by the event "
+                "description — verify visually before treating this as a "
+                "bird detection"]
     return []
 
 
