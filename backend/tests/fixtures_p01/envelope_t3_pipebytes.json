@@ -1,0 +1,29 @@
+{
+  "id": "chatcmpl-01a1842d-6e20-7693-8f4e-cf3e7c8cb94e",
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "message": {
+        "content": "{\n  \"objects\": [\n    {\n      \"label\": \"man holding cardboard box\",\n      \"attributes\": {\n        \"color\": \"dark shirt and dark pants\",\n        \"shape\": \"adult male\",\n        \"size\": \"medium\",\n        \"distinctive_details\": \"standing upright holding box at chest level with both hands\"\n      },\n      \"scene_description\": \"standing outside the black metal gate in center-right facing toward camera; appears stationary with feet planted and no motion blur\",\n      \"confidence\": 0.9\n    },\n    {\n      \"label\": \"brown and black dog\",\n      \"attributes\": {\n        \"color\": \"brown and black\",\n        \"shape\": \"medium-large dog\",\n        \"size\": \"medium relative to gate\",\n        \"distinctive_details\": \"lying with front legs extended and head raised looking right\"\n      },\n      \"scene_description\": \"lying on the ground inside the gate near center; appears stationary in resting posture\",\n      \"confidence\": 0.95\n    },\n    {\n      \"label\": \"cardboard box\",\n      \"attributes\": {\n        \"color\": \"brown\",\n        \"shape\": \"rectangular box\",\n        \"size\": \"small, held in two hands\",\n        \"distinctive_details\": \"held at chest height\"\n      },\n      \"scene_description\": \"held by the man outside the gate; appears stationary in his hands\",\n      \"confidence\": 0.85\n    },\n    {\n      \"label\": \"black motorcycle behind gate\",\n      \"attributes\": {\n        \"color\": \"black\",\n        \"shape\": \"motorcycle\",\n        \"size\": \"medium\",\n        \"distinctive_details\": \"parked with side profile visible",
+        "refusal": null,
+        "role": "assistant"
+      },
+      "logprobs": null
+    }
+  ],
+  "created": 1793218932,
+  "model": "muse-spark-1.3",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 2000,
+    "prompt_tokens": 1611,
+    "total_tokens": 3611,
+    "completion_tokens_details": {
+      "reasoning_tokens": 1644
+    },
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  }
+}

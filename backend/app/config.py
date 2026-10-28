@@ -41,7 +41,10 @@ class Settings(BaseSettings):
     meta_text_read_timeout_s: float = 45.0
     meta_backoff_max_s: float = 8.0
     meta_retry_jitter: bool = True
-    vision_max_output_tokens: int = 2000
+    # P0.1: muse-spark-1.3 spends ~1600-2200 completion tokens on hidden
+    # reasoning for vision frames; 2000 starved content to null/truncated.
+    # Measured complete responses need ~3300 total; 8000 gives headroom.
+    vision_max_output_tokens: int = 8000
     text_max_output_tokens: int = 1500
 
     # Phase 6: pipeline + cost safeguards

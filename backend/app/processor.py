@@ -142,10 +142,64 @@ async def get_cached_analysis(
         )).fetchone()
     if row:
         try:
-            return json.loads(row[0])
+            cached = json.loads(row[0])
         except Exception:
             return None
+        # P0.1: cached results are validated before being treated as
+        # successful. A poisoned entry is dropped (self-heal) and the frame
+        # is re-analyzed instead of failing or corrupting the index.
+        try:
+            from .meta_client import validate_frame_analysis
+            return validate_frame_analysis(cached)
+        except Exception:
+            try:
+                await db.execute(
+                    "DELETE FROM frame_cache WHERE content_hash=? AND model_version=?",
+                    (content_hash, model_version),
+                )
+                await db.commit()
+            except Exception:
+                pass
+            return None
     return None
+
+
+async def record_frame_failure(
+    db_path: str,
+    recording_id: str,
+    video_timestamp_seconds: float,
+    exc: BaseException,
+    model_version: str,
+) -> None:
+    """Persist a structured failed-frame record for forensics and reprocessing.
+
+    Captures the exact failing model text (capped) so the next malformed
+    response is diagnosable instead of lost. Never raises.
+    """
+    try:
+        from .meta_client import MAX_RAW_FAILURE_CHARS
+        code = getattr(exc, "code", None) or type(exc).__name__
+        finish_reason = getattr(exc, "finish_reason", None)
+        raw = getattr(exc, "raw_response", None)
+        if raw is not None:
+            raw = str(raw)[:MAX_RAW_FAILURE_CHARS]
+        async with get_db(db_path) as db:
+            await db.execute(
+                """INSERT INTO frame_failures(
+                    failure_id, recording_id, video_timestamp_seconds,
+                    error_code, finish_reason, model_version, raw_response,
+                    created_at
+                ) VALUES(?,?,?,?,?,?,?,?)""",
+                (
+                    str(uuid.uuid4()), recording_id, video_timestamp_seconds,
+                    str(code),
+                    str(finish_reason) if finish_reason is not None else None,
+                    model_version, raw, _now(),
+                ),
+            )
+            await db.commit()
+    except Exception:
+        pass
 
 
 async def store_cached_analysis(
@@ -293,6 +347,8 @@ async def process_recording(
                     code = getattr(e, "code", None)
                     tag = f"[{code}] " if code else ""
                     errors.append(f"Frame {ts:.1f}s: model error {tag}{str(e)[:200]}")
+                    await record_frame_failure(
+                        db_path, recording_id, ts, e, model_version)
                     logger.warning(
                         "Frame %.1fs of %s failed (%s); continuing with next frame",
                         ts, recording_id, type(e).__name__,

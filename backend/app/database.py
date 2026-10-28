@@ -76,6 +76,20 @@ async def create_tables(db_path: str) -> None:
             )
         """)
 
+        # P0.1: structured per-frame failure forensics (exact failing text).
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS frame_failures (
+                failure_id TEXT PRIMARY KEY,
+                recording_id TEXT NOT NULL REFERENCES recordings(recording_id) ON DELETE CASCADE,
+                video_timestamp_seconds REAL NOT NULL,
+                error_code TEXT NOT NULL,
+                finish_reason TEXT,
+                model_version TEXT,
+                raw_response TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+
         # RealityTrace: camera metadata on recordings
         await db.execute("""
             CREATE TABLE IF NOT EXISTS recording_camera_meta (

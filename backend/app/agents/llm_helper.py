@@ -110,6 +110,8 @@ async def llm_json_call_ex(
         "messages": [{"role": "user", "content": prompt}],
         "max_completion_tokens": max_tokens,
         "temperature": 0.1,
+        # P0.1: provider-enforced JSON validity, same as the vision path.
+        "response_format": {"type": "json_object"},
     }
     timeout = httpx.Timeout(connect=connect_s, read=read_s,
                             write=read_s, pool=connect_s)

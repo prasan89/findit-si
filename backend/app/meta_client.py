@@ -128,6 +128,9 @@ class MuseSparkClient:
             ],
             "max_completion_tokens": self.max_output_tokens,
             "temperature": 0.1,
+            # P0.1: provider-enforced JSON validity (verified accepted by
+            # api.meta.ai on 2026-10-29 — replaces prompt-only JSON pleas).
+            "response_format": {"type": "json_object"},
         }
 
         from .guards import bounded_llm_call
@@ -156,6 +159,8 @@ class MuseSparkClient:
                 try:
                     parsed = parse_model_json(content, finish_reason=finish_reason)
                 except ModelResponseError as exc:
+                    if exc.raw_response is None and isinstance(content, str):
+                        exc.raw_response = content[:MAX_RAW_FAILURE_CHARS]
                     if (
                         exc.code != "truncated"
                         or attempt > 1
@@ -171,13 +176,9 @@ class MuseSparkClient:
                     continue
                 break
 
-        # Validate shape before the result reaches agents. A valid
-        # analysis is a dict with an "objects" list; anything else fails fast
-        # (ModelResponseError is a ValueError — non-retryable).
-        if not isinstance(parsed.get("objects"), list):
-            raise ModelResponseError(
-                "schema_violation", "Model response missing required 'objects' list"
-            )
+        # Validate shape before the result reaches agents (shared minimal
+        # schema; also applied to cached entries before reuse).
+        validate_frame_analysis(parsed)
 
         # Attach actual token usage so the accounting layer can record it.
         usage = data.get("usage") or {}
@@ -226,18 +227,24 @@ class ModelResponseError(ValueError):
         finish_reason: Optional[str] = None,
         content_type: Optional[str] = None,
         excerpt: Optional[str] = None,
+        raw_response: Optional[str] = None,
     ):
         super().__init__(message)
         self.code = code
         self.finish_reason = finish_reason
         self.content_type = content_type
         self.excerpt = excerpt
+        # P0.1: exact failing model text for forensic persistence (capped by
+        # the caller). Never logged wholesale — persisted to frame_failures.
+        self.raw_response = raw_response
 
 
 # Finish reasons that mean the output was cut short (OpenAI-compatible API).
 TRUNCATED_FINISH_REASONS = frozenset({"length"})
 # Upper bound for the one-shot truncation retry's token budget.
-TRUNCATED_RETRY_MAX_TOKENS = 8000
+TRUNCATED_RETRY_MAX_TOKENS = 16000
+# Cap for persisted raw failure text (forensics, not full dumps).
+MAX_RAW_FAILURE_CHARS = 8192
 
 
 def extract_message_content(data) -> tuple[Optional[str], Optional[str]]:
@@ -299,12 +306,18 @@ def extract_message_content(data) -> tuple[Optional[str], Optional[str]]:
 
 
 def _excerpt(text: str, pos: Optional[int] = None, width: int = 80) -> str:
-    """Short credential-free excerpt around a parse error (or the head)."""
-    flat = " ".join(str(text).split())
-    if pos is None:
-        return flat[:160]
+    """Short credential-free excerpt around a parse error (or the head).
+
+    P0.1: the window is cut from the ORIGINAL string first and collapsed
+    after. Collapsing before indexing shifted coordinates and produced
+    empty excerpts for late errors in pretty-printed JSON.
+    """
+    s = str(text)
+    if pos is None or pos < 0:
+        return " ".join(s.split())[:160]
     start = max(0, pos - width)
-    return flat[start:start + 2 * width]
+    window = s[start:pos + width]
+    return " ".join(window.split())[:160]
 
 
 def parse_model_json(content, *, finish_reason: Optional[str] = None) -> dict:
@@ -355,21 +368,22 @@ def parse_model_json(content, *, finish_reason: Optional[str] = None) -> dict:
     try:
         parsed = json.loads(candidate)
     except json.JSONDecodeError as first_exc:
+        # Legacy prose tolerance: accept ONLY a complete, valid object.
+        matched = None
+        second_exc = None
         if fenced is None:
-            # Legacy prose tolerance: accept ONLY a complete, valid object.
             match = re.search(r"\{.*\}", text, re.DOTALL)
             if match:
+                matched = match.group()
                 try:
-                    parsed = json.loads(match.group())
-                except json.JSONDecodeError as second_exc:
-                    raise ModelResponseError(
-                        "malformed_json",
-                        f"Model returned malformed JSON ({second_exc}): "
-                        f"{_excerpt(match.group(), second_exc.pos)}",
-                        finish_reason=finish_reason,
-                        excerpt=_excerpt(match.group(), second_exc.pos),
-                    ) from second_exc
-                return _require_json_object(parsed, finish_reason)
+                    parsed = json.loads(matched)
+                except json.JSONDecodeError as e2:
+                    second_exc = e2
+                else:
+                    return _require_json_object(parsed, finish_reason)
+        # P0.1: finish_reason=length wins over brace-shape analysis — a cut-off
+        # response is truncated even when it contains braces, and only the
+        # truncated code unlocks the larger-budget retry.
         if truncated:
             raise ModelResponseError(
                 "truncated",
@@ -378,6 +392,14 @@ def parse_model_json(content, *, finish_reason: Optional[str] = None) -> dict:
                 finish_reason=finish_reason,
                 excerpt=_excerpt(candidate, first_exc.pos),
             ) from first_exc
+        if matched is not None and second_exc is not None:
+            raise ModelResponseError(
+                "malformed_json",
+                f"Model returned malformed JSON ({second_exc}): "
+                f"{_excerpt(matched, second_exc.pos)}",
+                finish_reason=finish_reason,
+                excerpt=_excerpt(matched, second_exc.pos),
+            ) from second_exc
         if "{" not in candidate:
             raise ModelResponseError(
                 "malformed_json",
@@ -401,6 +423,30 @@ def _require_json_object(parsed, finish_reason: Optional[str]) -> dict:
             "schema_violation",
             "Model response is not a JSON object",
             finish_reason=finish_reason,
+        )
+    return parsed
+
+
+def validate_frame_analysis(parsed) -> dict:
+    """Validate a parsed analysis against the minimal frame schema.
+
+    Shared by live responses and cached entries: a dict with an "objects"
+    list and an optional string "scene_summary". Per-entry leniency stays in
+    the observation parser; this guards the top-level shape only.
+    Returns parsed unchanged. Raises ModelResponseError(schema_violation).
+    """
+    if not isinstance(parsed, dict):
+        raise ModelResponseError(
+            "schema_violation", "Model response is not a JSON object"
+        )
+    if not isinstance(parsed.get("objects"), list):
+        raise ModelResponseError(
+            "schema_violation", "Model response missing required 'objects' list"
+        )
+    summary = parsed.get("scene_summary")
+    if summary is not None and not isinstance(summary, str):
+        raise ModelResponseError(
+            "schema_violation", "Model response 'scene_summary' must be a string"
         )
     return parsed
 

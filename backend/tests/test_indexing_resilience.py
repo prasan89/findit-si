@@ -465,6 +465,175 @@ async def test_ten_second_video_end_to_end(db_path, storage, tmp_path):
     assert [r[0] for r in stamps] == [float(i) for i in range(10)]
 
 
+# ── P0.1: reasoning-exhaustion + structured-output regressions ────────────────
+# Fixtures are the EXACT provider envelopes captured live on 2026-10-29 while
+# diagnosing recording 5b3168de (meta muse-spark-1.3, api.meta.ai). They carry
+# no credentials (ids + model output only).
+
+FIXTURES_P01 = Path(__file__).parent / "fixtures_p01"
+
+
+def _load_fixture(name: str) -> dict:
+    with open(FIXTURES_P01 / name) as f:
+        return json.load(f)
+
+
+def test_exact_empty_length_envelopes_are_truncated():
+    """Captured failure: 2000/2000 tokens burned on reasoning, null content."""
+    for name in ("envelope_t2_retry1.json", "envelope_t8_retry1.json"):
+        data = _load_fixture(name)
+        assert data["choices"][0]["message"]["content"] is None
+        assert data["choices"][0]["finish_reason"] == "length"
+        assert data["usage"]["completion_tokens_details"]["reasoning_tokens"] > 1900
+        text, finish = extract_message_content(data)
+        assert text is None and finish == "length"
+        with pytest.raises(ModelResponseError) as exc_info:
+            parse_model_json(text, finish_reason=finish)
+        assert exc_info.value.code == "truncated"
+
+
+def test_exact_partial_length_envelope_is_truncated():
+    """Captured failure: 1644 reasoning tokens, JSON cut mid-string at 1500 chars."""
+    data = _load_fixture("envelope_t3_pipebytes.json")
+    content = data["choices"][0]["message"]["content"]
+    assert len(content) == 1500  # exact captured bytes
+    assert data["choices"][0]["finish_reason"] == "length"
+    assert content.rstrip().endswith('"parked with side profile visible')
+    text, finish = extract_message_content(data)
+    with pytest.raises(ModelResponseError) as exc_info:
+        parse_model_json(text, finish_reason=finish)
+    assert exc_info.value.code == "truncated"
+
+
+@pytest.mark.asyncio
+async def test_truncation_retry_recovers_from_exact_capture():
+    posts = []
+    first = _load_fixture("envelope_t3_pipebytes.json")
+    recovered = _envelope(json.dumps(VALID_ANALYSIS), finish_reason="stop")
+    client = MuseSparkClient(api_key="k", max_output_tokens=2000)
+    with _mock_http_client(posts, [first, recovered]):
+        result = await client.analyze_frame(b"frame")
+    assert result["scene_summary"] == "empty room"
+    assert len(posts) == 2
+    assert posts[1]["max_completion_tokens"] == 4000
+
+
+@pytest.mark.asyncio
+async def test_vision_payload_enforces_json_object_and_budget():
+    """Provider-side JSON guarantee + headroom for ~2200 reasoning tokens."""
+    from app.config import get_settings
+    posts = []
+    ok = _envelope(json.dumps(VALID_ANALYSIS), finish_reason="stop")
+    client = MuseSparkClient(api_key="k")
+    assert client.max_output_tokens == get_settings().vision_max_output_tokens
+    assert client.max_output_tokens >= 8000
+    with _mock_http_client(posts, [ok]):
+        await client.analyze_frame(b"frame")
+    assert posts[0]["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_text_payload_enforces_json_object(db_path, monkeypatch):
+    from app.agents.llm_helper import llm_json_call_ex
+    monkeypatch.setenv("MODEL_API_KEY", "test-key")
+    posts = []
+
+    async def fake_post(url, headers, json, **kwargs):
+        posts.append(dict(json))
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = _envelope('{"answer": 1}')
+        return mock_resp
+
+    with patch("httpx.AsyncClient") as mock_cls:
+        mock_http = AsyncMock()
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+        mock_http.post = AsyncMock(side_effect=fake_post)
+        mock_cls.return_value = mock_http
+        result = await llm_json_call_ex("Q?", db_path, "test_op")
+
+    assert result.data == {"answer": 1}
+    assert posts[0]["response_format"] == {"type": "json_object"}
+
+
+def test_frame_analysis_schema_validator():
+    from app.meta_client import validate_frame_analysis
+    assert validate_frame_analysis({"objects": [], "scene_summary": "x"})["objects"] == []
+    assert validate_frame_analysis({"objects": []})["objects"] == []
+    for bad in ({"scene_summary": "no objects"}, {"objects": {}}, {"objects": None},
+                {"objects": [], "scene_summary": 42}, ["objects"], "str"):
+        with pytest.raises(ModelResponseError) as exc_info:
+            validate_frame_analysis(bad)
+        assert exc_info.value.code == "schema_violation"
+
+
+@pytest.mark.asyncio
+async def test_invalid_cache_entry_is_dropped_and_missed(db_path):
+    from app.processor import get_cached_analysis, store_cached_analysis
+    async with get_db(db_path) as db:
+        await store_cached_analysis(db, "hash-bad", "mock-v1", {"nope": True})
+        await store_cached_analysis(db, "hash-good", "mock-v1", dict(VALID_ANALYSIS))
+        await db.commit()
+        assert await get_cached_analysis(db, "hash-bad", "mock-v1") is None
+        assert await get_cached_analysis(db, "hash-good", "mock-v1") == VALID_ANALYSIS
+        row = await (await db.execute(
+            "SELECT COUNT(*) FROM frame_cache WHERE content_hash='hash-bad'")).fetchone()
+        assert row[0] == 0  # poisoned entry self-healed
+
+
+def test_excerpt_covers_late_error_in_pretty_json():
+    """P0 excerpt bug: late errors in pretty JSON produced EMPTY excerpts."""
+    lines = ["{", '  "objects": [']
+    for i in range(50):
+        lines.append(f'    {{"label": "obj{i}"}},')
+    lines.append('    {"label": "broken" "oops"}')  # missing comma
+    lines.append("  ]")
+    lines.append("}")
+    text = "\n".join(lines)
+    with pytest.raises(ModelResponseError) as exc_info:
+        parse_model_json(text)
+    assert exc_info.value.code == "malformed_json"
+    assert exc_info.value.excerpt  # non-empty
+    assert "broken" in exc_info.value.excerpt
+
+
+def test_unescaped_quote_class_is_malformed():
+    """SYNTHETIC (inferred mode-A class): the 'Expecting , delimiter' signature."""
+    content = '{"objects": [{"label": "man holding "box" upright"}]}'
+    with pytest.raises(ModelResponseError) as exc_info:
+        parse_model_json(content)
+    assert exc_info.value.code == "malformed_json"
+    assert "Expecting ',' delimiter" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_frame_failure_persisted_with_exact_raw(db_path, storage, monkeypatch):
+    class RawFailingClient(MockMetaClient):
+        async def analyze_frame(self, frame_data: bytes) -> dict:
+            self._call_count += 1
+            raise ModelResponseError(
+                "malformed_json", "Model returned malformed JSON (test)",
+                finish_reason="stop", raw_response='{"objects": [{"oops"}',
+            )
+
+    _patch_extraction(monkeypatch, 2)
+    recording_id = await _seed_recording(db_path)
+    await processor.process_recording(
+        recording_id, db_path, storage, RawFailingClient())
+
+    async with get_db(db_path) as db:
+        rows = await (await db.execute(
+            "SELECT video_timestamp_seconds, error_code, finish_reason, raw_response"
+            " FROM frame_failures WHERE recording_id=? ORDER BY video_timestamp_seconds",
+            (recording_id,))).fetchall()
+    assert len(rows) == 2
+    assert rows[0][1] == "malformed_json"
+    assert rows[0][2] == "stop"
+    assert rows[0][3] == '{"objects": [{"oops"}'
+    assert [r[0] for r in rows] == [0.0, 1.0]
+
+
 @needs_ffmpeg
 @pytest.mark.asyncio
 async def test_undecodable_video_is_failed(db_path, storage):
