@@ -1,0 +1,257 @@
+{
+  "dataset_id": "realitytrace-eval",
+  "version": "2.0.0",
+  "supersedes": "eval/ground_truth.json (unversioned v1)",
+  "_comment": "Phase 5 versioned evaluation dataset. Extends v1 (same 3 clips, GT-001..GT-003, Q1..Q4 preserved verbatim where possible) with per-example recording linkage, video-relative boundaries, absolute timestamps, evidence references, negative/ambiguous/temporal queries, and labeled cross-camera associations. ALL footage is synthetic FFmpeg color blocks — see limitations.",
+
+  "footage_provenance": {
+    "source": "synthetic",
+    "generator": "FFmpeg color-block synthetic videos (see v1 methodology)",
+    "real_footage_available": false,
+    "real_footage_note": "No real labeled CCTV footage was available for Phase 5. All metrics below measure performance on synthetic color-block clips only and MUST NOT be presented as real-world CCTV performance."
+  },
+
+  "recordings": [
+    {
+      "key": "rec-entrance",
+      "clip": "clips/entrance_camera.mp4",
+      "camera_id": "cam-entrance",
+      "camera_name": "Entrance Camera",
+      "camera_location": "Front Door",
+      "recording_start": "2024-01-15T10:00:00",
+      "recording_timezone": "UTC",
+      "duration_seconds": 15.0,
+      "synthetic": true
+    },
+    {
+      "key": "rec-hallway",
+      "clip": "clips/hallway_camera.mp4",
+      "camera_id": "cam-hallway",
+      "camera_name": "Hallway Camera",
+      "camera_location": "Main Corridor",
+      "recording_start": "2024-01-15T10:02:00",
+      "recording_timezone": "UTC",
+      "duration_seconds": 20.0,
+      "synthetic": true
+    },
+    {
+      "key": "rec-parking",
+      "clip": "clips/parking_camera.mp4",
+      "camera_id": "cam-parking",
+      "camera_name": "Parking Camera",
+      "camera_location": "Rear Parking Lot",
+      "recording_start": "2024-01-15T10:01:00",
+      "recording_timezone": "UTC",
+      "duration_seconds": 10.0,
+      "synthetic": true
+    }
+  ],
+
+  "events": [
+    {
+      "id": "GT-001",
+      "dataset_version": "2.0.0",
+      "recording_key": "rec-entrance",
+      "camera_id": "cam-entrance",
+      "camera_name": "Entrance Camera",
+      "recording_start": "2024-01-15T10:00:00",
+      "recording_timezone": "UTC",
+      "event_type": "person_detected",
+      "description": "Red rectangular figure (synthetic person proxy) visible near the entrance.",
+      "start_seconds": 3.0,
+      "end_seconds": 8.0,
+      "timestamp_seconds_range": [3.0, 8.0],
+      "absolute_start": "2024-01-15T10:00:03+00:00",
+      "absolute_end": "2024-01-15T10:00:08+00:00",
+      "absolute_time_reliable": true,
+      "absolute_time_note": "Reliable only because the clip is synthetic with a declared recording start; not representative of real CCTV clock accuracy.",
+      "expected_keywords": ["red", "person", "figure", "subject"],
+      "evidence": [
+        {"role": "during", "timestamp_seconds": 5.5, "note": "Reproducible frame timestamp; midpoint of [3.0, 8.0]."}
+      ],
+      "visible_in_single_camera": false,
+      "limitations": ["synthetic_proxy", "identity_unverifiable"],
+      "limitation_notes": "Color block is a proxy, not a person. No occlusion, low-light, or timestamp-uncertainty coverage."
+    },
+    {
+      "id": "GT-002",
+      "dataset_version": "2.0.0",
+      "recording_key": "rec-hallway",
+      "camera_id": "cam-hallway",
+      "camera_name": "Hallway Camera",
+      "recording_start": "2024-01-15T10:02:00",
+      "recording_timezone": "UTC",
+      "event_type": "unattended_object",
+      "description": "Blue rectangular object (synthetic bag/package proxy) visible in the hallway.",
+      "start_seconds": 5.0,
+      "end_seconds": 12.0,
+      "timestamp_seconds_range": [5.0, 12.0],
+      "absolute_start": "2024-01-15T10:02:05+00:00",
+      "absolute_end": "2024-01-15T10:02:12+00:00",
+      "absolute_time_reliable": true,
+      "absolute_time_note": "Reliable only because the clip is synthetic with a declared recording start; not representative of real CCTV clock accuracy.",
+      "expected_keywords": ["blue", "bag", "object", "package"],
+      "evidence": [
+        {"role": "during", "timestamp_seconds": 8.5, "note": "Reproducible frame timestamp; midpoint of [5.0, 12.0]."}
+      ],
+      "visible_in_single_camera": false,
+      "limitations": ["synthetic_proxy", "identity_unverifiable"],
+      "limitation_notes": "Whether this is the 'same entity' as GT-001 cannot be determined from color blocks; any identity link is speculative."
+    },
+    {
+      "id": "GT-003",
+      "dataset_version": "2.0.0",
+      "recording_key": "rec-parking",
+      "camera_id": "cam-parking",
+      "camera_name": "Parking Camera",
+      "recording_start": "2024-01-15T10:01:00",
+      "recording_timezone": "UTC",
+      "event_type": "vehicle_detected",
+      "description": "Green rectangular shape (synthetic vehicle proxy) visible in the parking lot.",
+      "start_seconds": 2.0,
+      "end_seconds": 6.0,
+      "timestamp_seconds_range": [2.0, 6.0],
+      "absolute_start": "2024-01-15T10:01:02+00:00",
+      "absolute_end": "2024-01-15T10:01:06+00:00",
+      "absolute_time_reliable": true,
+      "absolute_time_note": "Reliable only because the clip is synthetic with a declared recording start; not representative of real CCTV clock accuracy.",
+      "expected_keywords": ["green", "vehicle", "car"],
+      "evidence": [
+        {"role": "during", "timestamp_seconds": 4.0, "note": "Reproducible frame timestamp; midpoint of [2.0, 6.0]."}
+      ],
+      "visible_in_single_camera": true,
+      "limitations": ["synthetic_proxy"],
+      "limitation_notes": "No cross-camera match expected: disjoint appearance, disjoint event type, large temporal gaps."
+    }
+  ],
+
+  "queries": [
+    {
+      "id": "Q1",
+      "query": "red person at entrance",
+      "kind": "positive",
+      "expected_events": ["GT-001"],
+      "expected_not_returned": ["GT-003"],
+      "ambiguous_events": [],
+      "min_expected_score": 0.5
+    },
+    {
+      "id": "Q2",
+      "query": "blue bag in hallway",
+      "kind": "positive",
+      "expected_events": ["GT-002"],
+      "expected_not_returned": ["GT-003"],
+      "ambiguous_events": [],
+      "min_expected_score": 0.5
+    },
+    {
+      "id": "Q3",
+      "query": "green vehicle parking",
+      "kind": "positive",
+      "expected_events": ["GT-003"],
+      "expected_not_returned": ["GT-001"],
+      "ambiguous_events": [],
+      "min_expected_score": 0.5
+    },
+    {
+      "id": "Q4",
+      "query": "show all events between 00:00 and 00:15",
+      "kind": "temporal",
+      "expected_events": ["GT-001"],
+      "expected_not_returned": [],
+      "ambiguous_events": [],
+      "notes": "Time filter uses video-relative seconds (00:00-00:15 -> 0-15s). V1 expectation preserved: only GT-001. KNOWN BEHAVIOR GAP (kept as temporal regression case): investigate() scores temporal queries by leftover keyword terms ('all','00','15') instead of treating them as pure time filters, so on the deterministic fixture Q4 returns [GT-002] via the substring 'all' in 'hallway' (precision 0, recall 0). The v1 live run returned all three events (precision 1/3) because real-model text matched more terms. Expectation encodes intent (pure time filter), not current implementation."
+    },
+    {
+      "id": "Q5",
+      "query": "yellow helicopter on rooftop",
+      "kind": "negative",
+      "expected_events": [],
+      "expected_not_returned": ["GT-001", "GT-002", "GT-003"],
+      "ambiguous_events": [],
+      "notes": "Negative case: nothing in the dataset matches. Any returned event is a false positive. Tests empty-prediction handling."
+    },
+    {
+      "id": "Q6",
+      "query": "dark figure carrying something",
+      "kind": "ambiguous",
+      "expected_events": [],
+      "expected_not_returned": [],
+      "ambiguous_events": ["GT-001", "GT-002"],
+      "notes": "Ambiguous case: vague description ('dark', 'figure', 'carrying') fits no GT event exactly but is plausibly near GT-001/GT-002. Predictions matching ambiguous events are reported separately and excluded from precision/recall."
+    },
+    {
+      "id": "Q7",
+      "query": "show all events between 00:00 and 00:06",
+      "kind": "temporal",
+      "expected_events": ["GT-001", "GT-003"],
+      "expected_not_returned": ["GT-002"],
+      "ambiguous_events": [],
+      "notes": "Temporal filter regression: GT midpoints 5.5 (in), 8.5 (out), 4.0 (in). Uses video-relative seconds. Expectation encodes intent (pure time filter). KNOWN GAP: leftover keyword terms ('all','00','06') dominate scoring, so the deterministic fixture returns [] (recall 0) — same root cause as Q4."
+    },
+    {
+      "id": "Q8",
+      "query": "show all events between 00:12 and 00:15",
+      "kind": "temporal",
+      "expected_events": [],
+      "expected_not_returned": ["GT-001", "GT-002", "GT-003"],
+      "ambiguous_events": [],
+      "notes": "Temporal negative: all GT midpoints (5.5, 8.5, 4.0) fall outside 12-15s. Any returned event is a false positive."
+    }
+  ],
+
+  "cross_camera_associations": {
+    "_comment": "Unordered GT-id pairs. Identity can never be confirmed from synthetic color blocks, so no pair is labeled valid.",
+    "valid": [],
+    "valid_note": "Empty by design: no same-entity evidence exists for synthetic color blocks. Cross-camera recall is therefore undefined (null) on this dataset; only false-association behavior is measurable.",
+    "invalid": [
+      {
+        "pair": ["GT-001", "GT-003"],
+        "reason": "Disjoint appearance (red figure vs green vehicle), disjoint event types, ~60s temporal gap. Must NOT link."
+      },
+      {
+        "pair": ["GT-002", "GT-003"],
+        "reason": "Disjoint appearance (blue object vs green vehicle), disjoint event types, ~65s temporal gap. Must NOT link. Regression case for the 4 false associations in eval_results.json (2026-10-28)."
+      }
+    ],
+    "ambiguous": [
+      {
+        "pair": ["GT-001", "GT-002"],
+        "reason": "Temporal proximity (117s gap, within the 300s correlator window) but disjoint appearance descriptions and disjoint event types. V1 listed these as cross_camera_candidate; v2 downgrades to AMBIGUOUS because visually similar/dissimilar color blocks can neither confirm nor refute identity. Links here are reported separately, never scored as correct."
+      }
+    ]
+  },
+
+  "expected_gaps": [
+    "The parking camera event should NOT produce a cross-camera link to the entrance or hallway cameras (different event type, large temporal gap, no shared appearance tokens)."
+  ],
+
+  "match_rules": {
+    "time_tolerance_seconds": 2.0,
+    "window_rule": "A prediction matches a GT event when |pred_ts - gt_midpoint| <= (gt_half_window + time_tolerance_seconds).",
+    "require_camera": true,
+    "require_event_type": false,
+    "keyword_overlap_min": 1,
+    "keyword_rule": "Prediction text (action_description + observed_facts + object_descriptions + scene_description, lowercased) must contain at least keyword_overlap_min of the GT expected_keywords.",
+    "assignment": "Greedy 1:1 assignment: GT events in id order take the lowest-timestamp-error unmatched prediction satisfying all rules."
+  },
+
+  "known_limitations": [
+    "ALL footage is synthetic FFmpeg color blocks; results do NOT represent real-world CCTV performance.",
+    "No real labeled footage was available; no real annotations were created or invented.",
+    "Tiny sample: 3 GT events, 8 queries. Per-event-type statistics are reported with sample counts and flagged low-sample (n<5).",
+    "No coverage for occlusion, low light, incomplete footage, unsynchronized camera clocks, or timestamp uncertainty (synthetic timestamps are exact).",
+    "No confirmed-valid cross-camera pair exists, so cross-camera recall is undefined; only false-association rate is measurable.",
+    "Q4/Q7/Q8 encode pure-time-filter intent, but investigate() scores leftover keyword terms; see per-query notes for the observed behavior gap."
+  ],
+
+  "methodology": {
+    "clip_generation": "FFmpeg color-block synthetic videos. No real individuals, no real locations.",
+    "model_dependency": "Results depend on vision model output. With MockMetaClient, all frames return empty objects[] — most events will not be detected. Real model required for meaningful precision/recall.",
+    "known_limitations": [
+      "Color blocks are not realistic CCTV footage — real models may describe them differently or not at all.",
+      "Event grouping depends on model returning objects in the same frames as the colored blocks appear.",
+      "Cross-camera correlation depends on shared appearance tokens (e.g. 'red', 'blue') — if model uses different words, links will not form."
+    ]
+  }
+}

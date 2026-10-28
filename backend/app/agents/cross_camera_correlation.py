@@ -67,11 +67,16 @@ async def run(ctx: InvestigationContext) -> AgentResult[CorrelationReport]:
             confirmed_links=confirmed_links,
             total_links_found=links_created,
         )
+        linked_event_ids = sorted({lnk.source_event_id for lnk in candidate_links}
+                                  | {lnk.target_event_id for lnk in candidate_links}
+                                  | {lnk.source_event_id for lnk in confirmed_links}
+                                  | {lnk.target_event_id for lnk in confirmed_links})
         return AgentResult(
             agent_name=AGENT_NAME,
             status=AgentStatus.COMPLETED,
             output=report,
             duration_ms=(time.monotonic() - t0) * 1000,
+            event_ids=linked_event_ids,
         )
     except Exception as exc:
         logger.exception("CrossCameraCorrelationAgent failed")

@@ -12,13 +12,28 @@ from typing import Optional
 from .base import AgentResult, AgentStatus, InvestigationContext
 from .schemas import FinalReport
 from ..database import get_db
-from ..provider import BudgetExceededError, get_total_spent
+from ..provider import BudgetExceededError, get_total_spent, get_usage_summary
 
 logger = logging.getLogger(__name__)
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _code_revision() -> Optional[str]:
+    """Best-effort git revision for traceability; None when unavailable."""
+    try:
+        import subprocess
+        proc = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    except Exception:
+        pass
+    return None
 
 
 class InvestigationOrchestrator:
@@ -143,6 +158,48 @@ class InvestigationOrchestrator:
         if any(r.status == AgentStatus.FAILED for r in results):
             trace_status = "PARTIAL"
 
+        # Phase 5: measured provider usage + run configuration for the trace.
+        # Usage rows are provider-reported (measured); the model_usage table
+        # holds the per-call detail — the trace stores the run-level summary.
+        try:
+            by_model = await get_usage_summary(self.db_path)
+            total_spent = await get_total_spent(self.db_path)
+        except Exception:
+            by_model, total_spent = [], 0.0
+        measured_tokens_in = sum(int(row.get("tokens_in") or 0) for row in by_model)
+        measured_tokens_out = sum(int(row.get("tokens_out") or 0) for row in by_model)
+        usage_summary = {
+            "measured": True,
+            "total_spent_usd": round(total_spent, 6),
+            "tokens_in_total": measured_tokens_in,
+            "tokens_out_total": measured_tokens_out,
+            "by_model": by_model,
+            "note": ("Provider-reported usage from the model_usage table. "
+                     "Covers all recorded calls, not only this trace."),
+        }
+        try:
+            from ..config import get_settings as _get_settings
+            _settings = _get_settings()
+            model_config = {
+                "investigation_model": _settings.investigation_model,
+                "vision_model": _settings.vision_model,
+                "vision_provider": _settings.vision_provider,
+                "budget_usd": self.budget_usd,
+            }
+        except Exception:
+            model_config = {"budget_usd": self.budget_usd}
+        code_revision = _code_revision()
+        retrieved_event_ids = sorted({eid for r in results for eid in r.event_ids})
+        retrieved_evidence_ids = sorted({eid for r in results for eid in r.evidence_ids})
+        # Phase 5: full retrieved events for scoring/audit (response only —
+        # the persisted trace references them by ID to avoid duplication).
+        retrieved_events: list[dict] = []
+        _inv_result = ctx.agent_outputs.get("investigation_result")
+        if _inv_result is not None:
+            for _ev in _inv_result.events:
+                retrieved_events.append(
+                    _ev.model_dump() if hasattr(_ev, "model_dump") else dict(_ev))
+
         await self._persist_trace(
             trace_id, investigation_id, query, started_at,
             recording_ids or [],
@@ -152,6 +209,9 @@ class InvestigationOrchestrator:
             total_cost_usd=total_cost,
             agent_results=results,
             final_report=final_report_dict,
+            code_revision=code_revision,
+            model_config=model_config,
+            usage_summary=usage_summary,
         )
 
         return {
@@ -163,6 +223,12 @@ class InvestigationOrchestrator:
             "total_cost_usd": round(total_cost, 6),
             "total_duration_ms": round(total_duration_ms, 1),
             "status": trace_status,
+            "code_revision": code_revision,
+            "model_config": model_config,
+            "usage_summary": usage_summary,
+            "retrieved_event_ids": retrieved_event_ids,
+            "retrieved_evidence_ids": retrieved_evidence_ids,
+            "retrieved_events": retrieved_events,
         }
 
     def _budget_ok(self, ctx: InvestigationContext) -> bool:
@@ -202,25 +268,49 @@ class InvestigationOrchestrator:
         total_cost_usd: Optional[float] = None,
         agent_results: Optional[list[AgentResult]] = None,
         final_report: Optional[dict] = None,
+        code_revision: Optional[str] = None,
+        model_config: Optional[dict] = None,
+        usage_summary: Optional[dict] = None,
     ) -> None:
         agent_results_json = json.dumps(
             [r.to_dict() for r in agent_results] if agent_results else []
         )
         final_report_json = json.dumps(final_report) if final_report else None
         recording_ids_json = json.dumps(recording_ids)
+        model_config_json = json.dumps(model_config) if model_config else None
+        usage_summary_json = json.dumps(usage_summary) if usage_summary else None
 
         async with get_db(self.db_path) as db:
-            await db.execute(
-                """INSERT OR REPLACE INTO investigation_traces
-                   (trace_id, investigation_id, query, started_at, finished_at,
-                    total_duration_ms, total_cost_usd, agent_results, final_report,
-                    recording_ids, status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    trace_id, investigation_id, query, started_at, finished_at,
-                    total_duration_ms, total_cost_usd or 0.0,
-                    agent_results_json, final_report_json,
-                    recording_ids_json, status,
-                ),
-            )
+            # Phase 5 columns (code_revision, model_config, usage_summary) are
+            # added by migration; fall back to the legacy column set when the
+            # migration has not run (e.g. an older database file).
+            try:
+                await db.execute(
+                    """INSERT OR REPLACE INTO investigation_traces
+                       (trace_id, investigation_id, query, started_at, finished_at,
+                        total_duration_ms, total_cost_usd, agent_results, final_report,
+                        recording_ids, status, code_revision, model_config, usage_summary)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        trace_id, investigation_id, query, started_at, finished_at,
+                        total_duration_ms, total_cost_usd or 0.0,
+                        agent_results_json, final_report_json,
+                        recording_ids_json, status, code_revision,
+                        model_config_json, usage_summary_json,
+                    ),
+                )
+            except Exception:
+                await db.execute(
+                    """INSERT OR REPLACE INTO investigation_traces
+                       (trace_id, investigation_id, query, started_at, finished_at,
+                        total_duration_ms, total_cost_usd, agent_results, final_report,
+                        recording_ids, status)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        trace_id, investigation_id, query, started_at, finished_at,
+                        total_duration_ms, total_cost_usd or 0.0,
+                        agent_results_json, final_report_json,
+                        recording_ids_json, status,
+                    ),
+                )
             await db.commit()

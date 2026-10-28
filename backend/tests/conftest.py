@@ -66,6 +66,18 @@ async def test_db(db_path):
         yield db
 
 
+# Phase 5: enforce the documented "tests never call external APIs" guarantee.
+# Non-live tests run with API keys stripped so LLM helpers take the
+# deterministic mocked path even when keys exist in the environment.
+# Opt-in live tests (marked live_api) keep the real environment.
+@pytest.fixture(autouse=True)
+def _strip_api_keys_for_non_live_tests(request, monkeypatch):
+    if request.node.get_closest_marker("live_api") is None:
+        monkeypatch.delenv("MODEL_API_KEY", raising=False)
+        monkeypatch.delenv("META_API_KEY", raising=False)
+        monkeypatch.delenv("META_API_BASE_URL", raising=False)
+
+
 # FastAPI test client fixture
 @pytest_asyncio.fixture
 async def client(tmp_data_dir, db_path):

@@ -4,7 +4,7 @@ import logging
 import time
 
 from ..agents.base import AgentResult, AgentStatus, InvestigationContext
-from ..agents.llm_helper import llm_json_call
+from ..agents.llm_helper import llm_json_call_ex
 from ..agents.schemas import VisualSummary, VisualSummaryReport
 from ..config import get_settings
 
@@ -68,15 +68,16 @@ Return ONLY valid JSON — no prose, no markdown:
   ]
 }}"""
 
-        result, tokens_in, tokens_out, cost = await llm_json_call(
+        call = await llm_json_call_ex(
             prompt=prompt,
             db_path=ctx.db_path,
             operation="video_intelligence",
             model=settings.investigation_model,
         )
+        tokens_in, tokens_out, cost = call.tokens_in, call.tokens_out, call.cost_usd
 
         summaries: list[VisualSummary] = []
-        for s in result.get("summaries", []):
+        for s in call.data.get("summaries", []):
             try:
                 summaries.append(VisualSummary(
                     event_id=s.get("event_id", ""),
@@ -105,11 +106,16 @@ Return ONLY valid JSON — no prose, no markdown:
 
         return AgentResult(
             agent_name=AGENT_NAME,
-            status=AgentStatus.COMPLETED,
+            status=AgentStatus.MOCKED if call.mocked else AgentStatus.COMPLETED,
             output=report,
             duration_ms=(time.monotonic() - t0) * 1000,
             tokens_used=tokens_in + tokens_out,
             cost_usd=cost,
+            tokens_in=tokens_in if not call.mocked else None,
+            tokens_out=tokens_out if not call.mocked else None,
+            usage_measured=call.success and not call.mocked,
+            model_used=settings.investigation_model,
+            event_ids=[ev.get("event_id", "") for ev in events[:10]],
         )
     except Exception as exc:
         logger.exception("VideoIntelligenceAgent failed")

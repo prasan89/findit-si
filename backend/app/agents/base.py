@@ -12,6 +12,9 @@ class AgentStatus(str, Enum):
     COMPLETED = "completed"
     SKIPPED = "skipped"
     FAILED = "failed"
+    # Phase 5: agent produced heuristic/fallback output without a live model
+    # call (e.g. no API key configured). Output shape is unchanged.
+    MOCKED = "mocked"
 
 
 @dataclass
@@ -23,6 +26,18 @@ class AgentResult(Generic[T]):
     error: Optional[str] = None
     tokens_used: int = 0
     cost_usd: float = 0.0
+    # Phase 5 observability (all optional; None == unavailable, never invented).
+    retries: Optional[int] = None
+    timeouts: Optional[int] = None
+    cache_hits: Optional[int] = None
+    cache_misses: Optional[int] = None
+    tokens_in: Optional[int] = None
+    tokens_out: Optional[int] = None
+    # True only when tokens/cost came from a provider-reported usage payload.
+    usage_measured: bool = False
+    model_used: Optional[str] = None
+    event_ids: list[str] = field(default_factory=list)
+    evidence_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         output_val = None
@@ -39,6 +54,16 @@ class AgentResult(Generic[T]):
             "error": self.error,
             "tokens_used": self.tokens_used,
             "cost_usd": self.cost_usd,
+            "retries": self.retries,
+            "timeouts": self.timeouts,
+            "cache_hits": self.cache_hits,
+            "cache_misses": self.cache_misses,
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
+            "usage_measured": self.usage_measured,
+            "model_used": self.model_used,
+            "event_ids": self.event_ids,
+            "evidence_ids": self.evidence_ids,
         }
 
 

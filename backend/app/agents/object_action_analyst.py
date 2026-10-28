@@ -4,7 +4,7 @@ import logging
 import time
 
 from ..agents.base import AgentResult, AgentStatus, InvestigationContext
-from ..agents.llm_helper import llm_json_call
+from ..agents.llm_helper import llm_json_call_ex
 from ..agents.schemas import ObjectActionAnalysis, ObjectActionReport
 from ..config import get_settings
 
@@ -63,15 +63,16 @@ Return ONLY valid JSON:
   ]
 }}"""
 
-        result, tokens_in, tokens_out, cost = await llm_json_call(
+        call = await llm_json_call_ex(
             prompt=prompt,
             db_path=ctx.db_path,
             operation="object_action_analysis",
             model=settings.investigation_model,
         )
+        tokens_in, tokens_out, cost = call.tokens_in, call.tokens_out, call.cost_usd
 
         reports: list[ObjectActionReport] = []
-        for r in result.get("reports", []):
+        for r in call.data.get("reports", []):
             try:
                 reports.append(ObjectActionReport(
                     event_id=r.get("event_id", ""),
@@ -101,11 +102,16 @@ Return ONLY valid JSON:
 
         return AgentResult(
             agent_name=AGENT_NAME,
-            status=AgentStatus.COMPLETED,
+            status=AgentStatus.MOCKED if call.mocked else AgentStatus.COMPLETED,
             output=analysis,
             duration_ms=(time.monotonic() - t0) * 1000,
             tokens_used=tokens_in + tokens_out,
             cost_usd=cost,
+            tokens_in=tokens_in if not call.mocked else None,
+            tokens_out=tokens_out if not call.mocked else None,
+            usage_measured=call.success and not call.mocked,
+            model_used=settings.investigation_model,
+            event_ids=[ev.get("event_id", "") for ev in events[:10]],
         )
     except Exception as exc:
         logger.exception("ObjectActionAnalystAgent failed")

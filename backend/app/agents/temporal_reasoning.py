@@ -77,6 +77,7 @@ async def run(ctx: InvestigationContext) -> AgentResult[TemporalReport]:
             status=AgentStatus.COMPLETED,
             output=report,
             duration_ms=duration_ms,
+            event_ids=[entry.event_id for entry in timeline],
         )
     except Exception as exc:
         logger.exception("TemporalReasoningAgent failed")

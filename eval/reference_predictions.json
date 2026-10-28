@@ -1,0 +1,3096 @@
+{
+  "dataset_id": "realitytrace-eval",
+  "dataset_version": "2.0.0",
+  "code_revision": "48da5b7",
+  "generated_note": "Deterministic offline reference. Fixture DB mirrors the synthetic v2 scenario with fixed IDs. No model calls were made; LLM agents ran in MOCKED/SKIPPED states.",
+  "fixture": {
+    "recording_ids": {
+      "rec-entrance": "eval-ref-entrance",
+      "rec-hallway": "eval-ref-hallway",
+      "rec-parking": "eval-ref-parking"
+    },
+    "event_ids": {
+      "GT-001": "EV-REF-001",
+      "GT-002": "EV-REF-002",
+      "GT-003": "EV-REF-003"
+    },
+    "cross_camera_links_created": 4
+  },
+  "model_config": {
+    "investigation_model": "muse-spark-1.3",
+    "vision_model": "muse-spark-1.3",
+    "mode": "offline-mocked (no API keys; zero live calls)"
+  },
+  "standard": {
+    "Q1": {
+      "query": "red person at entrance",
+      "events": [
+        {
+          "event_id": "EV-REF-001",
+          "recording_id": "eval-ref-entrance",
+          "camera_name": "Entrance Camera",
+          "timestamp_seconds": 5.5,
+          "timestamp_absolute": "2024-01-15T10:00:03+00:00",
+          "event_type": "person_detected",
+          "action_description": "Red person-like figure detected near entrance",
+          "scene_description": "Entrance area with a red figure",
+          "object_descriptions": [
+            "red person figure"
+          ],
+          "observed_facts": [
+            "Observed: red person figure"
+          ],
+          "inferred_claims": [],
+          "confidence": 0.8,
+          "evidence_frames": [
+            {
+              "frame_path": "frames/eval-ref-entrance/EV-REF-001.jpg",
+              "timestamp_seconds": 5.5,
+              "role": "during"
+            }
+          ],
+          "cross_camera_links": [
+            {
+              "target_event_id": "EV-REF-003",
+              "target_recording_id": "eval-ref-parking",
+              "target_camera_name": "Parking Camera",
+              "confidence": 0.402,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 58s; No shared appearance tokens"
+            }
+          ]
+        }
+      ],
+      "evidence_gaps": [
+        "No matching events found in recording 'rec-hallway.mp4'.",
+        "No matching events found in recording 'rec-parking.mp4'."
+      ],
+      "timestamp_ordering_reliable": true,
+      "latency_ms_noncomparable": 1.8
+    },
+    "Q2": {
+      "query": "blue bag in hallway",
+      "events": [
+        {
+          "event_id": "EV-REF-002",
+          "recording_id": "eval-ref-hallway",
+          "camera_name": "Hallway Camera",
+          "timestamp_seconds": 8.5,
+          "timestamp_absolute": "2024-01-15T10:02:05+00:00",
+          "event_type": "unattended_object",
+          "action_description": "Blue bag object detected in hallway",
+          "scene_description": "Hallway with a blue bag-like object",
+          "object_descriptions": [
+            "blue bag object"
+          ],
+          "observed_facts": [
+            "Observed: blue bag object"
+          ],
+          "inferred_claims": [],
+          "confidence": 0.8,
+          "evidence_frames": [
+            {
+              "frame_path": "frames/eval-ref-hallway/EV-REF-002.jpg",
+              "timestamp_seconds": 8.5,
+              "role": "during"
+            }
+          ],
+          "cross_camera_links": [
+            {
+              "target_event_id": "EV-REF-003",
+              "target_recording_id": "eval-ref-parking",
+              "target_camera_name": "Parking Camera",
+              "confidence": 0.393,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 64s; No shared appearance tokens"
+            }
+          ]
+        }
+      ],
+      "evidence_gaps": [
+        "No matching events found in recording 'rec-entrance.mp4'.",
+        "No matching events found in recording 'rec-parking.mp4'."
+      ],
+      "timestamp_ordering_reliable": true,
+      "latency_ms_noncomparable": 1.9
+    },
+    "Q3": {
+      "query": "green vehicle parking",
+      "events": [
+        {
+          "event_id": "EV-REF-003",
+          "recording_id": "eval-ref-parking",
+          "camera_name": "Parking Camera",
+          "timestamp_seconds": 4.0,
+          "timestamp_absolute": "2024-01-15T10:01:02+00:00",
+          "event_type": "vehicle_detected",
+          "action_description": "Green vehicle detected in parking lot",
+          "scene_description": "Parking lot with a green vehicle",
+          "object_descriptions": [
+            "green vehicle"
+          ],
+          "observed_facts": [
+            "Observed: green vehicle"
+          ],
+          "inferred_claims": [],
+          "confidence": 0.8,
+          "evidence_frames": [
+            {
+              "frame_path": "frames/eval-ref-parking/EV-REF-003.jpg",
+              "timestamp_seconds": 4.0,
+              "role": "during"
+            }
+          ],
+          "cross_camera_links": [
+            {
+              "target_event_id": "EV-REF-001",
+              "target_recording_id": "eval-ref-entrance",
+              "target_camera_name": "Entrance Camera",
+              "confidence": 0.402,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 58s; No shared appearance tokens"
+            },
+            {
+              "target_event_id": "EV-REF-002",
+              "target_recording_id": "eval-ref-hallway",
+              "target_camera_name": "Hallway Camera",
+              "confidence": 0.393,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 64s; No shared appearance tokens"
+            }
+          ]
+        }
+      ],
+      "evidence_gaps": [
+        "No matching events found in recording 'rec-entrance.mp4'.",
+        "No matching events found in recording 'rec-hallway.mp4'."
+      ],
+      "timestamp_ordering_reliable": true,
+      "latency_ms_noncomparable": 1.9
+    },
+    "Q4": {
+      "query": "show all events between 00:00 and 00:15",
+      "events": [
+        {
+          "event_id": "EV-REF-002",
+          "recording_id": "eval-ref-hallway",
+          "camera_name": "Hallway Camera",
+          "timestamp_seconds": 8.5,
+          "timestamp_absolute": "2024-01-15T10:02:05+00:00",
+          "event_type": "unattended_object",
+          "action_description": "Blue bag object detected in hallway",
+          "scene_description": "Hallway with a blue bag-like object",
+          "object_descriptions": [
+            "blue bag object"
+          ],
+          "observed_facts": [
+            "Observed: blue bag object"
+          ],
+          "inferred_claims": [],
+          "confidence": 0.8,
+          "evidence_frames": [
+            {
+              "frame_path": "frames/eval-ref-hallway/EV-REF-002.jpg",
+              "timestamp_seconds": 8.5,
+              "role": "during"
+            }
+          ],
+          "cross_camera_links": [
+            {
+              "target_event_id": "EV-REF-003",
+              "target_recording_id": "eval-ref-parking",
+              "target_camera_name": "Parking Camera",
+              "confidence": 0.393,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 64s; No shared appearance tokens"
+            }
+          ]
+        }
+      ],
+      "evidence_gaps": [
+        "No matching events found in recording 'rec-entrance.mp4'.",
+        "No matching events found in recording 'rec-parking.mp4'."
+      ],
+      "timestamp_ordering_reliable": true,
+      "latency_ms_noncomparable": 1.8
+    },
+    "Q5": {
+      "query": "yellow helicopter on rooftop",
+      "events": [],
+      "evidence_gaps": [
+        "No events matched the query 'yellow helicopter on rooftop'."
+      ],
+      "timestamp_ordering_reliable": false,
+      "latency_ms_noncomparable": 2.0
+    },
+    "Q6": {
+      "query": "dark figure carrying something",
+      "events": [
+        {
+          "event_id": "EV-REF-001",
+          "recording_id": "eval-ref-entrance",
+          "camera_name": "Entrance Camera",
+          "timestamp_seconds": 5.5,
+          "timestamp_absolute": "2024-01-15T10:00:03+00:00",
+          "event_type": "person_detected",
+          "action_description": "Red person-like figure detected near entrance",
+          "scene_description": "Entrance area with a red figure",
+          "object_descriptions": [
+            "red person figure"
+          ],
+          "observed_facts": [
+            "Observed: red person figure"
+          ],
+          "inferred_claims": [],
+          "confidence": 0.8,
+          "evidence_frames": [
+            {
+              "frame_path": "frames/eval-ref-entrance/EV-REF-001.jpg",
+              "timestamp_seconds": 5.5,
+              "role": "during"
+            }
+          ],
+          "cross_camera_links": [
+            {
+              "target_event_id": "EV-REF-003",
+              "target_recording_id": "eval-ref-parking",
+              "target_camera_name": "Parking Camera",
+              "confidence": 0.402,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 58s; No shared appearance tokens"
+            }
+          ]
+        }
+      ],
+      "evidence_gaps": [
+        "No matching events found in recording 'rec-hallway.mp4'.",
+        "No matching events found in recording 'rec-parking.mp4'."
+      ],
+      "timestamp_ordering_reliable": true,
+      "latency_ms_noncomparable": 1.8
+    },
+    "Q7": {
+      "query": "show all events between 00:00 and 00:06",
+      "events": [],
+      "evidence_gaps": [
+        "No events matched the query 'show all events between 00:00 and 00:06'."
+      ],
+      "timestamp_ordering_reliable": false,
+      "latency_ms_noncomparable": 1.9
+    },
+    "Q8": {
+      "query": "show all events between 00:12 and 00:15",
+      "events": [],
+      "evidence_gaps": [
+        "No events matched the query 'show all events between 00:12 and 00:15'."
+      ],
+      "timestamp_ordering_reliable": false,
+      "latency_ms_noncomparable": 1.7
+    }
+  },
+  "multi_agent": {
+    "Q1": {
+      "query": "red person at entrance",
+      "agents": [
+        {
+          "agent_name": "QueryInvestigationAgent",
+          "status": "completed",
+          "output": {
+            "query": "red person at entrance",
+            "ranked_events": [
+              {
+                "event_id": "EV-REF-001",
+                "recording_id": "eval-ref-entrance",
+                "score": 0.8,
+                "timestamp_seconds": 5.5,
+                "action_description": "Red person-like figure detected near entrance"
+              }
+            ],
+            "narrative_draft": "Investigation query: \"red person at entrance\"\n\nFound 1 relevant event(s):\n\n1. [Entrance Camera] 2024-01-15 10:00:03 \u2014 Red person-like figure detected near entrance (confidence: 80%)",
+            "evidence_gaps": [
+              "No matching events found in recording 'rec-hallway.mp4'.",
+              "No matching events found in recording 'rec-parking.mp4'."
+            ],
+            "total_searched": 3
+          },
+          "duration_ms": 1.9377909993636422,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": [
+            "EV-REF-001@eval-ref-entrance:5.5s"
+          ]
+        },
+        {
+          "agent_name": "VideoIntelligenceAgent",
+          "status": "mocked",
+          "output": {
+            "summaries": [
+              {
+                "event_id": "EV-REF-001",
+                "visual_notes": [
+                  "Red person-like figure detected near entrance"
+                ],
+                "frame_references": [
+                  "EV-REF-001@5.5s"
+                ]
+              }
+            ],
+            "events_analyzed": 1,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.3237089986214414,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ObjectActionAnalystAgent",
+          "status": "mocked",
+          "output": {
+            "reports": [
+              {
+                "event_id": "EV-REF-001",
+                "objects_identified": [
+                  "red person figure"
+                ],
+                "actions_identified": [
+                  "person detected"
+                ],
+                "scene_change_detected": false
+              }
+            ],
+            "events_analyzed": 1,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.03204200038453564,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "TemporalReasoningAgent",
+          "status": "completed",
+          "output": {
+            "timeline": [
+              {
+                "event_id": "EV-REF-001",
+                "recording_id": "eval-ref-entrance",
+                "abs_timestamp": 1705312808.5,
+                "relative_order": 0,
+                "video_timestamp_seconds": 5.5
+              }
+            ],
+            "timestamp_reliable": true,
+            "gaps_detected": [],
+            "inconsistencies": []
+          },
+          "duration_ms": 0.006624999514315277,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "CrossCameraCorrelationAgent",
+          "status": "completed",
+          "output": {
+            "candidate_links": [
+              {
+                "source_event_id": "EV-REF-001",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-002",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-001",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-002",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              }
+            ],
+            "confirmed_links": [],
+            "total_links_found": 4,
+            "skipped_reason": null
+          },
+          "duration_ms": 4.207792000670452,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001",
+            "EV-REF-002",
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ContradictionHunterAgent",
+          "status": "mocked",
+          "output": {
+            "contradictions_found": false,
+            "items": [],
+            "alternative_explanations": [],
+            "evidence_gaps": [],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.06487499922513962,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "EvidenceAuditorAgent",
+          "status": "completed",
+          "output": {
+            "claims_verified": 1,
+            "claims_rejected": 0,
+            "rejected_items": [],
+            "verified_events": [
+              "EV-REF-001"
+            ],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0034999975468963385,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ReportSynthesisAgent",
+          "status": "completed",
+          "output": {
+            "narrative": "Investigation query: \"red person at entrance\"\n\nFound 1 relevant event(s):\n\n1. [Entrance Camera] 2024-01-15 10:00:03 \u2014 Red person-like figure detected near entrance (confidence: 80%)",
+            "key_findings": [
+              "Red person-like figure detected near entrance (score=0.80, t=5.5s)"
+            ],
+            "uncertainty_notes": [],
+            "evidence_citations": [
+              "EV-REF-001@eval-ref-entrance:5.5s"
+            ],
+            "model_used": "muse-spark-1.3",
+            "agents_run": [
+              "QueryInvestigationAgent",
+              "TemporalReasoningAgent",
+              "CrossCameraCorrelationAgent",
+              "EvidenceAuditorAgent"
+            ],
+            "claim_evidence": [
+              {
+                "claim": "Red person-like figure detected near entrance",
+                "event_ids": [
+                  "EV-REF-001"
+                ],
+                "evidence_refs": [
+                  "EV-REF-001@eval-ref-entrance:5.5s"
+                ],
+                "verified": true
+              }
+            ]
+          },
+          "duration_ms": 0.021375002688728273,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": [
+            "EV-REF-001@eval-ref-entrance:5.5s"
+          ]
+        }
+      ],
+      "final_report": {
+        "narrative": "Investigation query: \"red person at entrance\"\n\nFound 1 relevant event(s):\n\n1. [Entrance Camera] 2024-01-15 10:00:03 \u2014 Red person-like figure detected near entrance (confidence: 80%)",
+        "key_findings": [
+          "Red person-like figure detected near entrance (score=0.80, t=5.5s)"
+        ],
+        "uncertainty_notes": [],
+        "evidence_citations": [
+          "EV-REF-001@eval-ref-entrance:5.5s"
+        ],
+        "model_used": "muse-spark-1.3",
+        "agents_run": [
+          "QueryInvestigationAgent",
+          "TemporalReasoningAgent",
+          "CrossCameraCorrelationAgent",
+          "EvidenceAuditorAgent"
+        ],
+        "claim_evidence": [
+          {
+            "claim": "Red person-like figure detected near entrance",
+            "event_ids": [
+              "EV-REF-001"
+            ],
+            "evidence_refs": [
+              "EV-REF-001@eval-ref-entrance:5.5s"
+            ],
+            "verified": true
+          }
+        ]
+      },
+      "status": "COMPLETED",
+      "total_cost_usd": 0.0,
+      "model_config": {
+        "investigation_model": "muse-spark-1.3",
+        "vision_model": "muse-spark-1.3",
+        "vision_provider": "meta",
+        "budget_usd": 0.01
+      },
+      "retrieved_event_ids": [
+        "EV-REF-001",
+        "EV-REF-002",
+        "EV-REF-003"
+      ],
+      "retrieved_evidence_ids": [
+        "EV-REF-001@eval-ref-entrance:5.5s"
+      ],
+      "retrieved_events": [
+        {
+          "event_id": "EV-REF-001",
+          "recording_id": "eval-ref-entrance",
+          "camera_id": "eval-ref-entrance",
+          "camera_name": "Entrance Camera",
+          "camera_location": "Front Door",
+          "timestamp_seconds": 5.5,
+          "timestamp_absolute": "2024-01-15T10:00:03+00:00",
+          "has_reliable_timestamp": true,
+          "event_type": "person_detected",
+          "actor_description": null,
+          "object_descriptions": [
+            "red person figure"
+          ],
+          "action_description": "Red person-like figure detected near entrance",
+          "scene_description": "Entrance area with a red figure",
+          "evidence_frames": [
+            {
+              "frame_path": "frames/eval-ref-entrance/EV-REF-001.jpg",
+              "timestamp_seconds": 5.5,
+              "role": "during"
+            }
+          ],
+          "confidence": 0.8,
+          "observed_facts": [
+            "Observed: red person figure"
+          ],
+          "inferred_claims": [],
+          "uncertainty_notes": [],
+          "recording_filename": "rec-entrance.mp4",
+          "cross_camera_links": [
+            {
+              "target_event_id": "EV-REF-003",
+              "target_recording_id": "eval-ref-parking",
+              "target_camera_name": "Parking Camera",
+              "confidence": 0.402,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 58s; No shared appearance tokens"
+            }
+          ]
+        }
+      ],
+      "latency_ms_noncomparable": 36.0
+    },
+    "Q2": {
+      "query": "blue bag in hallway",
+      "agents": [
+        {
+          "agent_name": "QueryInvestigationAgent",
+          "status": "completed",
+          "output": {
+            "query": "blue bag in hallway",
+            "ranked_events": [
+              {
+                "event_id": "EV-REF-002",
+                "recording_id": "eval-ref-hallway",
+                "score": 0.8,
+                "timestamp_seconds": 8.5,
+                "action_description": "Blue bag object detected in hallway"
+              }
+            ],
+            "narrative_draft": "Investigation query: \"blue bag in hallway\"\n\nFound 1 relevant event(s):\n\n1. [Hallway Camera] 2024-01-15 10:02:05 \u2014 Blue bag object detected in hallway (confidence: 80%)",
+            "evidence_gaps": [
+              "No matching events found in recording 'rec-entrance.mp4'.",
+              "No matching events found in recording 'rec-parking.mp4'."
+            ],
+            "total_searched": 3
+          },
+          "duration_ms": 1.5944169936119579,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": [
+            "EV-REF-002@eval-ref-hallway:8.5s"
+          ]
+        },
+        {
+          "agent_name": "VideoIntelligenceAgent",
+          "status": "mocked",
+          "output": {
+            "summaries": [
+              {
+                "event_id": "EV-REF-002",
+                "visual_notes": [
+                  "Blue bag object detected in hallway"
+                ],
+                "frame_references": [
+                  "EV-REF-002@8.5s"
+                ]
+              }
+            ],
+            "events_analyzed": 1,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.13500000204658136,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ObjectActionAnalystAgent",
+          "status": "mocked",
+          "output": {
+            "reports": [
+              {
+                "event_id": "EV-REF-002",
+                "objects_identified": [
+                  "blue bag object"
+                ],
+                "actions_identified": [
+                  "unattended object"
+                ],
+                "scene_change_detected": false
+              }
+            ],
+            "events_analyzed": 1,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.04183300188742578,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "TemporalReasoningAgent",
+          "status": "completed",
+          "output": {
+            "timeline": [
+              {
+                "event_id": "EV-REF-002",
+                "recording_id": "eval-ref-hallway",
+                "abs_timestamp": 1705312933.5,
+                "relative_order": 0,
+                "video_timestamp_seconds": 8.5
+              }
+            ],
+            "timestamp_reliable": true,
+            "gaps_detected": [],
+            "inconsistencies": []
+          },
+          "duration_ms": 0.013040997146163136,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "CrossCameraCorrelationAgent",
+          "status": "completed",
+          "output": {
+            "candidate_links": [
+              {
+                "source_event_id": "EV-REF-001",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-002",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-001",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-002",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              }
+            ],
+            "confirmed_links": [],
+            "total_links_found": 4,
+            "skipped_reason": null
+          },
+          "duration_ms": 4.151458000706043,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001",
+            "EV-REF-002",
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ContradictionHunterAgent",
+          "status": "mocked",
+          "output": {
+            "contradictions_found": false,
+            "items": [],
+            "alternative_explanations": [],
+            "evidence_gaps": [],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.06175000453367829,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "EvidenceAuditorAgent",
+          "status": "completed",
+          "output": {
+            "claims_verified": 1,
+            "claims_rejected": 0,
+            "rejected_items": [],
+            "verified_events": [
+              "EV-REF-002"
+            ],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0039590013329871,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ReportSynthesisAgent",
+          "status": "completed",
+          "output": {
+            "narrative": "Investigation query: \"blue bag in hallway\"\n\nFound 1 relevant event(s):\n\n1. [Hallway Camera] 2024-01-15 10:02:05 \u2014 Blue bag object detected in hallway (confidence: 80%)",
+            "key_findings": [
+              "Blue bag object detected in hallway (score=0.80, t=8.5s)"
+            ],
+            "uncertainty_notes": [],
+            "evidence_citations": [
+              "EV-REF-002@eval-ref-hallway:8.5s"
+            ],
+            "model_used": "muse-spark-1.3",
+            "agents_run": [
+              "QueryInvestigationAgent",
+              "TemporalReasoningAgent",
+              "CrossCameraCorrelationAgent",
+              "EvidenceAuditorAgent"
+            ],
+            "claim_evidence": [
+              {
+                "claim": "Blue bag object detected in hallway",
+                "event_ids": [
+                  "EV-REF-002"
+                ],
+                "evidence_refs": [
+                  "EV-REF-002@eval-ref-hallway:8.5s"
+                ],
+                "verified": true
+              }
+            ]
+          },
+          "duration_ms": 0.02420799864921719,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": [
+            "EV-REF-002@eval-ref-hallway:8.5s"
+          ]
+        }
+      ],
+      "final_report": {
+        "narrative": "Investigation query: \"blue bag in hallway\"\n\nFound 1 relevant event(s):\n\n1. [Hallway Camera] 2024-01-15 10:02:05 \u2014 Blue bag object detected in hallway (confidence: 80%)",
+        "key_findings": [
+          "Blue bag object detected in hallway (score=0.80, t=8.5s)"
+        ],
+        "uncertainty_notes": [],
+        "evidence_citations": [
+          "EV-REF-002@eval-ref-hallway:8.5s"
+        ],
+        "model_used": "muse-spark-1.3",
+        "agents_run": [
+          "QueryInvestigationAgent",
+          "TemporalReasoningAgent",
+          "CrossCameraCorrelationAgent",
+          "EvidenceAuditorAgent"
+        ],
+        "claim_evidence": [
+          {
+            "claim": "Blue bag object detected in hallway",
+            "event_ids": [
+              "EV-REF-002"
+            ],
+            "evidence_refs": [
+              "EV-REF-002@eval-ref-hallway:8.5s"
+            ],
+            "verified": true
+          }
+        ]
+      },
+      "status": "COMPLETED",
+      "total_cost_usd": 0.0,
+      "model_config": {
+        "investigation_model": "muse-spark-1.3",
+        "vision_model": "muse-spark-1.3",
+        "vision_provider": "meta",
+        "budget_usd": 0.01
+      },
+      "retrieved_event_ids": [
+        "EV-REF-001",
+        "EV-REF-002",
+        "EV-REF-003"
+      ],
+      "retrieved_evidence_ids": [
+        "EV-REF-002@eval-ref-hallway:8.5s"
+      ],
+      "retrieved_events": [
+        {
+          "event_id": "EV-REF-002",
+          "recording_id": "eval-ref-hallway",
+          "camera_id": "eval-ref-hallway",
+          "camera_name": "Hallway Camera",
+          "camera_location": "Main Corridor",
+          "timestamp_seconds": 8.5,
+          "timestamp_absolute": "2024-01-15T10:02:05+00:00",
+          "has_reliable_timestamp": true,
+          "event_type": "unattended_object",
+          "actor_description": null,
+          "object_descriptions": [
+            "blue bag object"
+          ],
+          "action_description": "Blue bag object detected in hallway",
+          "scene_description": "Hallway with a blue bag-like object",
+          "evidence_frames": [
+            {
+              "frame_path": "frames/eval-ref-hallway/EV-REF-002.jpg",
+              "timestamp_seconds": 8.5,
+              "role": "during"
+            }
+          ],
+          "confidence": 0.8,
+          "observed_facts": [
+            "Observed: blue bag object"
+          ],
+          "inferred_claims": [],
+          "uncertainty_notes": [],
+          "recording_filename": "rec-hallway.mp4",
+          "cross_camera_links": [
+            {
+              "target_event_id": "EV-REF-003",
+              "target_recording_id": "eval-ref-parking",
+              "target_camera_name": "Parking Camera",
+              "confidence": 0.393,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 64s; No shared appearance tokens"
+            }
+          ]
+        }
+      ],
+      "latency_ms_noncomparable": 25.1
+    },
+    "Q3": {
+      "query": "green vehicle parking",
+      "agents": [
+        {
+          "agent_name": "QueryInvestigationAgent",
+          "status": "completed",
+          "output": {
+            "query": "green vehicle parking",
+            "ranked_events": [
+              {
+                "event_id": "EV-REF-003",
+                "recording_id": "eval-ref-parking",
+                "score": 0.8,
+                "timestamp_seconds": 4.0,
+                "action_description": "Green vehicle detected in parking lot"
+              }
+            ],
+            "narrative_draft": "Investigation query: \"green vehicle parking\"\n\nFound 1 relevant event(s):\n\n1. [Parking Camera] 2024-01-15 10:01:02 \u2014 Green vehicle detected in parking lot (confidence: 80%)",
+            "evidence_gaps": [
+              "No matching events found in recording 'rec-entrance.mp4'.",
+              "No matching events found in recording 'rec-hallway.mp4'."
+            ],
+            "total_searched": 3
+          },
+          "duration_ms": 1.6260829943348654,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-003"
+          ],
+          "evidence_ids": [
+            "EV-REF-003@eval-ref-parking:4.0s"
+          ]
+        },
+        {
+          "agent_name": "VideoIntelligenceAgent",
+          "status": "mocked",
+          "output": {
+            "summaries": [
+              {
+                "event_id": "EV-REF-003",
+                "visual_notes": [
+                  "Green vehicle detected in parking lot"
+                ],
+                "frame_references": [
+                  "EV-REF-003@4.0s"
+                ]
+              }
+            ],
+            "events_analyzed": 1,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.14224999904399738,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ObjectActionAnalystAgent",
+          "status": "mocked",
+          "output": {
+            "reports": [
+              {
+                "event_id": "EV-REF-003",
+                "objects_identified": [
+                  "green vehicle"
+                ],
+                "actions_identified": [
+                  "vehicle detected"
+                ],
+                "scene_change_detected": false
+              }
+            ],
+            "events_analyzed": 1,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.060999998822808266,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "TemporalReasoningAgent",
+          "status": "completed",
+          "output": {
+            "timeline": [
+              {
+                "event_id": "EV-REF-003",
+                "recording_id": "eval-ref-parking",
+                "abs_timestamp": 1705312866.0,
+                "relative_order": 0,
+                "video_timestamp_seconds": 4.0
+              }
+            ],
+            "timestamp_reliable": true,
+            "gaps_detected": [],
+            "inconsistencies": []
+          },
+          "duration_ms": 0.01308399805566296,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "CrossCameraCorrelationAgent",
+          "status": "completed",
+          "output": {
+            "candidate_links": [
+              {
+                "source_event_id": "EV-REF-001",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-002",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-001",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-002",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              }
+            ],
+            "confirmed_links": [],
+            "total_links_found": 4,
+            "skipped_reason": null
+          },
+          "duration_ms": 4.001291999884415,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001",
+            "EV-REF-002",
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ContradictionHunterAgent",
+          "status": "mocked",
+          "output": {
+            "contradictions_found": false,
+            "items": [],
+            "alternative_explanations": [],
+            "evidence_gaps": [],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.06016699626343325,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "EvidenceAuditorAgent",
+          "status": "completed",
+          "output": {
+            "claims_verified": 1,
+            "claims_rejected": 0,
+            "rejected_items": [],
+            "verified_events": [
+              "EV-REF-003"
+            ],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.004083995008841157,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ReportSynthesisAgent",
+          "status": "completed",
+          "output": {
+            "narrative": "Investigation query: \"green vehicle parking\"\n\nFound 1 relevant event(s):\n\n1. [Parking Camera] 2024-01-15 10:01:02 \u2014 Green vehicle detected in parking lot (confidence: 80%)",
+            "key_findings": [
+              "Green vehicle detected in parking lot (score=0.80, t=4.0s)"
+            ],
+            "uncertainty_notes": [],
+            "evidence_citations": [
+              "EV-REF-003@eval-ref-parking:4.0s"
+            ],
+            "model_used": "muse-spark-1.3",
+            "agents_run": [
+              "QueryInvestigationAgent",
+              "TemporalReasoningAgent",
+              "CrossCameraCorrelationAgent",
+              "EvidenceAuditorAgent"
+            ],
+            "claim_evidence": [
+              {
+                "claim": "Green vehicle detected in parking lot",
+                "event_ids": [
+                  "EV-REF-003"
+                ],
+                "evidence_refs": [
+                  "EV-REF-003@eval-ref-parking:4.0s"
+                ],
+                "verified": true
+              }
+            ]
+          },
+          "duration_ms": 0.022790998627897352,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-003"
+          ],
+          "evidence_ids": [
+            "EV-REF-003@eval-ref-parking:4.0s"
+          ]
+        }
+      ],
+      "final_report": {
+        "narrative": "Investigation query: \"green vehicle parking\"\n\nFound 1 relevant event(s):\n\n1. [Parking Camera] 2024-01-15 10:01:02 \u2014 Green vehicle detected in parking lot (confidence: 80%)",
+        "key_findings": [
+          "Green vehicle detected in parking lot (score=0.80, t=4.0s)"
+        ],
+        "uncertainty_notes": [],
+        "evidence_citations": [
+          "EV-REF-003@eval-ref-parking:4.0s"
+        ],
+        "model_used": "muse-spark-1.3",
+        "agents_run": [
+          "QueryInvestigationAgent",
+          "TemporalReasoningAgent",
+          "CrossCameraCorrelationAgent",
+          "EvidenceAuditorAgent"
+        ],
+        "claim_evidence": [
+          {
+            "claim": "Green vehicle detected in parking lot",
+            "event_ids": [
+              "EV-REF-003"
+            ],
+            "evidence_refs": [
+              "EV-REF-003@eval-ref-parking:4.0s"
+            ],
+            "verified": true
+          }
+        ]
+      },
+      "status": "COMPLETED",
+      "total_cost_usd": 0.0,
+      "model_config": {
+        "investigation_model": "muse-spark-1.3",
+        "vision_model": "muse-spark-1.3",
+        "vision_provider": "meta",
+        "budget_usd": 0.01
+      },
+      "retrieved_event_ids": [
+        "EV-REF-001",
+        "EV-REF-002",
+        "EV-REF-003"
+      ],
+      "retrieved_evidence_ids": [
+        "EV-REF-003@eval-ref-parking:4.0s"
+      ],
+      "retrieved_events": [
+        {
+          "event_id": "EV-REF-003",
+          "recording_id": "eval-ref-parking",
+          "camera_id": "eval-ref-parking",
+          "camera_name": "Parking Camera",
+          "camera_location": "Rear Parking Lot",
+          "timestamp_seconds": 4.0,
+          "timestamp_absolute": "2024-01-15T10:01:02+00:00",
+          "has_reliable_timestamp": true,
+          "event_type": "vehicle_detected",
+          "actor_description": null,
+          "object_descriptions": [
+            "green vehicle"
+          ],
+          "action_description": "Green vehicle detected in parking lot",
+          "scene_description": "Parking lot with a green vehicle",
+          "evidence_frames": [
+            {
+              "frame_path": "frames/eval-ref-parking/EV-REF-003.jpg",
+              "timestamp_seconds": 4.0,
+              "role": "during"
+            }
+          ],
+          "confidence": 0.8,
+          "observed_facts": [
+            "Observed: green vehicle"
+          ],
+          "inferred_claims": [],
+          "uncertainty_notes": [],
+          "recording_filename": "rec-parking.mp4",
+          "cross_camera_links": [
+            {
+              "target_event_id": "EV-REF-001",
+              "target_recording_id": "eval-ref-entrance",
+              "target_camera_name": "Entrance Camera",
+              "confidence": 0.402,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 58s; No shared appearance tokens"
+            },
+            {
+              "target_event_id": "EV-REF-002",
+              "target_recording_id": "eval-ref-hallway",
+              "target_camera_name": "Hallway Camera",
+              "confidence": 0.393,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 64s; No shared appearance tokens"
+            }
+          ]
+        }
+      ],
+      "latency_ms_noncomparable": 24.6
+    },
+    "Q4": {
+      "query": "show all events between 00:00 and 00:15",
+      "agents": [
+        {
+          "agent_name": "QueryInvestigationAgent",
+          "status": "completed",
+          "output": {
+            "query": "show all events between 00:00 and 00:15",
+            "ranked_events": [
+              {
+                "event_id": "EV-REF-002",
+                "recording_id": "eval-ref-hallway",
+                "score": 0.8,
+                "timestamp_seconds": 8.5,
+                "action_description": "Blue bag object detected in hallway"
+              }
+            ],
+            "narrative_draft": "Investigation query: \"show all events between 00:00 and 00:15\"\n\nFound 1 relevant event(s):\n\n1. [Hallway Camera] 2024-01-15 10:02:05 \u2014 Blue bag object detected in hallway (confidence: 80%)",
+            "evidence_gaps": [
+              "No matching events found in recording 'rec-entrance.mp4'.",
+              "No matching events found in recording 'rec-parking.mp4'."
+            ],
+            "total_searched": 3
+          },
+          "duration_ms": 1.592375003383495,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": [
+            "EV-REF-002@eval-ref-hallway:8.5s"
+          ]
+        },
+        {
+          "agent_name": "VideoIntelligenceAgent",
+          "status": "mocked",
+          "output": {
+            "summaries": [
+              {
+                "event_id": "EV-REF-002",
+                "visual_notes": [
+                  "Blue bag object detected in hallway"
+                ],
+                "frame_references": [
+                  "EV-REF-002@8.5s"
+                ]
+              }
+            ],
+            "events_analyzed": 1,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.11025000276276842,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ObjectActionAnalystAgent",
+          "status": "mocked",
+          "output": {
+            "reports": [
+              {
+                "event_id": "EV-REF-002",
+                "objects_identified": [
+                  "blue bag object"
+                ],
+                "actions_identified": [
+                  "unattended object"
+                ],
+                "scene_change_detected": false
+              }
+            ],
+            "events_analyzed": 1,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.12495800183387473,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "TemporalReasoningAgent",
+          "status": "completed",
+          "output": {
+            "timeline": [
+              {
+                "event_id": "EV-REF-002",
+                "recording_id": "eval-ref-hallway",
+                "abs_timestamp": 1705312933.5,
+                "relative_order": 0,
+                "video_timestamp_seconds": 8.5
+              }
+            ],
+            "timestamp_reliable": true,
+            "gaps_detected": [],
+            "inconsistencies": []
+          },
+          "duration_ms": 0.015666999388486147,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "CrossCameraCorrelationAgent",
+          "status": "completed",
+          "output": {
+            "candidate_links": [
+              {
+                "source_event_id": "EV-REF-001",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-002",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-001",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-002",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              }
+            ],
+            "confirmed_links": [],
+            "total_links_found": 4,
+            "skipped_reason": null
+          },
+          "duration_ms": 3.7263749982230365,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001",
+            "EV-REF-002",
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ContradictionHunterAgent",
+          "status": "mocked",
+          "output": {
+            "contradictions_found": false,
+            "items": [],
+            "alternative_explanations": [],
+            "evidence_gaps": [],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.05166699702385813,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "EvidenceAuditorAgent",
+          "status": "completed",
+          "output": {
+            "claims_verified": 1,
+            "claims_rejected": 0,
+            "rejected_items": [],
+            "verified_events": [
+              "EV-REF-002"
+            ],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.006541995389852673,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ReportSynthesisAgent",
+          "status": "completed",
+          "output": {
+            "narrative": "Investigation query: \"show all events between 00:00 and 00:15\"\n\nFound 1 relevant event(s):\n\n1. [Hallway Camera] 2024-01-15 10:02:05 \u2014 Blue bag object detected in hallway (confidence: 80%)",
+            "key_findings": [
+              "Blue bag object detected in hallway (score=0.80, t=8.5s)"
+            ],
+            "uncertainty_notes": [],
+            "evidence_citations": [
+              "EV-REF-002@eval-ref-hallway:8.5s"
+            ],
+            "model_used": "muse-spark-1.3",
+            "agents_run": [
+              "QueryInvestigationAgent",
+              "TemporalReasoningAgent",
+              "CrossCameraCorrelationAgent",
+              "EvidenceAuditorAgent"
+            ],
+            "claim_evidence": [
+              {
+                "claim": "Blue bag object detected in hallway",
+                "event_ids": [
+                  "EV-REF-002"
+                ],
+                "evidence_refs": [
+                  "EV-REF-002@eval-ref-hallway:8.5s"
+                ],
+                "verified": true
+              }
+            ]
+          },
+          "duration_ms": 0.020707993826363236,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-002"
+          ],
+          "evidence_ids": [
+            "EV-REF-002@eval-ref-hallway:8.5s"
+          ]
+        }
+      ],
+      "final_report": {
+        "narrative": "Investigation query: \"show all events between 00:00 and 00:15\"\n\nFound 1 relevant event(s):\n\n1. [Hallway Camera] 2024-01-15 10:02:05 \u2014 Blue bag object detected in hallway (confidence: 80%)",
+        "key_findings": [
+          "Blue bag object detected in hallway (score=0.80, t=8.5s)"
+        ],
+        "uncertainty_notes": [],
+        "evidence_citations": [
+          "EV-REF-002@eval-ref-hallway:8.5s"
+        ],
+        "model_used": "muse-spark-1.3",
+        "agents_run": [
+          "QueryInvestigationAgent",
+          "TemporalReasoningAgent",
+          "CrossCameraCorrelationAgent",
+          "EvidenceAuditorAgent"
+        ],
+        "claim_evidence": [
+          {
+            "claim": "Blue bag object detected in hallway",
+            "event_ids": [
+              "EV-REF-002"
+            ],
+            "evidence_refs": [
+              "EV-REF-002@eval-ref-hallway:8.5s"
+            ],
+            "verified": true
+          }
+        ]
+      },
+      "status": "COMPLETED",
+      "total_cost_usd": 0.0,
+      "model_config": {
+        "investigation_model": "muse-spark-1.3",
+        "vision_model": "muse-spark-1.3",
+        "vision_provider": "meta",
+        "budget_usd": 0.01
+      },
+      "retrieved_event_ids": [
+        "EV-REF-001",
+        "EV-REF-002",
+        "EV-REF-003"
+      ],
+      "retrieved_evidence_ids": [
+        "EV-REF-002@eval-ref-hallway:8.5s"
+      ],
+      "retrieved_events": [
+        {
+          "event_id": "EV-REF-002",
+          "recording_id": "eval-ref-hallway",
+          "camera_id": "eval-ref-hallway",
+          "camera_name": "Hallway Camera",
+          "camera_location": "Main Corridor",
+          "timestamp_seconds": 8.5,
+          "timestamp_absolute": "2024-01-15T10:02:05+00:00",
+          "has_reliable_timestamp": true,
+          "event_type": "unattended_object",
+          "actor_description": null,
+          "object_descriptions": [
+            "blue bag object"
+          ],
+          "action_description": "Blue bag object detected in hallway",
+          "scene_description": "Hallway with a blue bag-like object",
+          "evidence_frames": [
+            {
+              "frame_path": "frames/eval-ref-hallway/EV-REF-002.jpg",
+              "timestamp_seconds": 8.5,
+              "role": "during"
+            }
+          ],
+          "confidence": 0.8,
+          "observed_facts": [
+            "Observed: blue bag object"
+          ],
+          "inferred_claims": [],
+          "uncertainty_notes": [],
+          "recording_filename": "rec-hallway.mp4",
+          "cross_camera_links": [
+            {
+              "target_event_id": "EV-REF-003",
+              "target_recording_id": "eval-ref-parking",
+              "target_camera_name": "Parking Camera",
+              "confidence": 0.393,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 64s; No shared appearance tokens"
+            }
+          ]
+        }
+      ],
+      "latency_ms_noncomparable": 24.6
+    },
+    "Q5": {
+      "query": "yellow helicopter on rooftop",
+      "agents": [
+        {
+          "agent_name": "QueryInvestigationAgent",
+          "status": "completed",
+          "output": {
+            "query": "yellow helicopter on rooftop",
+            "ranked_events": [],
+            "narrative_draft": "No events matching 'yellow helicopter on rooftop' were found across 3 indexed recording(s).",
+            "evidence_gaps": [
+              "No events matched the query 'yellow helicopter on rooftop'."
+            ],
+            "total_searched": 3
+          },
+          "duration_ms": 1.5711250016465783,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "VideoIntelligenceAgent",
+          "status": "skipped",
+          "output": {
+            "summaries": [],
+            "events_analyzed": 0,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ObjectActionAnalystAgent",
+          "status": "skipped",
+          "output": {
+            "reports": [],
+            "events_analyzed": 0,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "TemporalReasoningAgent",
+          "status": "skipped",
+          "output": {
+            "timeline": [],
+            "timestamp_reliable": false,
+            "gaps_detected": [
+              "No events to analyze"
+            ],
+            "inconsistencies": []
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "CrossCameraCorrelationAgent",
+          "status": "completed",
+          "output": {
+            "candidate_links": [
+              {
+                "source_event_id": "EV-REF-001",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-002",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-001",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-002",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              }
+            ],
+            "confirmed_links": [],
+            "total_links_found": 4,
+            "skipped_reason": null
+          },
+          "duration_ms": 4.240624999511056,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001",
+            "EV-REF-002",
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ContradictionHunterAgent",
+          "status": "skipped",
+          "output": {
+            "contradictions_found": false,
+            "items": [],
+            "alternative_explanations": [
+              "No events to analyze for contradictions"
+            ],
+            "evidence_gaps": [
+              "No events available"
+            ],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "EvidenceAuditorAgent",
+          "status": "skipped",
+          "output": {
+            "claims_verified": 0,
+            "claims_rejected": 0,
+            "rejected_items": [],
+            "verified_events": [],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ReportSynthesisAgent",
+          "status": "completed",
+          "output": {
+            "narrative": "No evidence found relevant to: yellow helicopter on rooftop",
+            "key_findings": [],
+            "uncertainty_notes": [],
+            "evidence_citations": [],
+            "model_used": "muse-spark-1.3",
+            "agents_run": [
+              "QueryInvestigationAgent",
+              "CrossCameraCorrelationAgent"
+            ],
+            "claim_evidence": []
+          },
+          "duration_ms": 0.013625001884065568,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        }
+      ],
+      "final_report": {
+        "narrative": "No evidence found relevant to: yellow helicopter on rooftop",
+        "key_findings": [],
+        "uncertainty_notes": [],
+        "evidence_citations": [],
+        "model_used": "muse-spark-1.3",
+        "agents_run": [
+          "QueryInvestigationAgent",
+          "CrossCameraCorrelationAgent"
+        ],
+        "claim_evidence": []
+      },
+      "status": "COMPLETED",
+      "total_cost_usd": 0.0,
+      "model_config": {
+        "investigation_model": "muse-spark-1.3",
+        "vision_model": "muse-spark-1.3",
+        "vision_provider": "meta",
+        "budget_usd": 0.01
+      },
+      "retrieved_event_ids": [
+        "EV-REF-001",
+        "EV-REF-002",
+        "EV-REF-003"
+      ],
+      "retrieved_evidence_ids": [],
+      "retrieved_events": [],
+      "latency_ms_noncomparable": 24.4
+    },
+    "Q6": {
+      "query": "dark figure carrying something",
+      "agents": [
+        {
+          "agent_name": "QueryInvestigationAgent",
+          "status": "completed",
+          "output": {
+            "query": "dark figure carrying something",
+            "ranked_events": [
+              {
+                "event_id": "EV-REF-001",
+                "recording_id": "eval-ref-entrance",
+                "score": 0.8,
+                "timestamp_seconds": 5.5,
+                "action_description": "Red person-like figure detected near entrance"
+              }
+            ],
+            "narrative_draft": "Investigation query: \"dark figure carrying something\"\n\nFound 1 relevant event(s):\n\n1. [Entrance Camera] 2024-01-15 10:00:03 \u2014 Red person-like figure detected near entrance (confidence: 80%)",
+            "evidence_gaps": [
+              "No matching events found in recording 'rec-hallway.mp4'.",
+              "No matching events found in recording 'rec-parking.mp4'."
+            ],
+            "total_searched": 3
+          },
+          "duration_ms": 1.5656250034226105,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": [
+            "EV-REF-001@eval-ref-entrance:5.5s"
+          ]
+        },
+        {
+          "agent_name": "VideoIntelligenceAgent",
+          "status": "mocked",
+          "output": {
+            "summaries": [
+              {
+                "event_id": "EV-REF-001",
+                "visual_notes": [
+                  "Red person-like figure detected near entrance"
+                ],
+                "frame_references": [
+                  "EV-REF-001@5.5s"
+                ]
+              }
+            ],
+            "events_analyzed": 1,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.10741699952632189,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ObjectActionAnalystAgent",
+          "status": "mocked",
+          "output": {
+            "reports": [
+              {
+                "event_id": "EV-REF-001",
+                "objects_identified": [
+                  "red person figure"
+                ],
+                "actions_identified": [
+                  "person detected"
+                ],
+                "scene_change_detected": false
+              }
+            ],
+            "events_analyzed": 1,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.030916999094188213,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "TemporalReasoningAgent",
+          "status": "completed",
+          "output": {
+            "timeline": [
+              {
+                "event_id": "EV-REF-001",
+                "recording_id": "eval-ref-entrance",
+                "abs_timestamp": 1705312808.5,
+                "relative_order": 0,
+                "video_timestamp_seconds": 5.5
+              }
+            ],
+            "timestamp_reliable": true,
+            "gaps_detected": [],
+            "inconsistencies": []
+          },
+          "duration_ms": 0.012166005035396665,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "CrossCameraCorrelationAgent",
+          "status": "completed",
+          "output": {
+            "candidate_links": [
+              {
+                "source_event_id": "EV-REF-001",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-002",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-001",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-002",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              }
+            ],
+            "confirmed_links": [],
+            "total_links_found": 4,
+            "skipped_reason": null
+          },
+          "duration_ms": 4.1149999960907735,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001",
+            "EV-REF-002",
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ContradictionHunterAgent",
+          "status": "mocked",
+          "output": {
+            "contradictions_found": false,
+            "items": [],
+            "alternative_explanations": [],
+            "evidence_gaps": [],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.05520899867406115,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": "muse-spark-1.3",
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "EvidenceAuditorAgent",
+          "status": "completed",
+          "output": {
+            "claims_verified": 1,
+            "claims_rejected": 0,
+            "rejected_items": [],
+            "verified_events": [
+              "EV-REF-001"
+            ],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.003583998477552086,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ReportSynthesisAgent",
+          "status": "completed",
+          "output": {
+            "narrative": "Investigation query: \"dark figure carrying something\"\n\nFound 1 relevant event(s):\n\n1. [Entrance Camera] 2024-01-15 10:00:03 \u2014 Red person-like figure detected near entrance (confidence: 80%)",
+            "key_findings": [
+              "Red person-like figure detected near entrance (score=0.80, t=5.5s)"
+            ],
+            "uncertainty_notes": [],
+            "evidence_citations": [
+              "EV-REF-001@eval-ref-entrance:5.5s"
+            ],
+            "model_used": "muse-spark-1.3",
+            "agents_run": [
+              "QueryInvestigationAgent",
+              "TemporalReasoningAgent",
+              "CrossCameraCorrelationAgent",
+              "EvidenceAuditorAgent"
+            ],
+            "claim_evidence": [
+              {
+                "claim": "Red person-like figure detected near entrance",
+                "event_ids": [
+                  "EV-REF-001"
+                ],
+                "evidence_refs": [
+                  "EV-REF-001@eval-ref-entrance:5.5s"
+                ],
+                "verified": true
+              }
+            ]
+          },
+          "duration_ms": 0.020958003005944192,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001"
+          ],
+          "evidence_ids": [
+            "EV-REF-001@eval-ref-entrance:5.5s"
+          ]
+        }
+      ],
+      "final_report": {
+        "narrative": "Investigation query: \"dark figure carrying something\"\n\nFound 1 relevant event(s):\n\n1. [Entrance Camera] 2024-01-15 10:00:03 \u2014 Red person-like figure detected near entrance (confidence: 80%)",
+        "key_findings": [
+          "Red person-like figure detected near entrance (score=0.80, t=5.5s)"
+        ],
+        "uncertainty_notes": [],
+        "evidence_citations": [
+          "EV-REF-001@eval-ref-entrance:5.5s"
+        ],
+        "model_used": "muse-spark-1.3",
+        "agents_run": [
+          "QueryInvestigationAgent",
+          "TemporalReasoningAgent",
+          "CrossCameraCorrelationAgent",
+          "EvidenceAuditorAgent"
+        ],
+        "claim_evidence": [
+          {
+            "claim": "Red person-like figure detected near entrance",
+            "event_ids": [
+              "EV-REF-001"
+            ],
+            "evidence_refs": [
+              "EV-REF-001@eval-ref-entrance:5.5s"
+            ],
+            "verified": true
+          }
+        ]
+      },
+      "status": "COMPLETED",
+      "total_cost_usd": 0.0,
+      "model_config": {
+        "investigation_model": "muse-spark-1.3",
+        "vision_model": "muse-spark-1.3",
+        "vision_provider": "meta",
+        "budget_usd": 0.01
+      },
+      "retrieved_event_ids": [
+        "EV-REF-001",
+        "EV-REF-002",
+        "EV-REF-003"
+      ],
+      "retrieved_evidence_ids": [
+        "EV-REF-001@eval-ref-entrance:5.5s"
+      ],
+      "retrieved_events": [
+        {
+          "event_id": "EV-REF-001",
+          "recording_id": "eval-ref-entrance",
+          "camera_id": "eval-ref-entrance",
+          "camera_name": "Entrance Camera",
+          "camera_location": "Front Door",
+          "timestamp_seconds": 5.5,
+          "timestamp_absolute": "2024-01-15T10:00:03+00:00",
+          "has_reliable_timestamp": true,
+          "event_type": "person_detected",
+          "actor_description": null,
+          "object_descriptions": [
+            "red person figure"
+          ],
+          "action_description": "Red person-like figure detected near entrance",
+          "scene_description": "Entrance area with a red figure",
+          "evidence_frames": [
+            {
+              "frame_path": "frames/eval-ref-entrance/EV-REF-001.jpg",
+              "timestamp_seconds": 5.5,
+              "role": "during"
+            }
+          ],
+          "confidence": 0.8,
+          "observed_facts": [
+            "Observed: red person figure"
+          ],
+          "inferred_claims": [],
+          "uncertainty_notes": [],
+          "recording_filename": "rec-entrance.mp4",
+          "cross_camera_links": [
+            {
+              "target_event_id": "EV-REF-003",
+              "target_recording_id": "eval-ref-parking",
+              "target_camera_name": "Parking Camera",
+              "confidence": 0.402,
+              "link_type": "candidate",
+              "explanation": "Temporal gap: 58s; No shared appearance tokens"
+            }
+          ]
+        }
+      ],
+      "latency_ms_noncomparable": 24.1
+    },
+    "Q7": {
+      "query": "show all events between 00:00 and 00:06",
+      "agents": [
+        {
+          "agent_name": "QueryInvestigationAgent",
+          "status": "completed",
+          "output": {
+            "query": "show all events between 00:00 and 00:06",
+            "ranked_events": [],
+            "narrative_draft": "No events matching 'show all events between 00:00 and 00:06' were found across 3 indexed recording(s).",
+            "evidence_gaps": [
+              "No events matched the query 'show all events between 00:00 and 00:06'."
+            ],
+            "total_searched": 3
+          },
+          "duration_ms": 1.5887919944361784,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "VideoIntelligenceAgent",
+          "status": "skipped",
+          "output": {
+            "summaries": [],
+            "events_analyzed": 0,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ObjectActionAnalystAgent",
+          "status": "skipped",
+          "output": {
+            "reports": [],
+            "events_analyzed": 0,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "TemporalReasoningAgent",
+          "status": "skipped",
+          "output": {
+            "timeline": [],
+            "timestamp_reliable": false,
+            "gaps_detected": [
+              "No events to analyze"
+            ],
+            "inconsistencies": []
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "CrossCameraCorrelationAgent",
+          "status": "completed",
+          "output": {
+            "candidate_links": [
+              {
+                "source_event_id": "EV-REF-001",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-002",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-001",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-002",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              }
+            ],
+            "confirmed_links": [],
+            "total_links_found": 4,
+            "skipped_reason": null
+          },
+          "duration_ms": 4.080832994077355,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001",
+            "EV-REF-002",
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ContradictionHunterAgent",
+          "status": "skipped",
+          "output": {
+            "contradictions_found": false,
+            "items": [],
+            "alternative_explanations": [
+              "No events to analyze for contradictions"
+            ],
+            "evidence_gaps": [
+              "No events available"
+            ],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "EvidenceAuditorAgent",
+          "status": "skipped",
+          "output": {
+            "claims_verified": 0,
+            "claims_rejected": 0,
+            "rejected_items": [],
+            "verified_events": [],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ReportSynthesisAgent",
+          "status": "completed",
+          "output": {
+            "narrative": "No evidence found relevant to: show all events between 00:00 and 00:06",
+            "key_findings": [],
+            "uncertainty_notes": [],
+            "evidence_citations": [],
+            "model_used": "muse-spark-1.3",
+            "agents_run": [
+              "QueryInvestigationAgent",
+              "CrossCameraCorrelationAgent"
+            ],
+            "claim_evidence": []
+          },
+          "duration_ms": 0.014707999071106315,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        }
+      ],
+      "final_report": {
+        "narrative": "No evidence found relevant to: show all events between 00:00 and 00:06",
+        "key_findings": [],
+        "uncertainty_notes": [],
+        "evidence_citations": [],
+        "model_used": "muse-spark-1.3",
+        "agents_run": [
+          "QueryInvestigationAgent",
+          "CrossCameraCorrelationAgent"
+        ],
+        "claim_evidence": []
+      },
+      "status": "COMPLETED",
+      "total_cost_usd": 0.0,
+      "model_config": {
+        "investigation_model": "muse-spark-1.3",
+        "vision_model": "muse-spark-1.3",
+        "vision_provider": "meta",
+        "budget_usd": 0.01
+      },
+      "retrieved_event_ids": [
+        "EV-REF-001",
+        "EV-REF-002",
+        "EV-REF-003"
+      ],
+      "retrieved_evidence_ids": [],
+      "retrieved_events": [],
+      "latency_ms_noncomparable": 23.3
+    },
+    "Q8": {
+      "query": "show all events between 00:12 and 00:15",
+      "agents": [
+        {
+          "agent_name": "QueryInvestigationAgent",
+          "status": "completed",
+          "output": {
+            "query": "show all events between 00:12 and 00:15",
+            "ranked_events": [],
+            "narrative_draft": "No events matching 'show all events between 00:12 and 00:15' were found across 3 indexed recording(s).",
+            "evidence_gaps": [
+              "No events matched the query 'show all events between 00:12 and 00:15'."
+            ],
+            "total_searched": 3
+          },
+          "duration_ms": 1.5686250044382177,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "VideoIntelligenceAgent",
+          "status": "skipped",
+          "output": {
+            "summaries": [],
+            "events_analyzed": 0,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ObjectActionAnalystAgent",
+          "status": "skipped",
+          "output": {
+            "reports": [],
+            "events_analyzed": 0,
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "TemporalReasoningAgent",
+          "status": "skipped",
+          "output": {
+            "timeline": [],
+            "timestamp_reliable": false,
+            "gaps_detected": [
+              "No events to analyze"
+            ],
+            "inconsistencies": []
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "CrossCameraCorrelationAgent",
+          "status": "completed",
+          "output": {
+            "candidate_links": [
+              {
+                "source_event_id": "EV-REF-001",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-002",
+                "target_event_id": "EV-REF-003",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-001",
+                "confidence": 0.402,
+                "explanation": "Temporal gap: 58s; No shared appearance tokens"
+              },
+              {
+                "source_event_id": "EV-REF-003",
+                "target_event_id": "EV-REF-002",
+                "confidence": 0.393,
+                "explanation": "Temporal gap: 64s; No shared appearance tokens"
+              }
+            ],
+            "confirmed_links": [],
+            "total_links_found": 4,
+            "skipped_reason": null
+          },
+          "duration_ms": 5.128583004989196,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [
+            "EV-REF-001",
+            "EV-REF-002",
+            "EV-REF-003"
+          ],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ContradictionHunterAgent",
+          "status": "skipped",
+          "output": {
+            "contradictions_found": false,
+            "items": [],
+            "alternative_explanations": [
+              "No events to analyze for contradictions"
+            ],
+            "evidence_gaps": [
+              "No events available"
+            ],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "EvidenceAuditorAgent",
+          "status": "skipped",
+          "output": {
+            "claims_verified": 0,
+            "claims_rejected": 0,
+            "rejected_items": [],
+            "verified_events": [],
+            "model_used": "muse-spark-1.3"
+          },
+          "duration_ms": 0.0,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        },
+        {
+          "agent_name": "ReportSynthesisAgent",
+          "status": "completed",
+          "output": {
+            "narrative": "No evidence found relevant to: show all events between 00:12 and 00:15",
+            "key_findings": [],
+            "uncertainty_notes": [],
+            "evidence_citations": [],
+            "model_used": "muse-spark-1.3",
+            "agents_run": [
+              "QueryInvestigationAgent",
+              "CrossCameraCorrelationAgent"
+            ],
+            "claim_evidence": []
+          },
+          "duration_ms": 0.009708994184620678,
+          "error": null,
+          "tokens_used": 0,
+          "cost_usd": 0.0,
+          "retries": null,
+          "timeouts": null,
+          "cache_hits": null,
+          "cache_misses": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "usage_measured": false,
+          "model_used": null,
+          "event_ids": [],
+          "evidence_ids": []
+        }
+      ],
+      "final_report": {
+        "narrative": "No evidence found relevant to: show all events between 00:12 and 00:15",
+        "key_findings": [],
+        "uncertainty_notes": [],
+        "evidence_citations": [],
+        "model_used": "muse-spark-1.3",
+        "agents_run": [
+          "QueryInvestigationAgent",
+          "CrossCameraCorrelationAgent"
+        ],
+        "claim_evidence": []
+      },
+      "status": "COMPLETED",
+      "total_cost_usd": 0.0,
+      "model_config": {
+        "investigation_model": "muse-spark-1.3",
+        "vision_model": "muse-spark-1.3",
+        "vision_provider": "meta",
+        "budget_usd": 0.01
+      },
+      "retrieved_event_ids": [
+        "EV-REF-001",
+        "EV-REF-002",
+        "EV-REF-003"
+      ],
+      "retrieved_evidence_ids": [],
+      "retrieved_events": [],
+      "latency_ms_noncomparable": 25.6
+    }
+  },
+  "live_api_calls": 0,
+  "live_tokens": null,
+  "live_cost_usd": 0.0
+}

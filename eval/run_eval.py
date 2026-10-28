@@ -38,6 +38,28 @@ RESULTS_FILE = EVAL_DIR / "eval_results.json"
 
 DEFAULT_BACKEND = "http://localhost:8000"
 
+# Phase 5: optional versioned-dataset + shared-metrics integration. Guarded so
+# this script keeps working standalone.
+try:
+    sys.path.insert(0, str(EVAL_DIR.parent))
+    from eval.dataset import load_v1_as_v2, load_v2  # noqa: E402
+    _HAS_DATASET_PKG = True
+except Exception:
+    _HAS_DATASET_PKG = False
+
+
+def _code_revision() -> Optional[str]:
+    try:
+        import subprocess
+        proc = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                              capture_output=True, text=True, timeout=5,
+                              cwd=str(EVAL_DIR.parent))
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    except Exception:
+        pass
+    return None
+
 
 def http_get(url: str) -> dict:
     req = urllib.request.Request(url)
@@ -225,11 +247,12 @@ def run_multi_agent_investigation(backend: str, query: str, recording_ids: Optio
     return http_post_json(f"{backend}/api/investigations/multi-agent", body)
 
 
-def run_multi_agent_benchmark(backend: str, queries: list[dict], recording_ids: list[str]) -> None:
+def run_multi_agent_benchmark(backend: str, queries: list[dict], recording_ids: list[str]) -> list[dict]:
     print(f"\n{'─'*40}")
     print("Multi-Agent Investigation Benchmark")
     print(f"{'─'*40}")
 
+    summaries: list[dict] = []
     for q in queries[:3]:
         print(f"\n  Query: {q['query']}")
         t0 = time.time()
@@ -241,9 +264,10 @@ def run_multi_agent_benchmark(backend: str, queries: list[dict], recording_ids: 
             completed = sum(1 for a in agents if a["status"] == "completed")
             skipped = sum(1 for a in agents if a["status"] == "skipped")
             failed = sum(1 for a in agents if a["status"] == "failed")
+            mocked = sum(1 for a in agents if a["status"] == "mocked")
             total_cost = result.get("total_cost_usd", 0)
 
-            print(f"  Agents: {completed} completed / {skipped} skipped / {failed} failed")
+            print(f"  Agents: {completed} completed / {skipped} skipped / {failed} failed / {mocked} mocked")
             print(f"  Total cost: ${total_cost:.5f}")
             print(f"  Total latency: {latency:.2f}s")
 
@@ -253,11 +277,28 @@ def run_multi_agent_benchmark(backend: str, queries: list[dict], recording_ids: 
                 print(f"    {status_sym} {agent['agent_name']}: {agent['status']} ({ms})")
 
             fr = result.get("final_report")
+            n_findings = n_citations = 0
             if fr:
-                print(f"  Key findings: {len(fr.get('key_findings', []))}")
-                print(f"  Evidence citations: {len(fr.get('evidence_citations', []))}")
+                n_findings = len(fr.get('key_findings', []))
+                n_citations = len(fr.get('evidence_citations', []))
+                print(f"  Key findings: {n_findings}")
+                print(f"  Evidence citations: {n_citations}")
+            summaries.append({
+                "query_id": q.get("id", q["query"]),
+                "latency_seconds": round(latency, 2),
+                "agents_completed": completed,
+                "agents_skipped": skipped,
+                "agents_failed": failed,
+                "agents_mocked": mocked,
+                "total_cost_usd": total_cost,
+                "key_findings": n_findings,
+                "evidence_citations": n_citations,
+                "trace_id": result.get("trace_id"),
+            })
         except Exception as e:
             print(f"  ERROR: {e}")
+            summaries.append({"query_id": q.get("id", q["query"]), "error": str(e)[:300]})
+    return summaries
 
 
 def main():
@@ -269,9 +310,38 @@ def main():
                         help="Use existing recording IDs instead of uploading")
     parser.add_argument("--multi-agent", action="store_true",
                         help="Also run multi-agent benchmark")
+    parser.add_argument("--dataset", choices=["v1", "v2"], default="v1",
+                        help="Ground truth source: v1 ground_truth.json (default) or v2 dataset")
     args = parser.parse_args()
 
-    gt = json.loads(GT_FILE.read_text())
+    dataset_id, dataset_version = "realitytrace-eval", "v1-unversioned"
+    if args.dataset == "v2" and _HAS_DATASET_PKG:
+        v2 = load_v2()
+        dataset_version = v2["version"]
+        gt = {"cameras": [
+            {"clip": r["clip"], "camera_name": r["camera_name"],
+             "camera_location": r.get("camera_location", ""),
+             "recording_datetime": r["recording_start"],
+             "recording_timezone": r["recording_timezone"]}
+            for r in v2["recordings"]],
+            "ground_truth_events": [
+            {"id": e["id"], "camera": e["camera_name"],
+             "timestamp_seconds_range": [e["start_seconds"], e["end_seconds"]],
+             "expected_keywords": e["expected_keywords"],
+             "event_type": e["event_type"],
+             "visible_in_single_camera": e.get("visible_in_single_camera", True),
+             "cross_camera_candidate": None,
+             "notes": e.get("description", "")}
+            for e in v2["events"]],
+            "queries": [
+            {"id": q["id"], "query": q["query"],
+             "expected_events": q["expected_events"],
+             "expected_not_returned": q.get("expected_not_returned", [])}
+            for q in v2["queries"]]}
+    else:
+        if args.dataset == "v2" and not _HAS_DATASET_PKG:
+            print("WARNING: dataset package unavailable; falling back to v1.")
+        gt = json.loads(GT_FILE.read_text())
     cameras = gt["cameras"]
     gt_events = gt["ground_truth_events"]
     queries = gt["queries"]
@@ -465,8 +535,16 @@ def main():
     print(f"Avg query latency:     {avg_latency:.1f}s")
     print(f"False CC associations: {false_assoc}")
 
+    ma_summaries: list[dict] = []
+    if args.multi_agent and recording_ids:
+        ma_summaries = run_multi_agent_benchmark(args.backend, queries, recording_ids)
+
     results = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "dataset_id": dataset_id,
+        "dataset_version": dataset_version,
+        "code_revision": _code_revision(),
+        "model_config_note": "Vision/investigation models are server-side; see /api/usage by_model. No model calls are made by this script itself.",
         "recording_ids": recording_ids,
         "event_recall": {
             "found": found_count,
@@ -483,12 +561,10 @@ def main():
         "avg_query_precision": avg_precision,
         "avg_query_recall": avg_recall,
         "avg_latency_seconds": avg_latency,
+        "multi_agent_benchmark": ma_summaries,
     }
     RESULTS_FILE.write_text(json.dumps(results, indent=2))
     print(f"\nDetailed results written to: {RESULTS_FILE}")
-
-    if args.multi_agent and recording_ids:
-        run_multi_agent_benchmark(args.backend, queries, recording_ids)
 
 
 if __name__ == "__main__":

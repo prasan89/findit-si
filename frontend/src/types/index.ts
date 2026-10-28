@@ -114,7 +114,7 @@ export interface InvestigationResult {
 
 // ── Phase 3: Multi-agent investigation types ─────────────────────────────────
 
-export type AgentRunStatus = 'pending' | 'running' | 'completed' | 'skipped' | 'failed'
+export type AgentRunStatus = 'pending' | 'running' | 'completed' | 'skipped' | 'failed' | 'mocked'
 
 export interface AgentRunResult {
   agent_name: string

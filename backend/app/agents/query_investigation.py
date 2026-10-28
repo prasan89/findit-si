@@ -40,16 +40,22 @@ async def run(ctx: InvestigationContext) -> AgentResult[EvidenceBundle]:
         )
 
         ctx.agent_outputs["investigation_result"] = result
+        evidence_ids: list[str] = []
         for ev in result.events:
             ev_dict = ev.model_dump()
             ev_dict.setdefault("rec_dt", ev_dict.get("timestamp_absolute"))
             ctx.events.append(ev_dict)
+            for frame in ev.evidence_frames:
+                evidence_ids.append(
+                    f"{ev.event_id}@{ev.recording_id}:{frame.timestamp_seconds:.1f}s")
 
         return AgentResult(
             agent_name=AGENT_NAME,
             status=AgentStatus.COMPLETED,
             output=bundle,
             duration_ms=(time.monotonic() - t0) * 1000,
+            event_ids=[ev.event_id for ev in result.events],
+            evidence_ids=evidence_ids,
         )
     except Exception as exc:
         logger.exception("QueryInvestigationAgent failed")

@@ -108,6 +108,14 @@ class AuditReport(BaseModel):
     model_used: str
 
 
+class ClaimEvidence(BaseModel):
+    """Phase 5: minimal claim-to-evidence provenance for one report claim."""
+    claim: str
+    event_ids: list[str] = []
+    evidence_refs: list[str] = []
+    verified: Optional[bool] = None
+
+
 class FinalReport(BaseModel):
     """Agent 8: ReportSynthesisAgent output."""
     narrative: str
@@ -116,3 +124,5 @@ class FinalReport(BaseModel):
     evidence_citations: list[str]
     model_used: str
     agents_run: list[str]
+    # Phase 5: which claims were included and what evidence supports each.
+    claim_evidence: list[ClaimEvidence] = []

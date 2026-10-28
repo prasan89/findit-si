@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from typing import Optional
 
 import httpx
@@ -21,15 +22,33 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def llm_json_call(
+@dataclass
+class LLMCallResult:
+    """Phase 5: structured outcome of one text LLM call.
+
+    mocked=True means NO live model call was made (no API key configured) and
+    the caller must label its output accordingly. tokens/cost are provider-
+    reported (measured) only when mocked is False and success is True.
+    """
+
+    data: dict
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
+    model: str
+    mocked: bool = False
+    success: bool = True
+
+
+async def llm_json_call_ex(
     prompt: str,
     db_path: str,
     operation: str,
     model: Optional[str] = None,
-) -> tuple[dict, int, int, float]:
+) -> LLMCallResult:
     """
     Make a text-only JSON-mode call to the Meta LLM.
-    Returns (parsed_dict, tokens_in, tokens_out, cost_usd).
+    Returns an LLMCallResult with measured usage and a mocked flag.
     Falls back gracefully when no API key is set.
     """
     api_key = (
@@ -44,7 +63,8 @@ async def llm_json_call(
 
     if not api_key:
         logger.warning("No API key — LLM agent %s using empty fallback", operation)
-        return {}, 0, 0, 0.0
+        return LLMCallResult(data={}, tokens_in=0, tokens_out=0, cost_usd=0.0,
+                             model=model_name, mocked=True, success=False)
 
     payload = {
         "model": model_name,
@@ -107,4 +127,20 @@ async def llm_json_call(
     except Exception:
         pass
 
-    return result, tokens_in, tokens_out, cost
+    return LLMCallResult(data=result, tokens_in=tokens_in, tokens_out=tokens_out,
+                         cost_usd=cost, model=model_name, mocked=False, success=success)
+
+
+async def llm_json_call(
+    prompt: str,
+    db_path: str,
+    operation: str,
+    model: Optional[str] = None,
+) -> tuple[dict, int, int, float]:
+    """
+    Make a text-only JSON-mode call to the Meta LLM.
+    Returns (parsed_dict, tokens_in, tokens_out, cost_usd).
+    Falls back gracefully when no API key is set.
+    """
+    result = await llm_json_call_ex(prompt, db_path, operation, model)
+    return result.data, result.tokens_in, result.tokens_out, result.cost_usd

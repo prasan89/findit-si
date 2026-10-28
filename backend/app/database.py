@@ -209,5 +209,15 @@ async def create_tables(db_path: str) -> None:
             await db.execute("ALTER TABLE recordings ADD COLUMN camera_location TEXT")
         except Exception:
             pass
+        # Phase 5: trace observability columns (nullable; older DBs migrate on boot)
+        for _ddl in (
+            "ALTER TABLE investigation_traces ADD COLUMN code_revision TEXT",
+            "ALTER TABLE investigation_traces ADD COLUMN model_config TEXT",
+            "ALTER TABLE investigation_traces ADD COLUMN usage_summary TEXT",
+        ):
+            try:
+                await db.execute(_ddl)
+            except Exception:
+                pass
 
         await db.commit()
