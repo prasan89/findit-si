@@ -352,6 +352,12 @@ def _tokenize(query: str) -> list[str]:
         # particular matched "hallway"/"small" as a substring and broke
         # temporal queries (eval Q4); "first"/"last"/"event" are operators.
         "all", "event", "first",
+        # "detected"/"detection" appear in every `*_detected` type label, so
+        # as query tokens they match all categorized events regardless of
+        # subject ("any dog detected?" scored 0.63 vs bird events with the
+        # "dog" token matching nothing). Subject evidence must come from
+        # the description instead.
+        "detected", "detection", "detections",
     }
     return [w for w in words if w not in stopwords]
 

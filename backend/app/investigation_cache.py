@@ -26,7 +26,9 @@ from typing import Optional
 from .database import get_db
 
 # Bump when retrieval/scoring logic changes in ways that alter responses.
-CACHE_VERSION = "1"
+# v2: "detected"/"detection" became query stopwords (generic-token fix);
+# earlier cached answers (e.g. dog query -> bird events) must not be served.
+CACHE_VERSION = "2"
 
 _IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
