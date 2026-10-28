@@ -279,7 +279,10 @@ class TestModelResponseValidation:
         client = MuseSparkClient(api_key="k")
         with patch("httpx.AsyncClient") as mock_cls:
             mock_cls.return_value = self._mock_http(self._payload('[1,2,3]'))
-            with pytest.raises(ValueError, match="objects"):
+            # P0: the shared strict parser now rejects non-object JSON with its
+            # own precise message (it is generic — text agents have no 'objects'
+            # list). Still a ValueError, still fail-fast.
+            with pytest.raises(ValueError, match="not a JSON object"):
                 await client.analyze_frame(b"frame")
 
     async def test_missing_choices_rejected(self):

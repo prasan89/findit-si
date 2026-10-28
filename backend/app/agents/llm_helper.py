@@ -10,7 +10,12 @@ from typing import Optional
 
 import httpx
 
-from ..meta_client import API_BASE_URL, MUSE_SPARK_MODEL, _parse_json_response
+from ..meta_client import (
+    API_BASE_URL,
+    MUSE_SPARK_MODEL,
+    extract_message_content,
+    parse_model_json,
+)
 from ..provider import UsageRecord, record_usage
 
 import uuid
@@ -139,17 +144,12 @@ async def llm_json_call_ex(
             tokens_in = usage.get("prompt_tokens", 0)
             tokens_out = usage.get("completion_tokens", 0)
 
-            # Validate shape before parsing (empty/truncated/missing content
-            # fails fast — retrying the identical request cannot help).
-            try:
-                content = data["choices"][0]["message"]["content"] or ""
-            except (KeyError, IndexError, TypeError):
-                raise ValueError("Model response missing choices[0].message.content")
-            if not content.strip():
-                raise ValueError("Model returned an empty response")
-            result = _parse_json_response(content)
-            if not isinstance(result, dict):
-                raise ValueError("Model response is not a JSON object")
+            # Shared normalization path: envelope validation, null/type
+            # checks, and strict JSON parsing. Malformed content raises
+            # ModelResponseError (a ValueError) and fails fast — retrying the
+            # identical request cannot help.
+            content, finish_reason = extract_message_content(data)
+            result = parse_model_json(content, finish_reason=finish_reason)
             success = True
             break
         except Exception as exc:

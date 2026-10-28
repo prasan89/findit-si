@@ -203,9 +203,23 @@ async def process_recording(
     Full processing pipeline for one recording.
     Updates recording status throughout.
     Does NOT raise — all errors are captured in processing_errors.
+
+    Metric definitions (each updated at exactly one lifecycle stage):
+    - extracted: frames produced by ffmpeg (len(frames)).
+    - submitted: frames sent to the model (api_calls + failed_frames).
+    - api_calls: successful model responses (incremented only after
+      analyze_frame returns; a local parsing failure is NOT an API call).
+    - indexed (frame_count): frames fully persisted with observations.
+    - failed_frames: model/parsing failures; the frame is skipped, never
+      persisted, and never blocks other frames.
+    - cache_hits: frames served from frame_cache without a model call.
+    - skipped_frames: frames not attempted (API-call limit, budget stop).
+    Invariant: extracted == indexed + failed + skipped.
     """
     errors = []
     frame_count = 0
+    failed_frames = 0
+    skipped_frames = 0
 
     # Bind recording_id to the accounted client if it supports it.
     if isinstance(meta_client, AccountedFrameAnalyzer):
@@ -273,9 +287,19 @@ async def process_recording(
                     logger.warning("Budget exceeded during processing of %s: %s", recording_id, e)
                     break
                 except Exception as e:
-                    errors.append(f"Frame {ts:.1f}s: model error: {str(e)[:200]}")
+                    # One failed frame never aborts the rest. Structured
+                    # failures carry a machine-readable [code] for triage.
+                    failed_frames += 1
+                    code = getattr(e, "code", None)
+                    tag = f"[{code}] " if code else ""
+                    errors.append(f"Frame {ts:.1f}s: model error {tag}{str(e)[:200]}")
+                    logger.warning(
+                        "Frame %.1fs of %s failed (%s); continuing with next frame",
+                        ts, recording_id, type(e).__name__,
+                    )
                     continue
             elif cached_analysis is None:
+                skipped_frames += 1
                 errors.append(f"Frame {ts:.1f}s: skipped (API call limit reached)")
                 continue
 
@@ -298,8 +322,14 @@ async def process_recording(
                 model_version=model_version,
             )
 
-            # Store observations
+            # Store observations. Idempotent per frame: prior rows for this
+            # frame are removed first, so reprocessing (manual or retry)
+            # cannot duplicate index records.
             async with get_db(db_path) as db:
+                await db.execute(
+                    "DELETE FROM observations WHERE recording_id=? AND frame_id=?",
+                    (recording_id, frame_id),
+                )
                 for obs in observations:
                     await db.execute(
                         """INSERT OR IGNORE INTO observations(
@@ -333,7 +363,21 @@ async def process_recording(
         # Generate thumbnail from first frame (if any frames exist)
         await _generate_thumbnail(recording_id, storage, db_path)
 
-        status = ProcessingStatus.INDEXED if not errors else ProcessingStatus.PARTIAL
+        # Frames never attempted after a budget break count as skipped so the
+        # extracted == indexed + failed + skipped invariant holds.
+        skipped_frames += len(frames) - frame_count - failed_frames - skipped_frames
+
+        if frame_count == 0 and len(frames) > 0:
+            status = ProcessingStatus.FAILED
+        elif errors:
+            status = ProcessingStatus.PARTIAL
+        else:
+            status = ProcessingStatus.INDEXED
+        detail = (
+            f"Indexed {frame_count}/{len(frames)} frames, {api_calls} API calls, "
+            f"{cache_hits} cache hits, {failed_frames} failed, "
+            f"{skipped_frames} skipped"
+        )
         async with get_db(db_path) as db:
             await db.execute(
                 """UPDATE recordings SET
@@ -342,8 +386,7 @@ async def process_recording(
                    WHERE recording_id=?""",
                 (
                     status.value, frame_count, json.dumps(errors),
-                    f"Indexed {frame_count} frames, {api_calls} API calls, "
-                    f"{cache_hits} cache hits",
+                    detail,
                     _now(), recording_id
                 )
             )

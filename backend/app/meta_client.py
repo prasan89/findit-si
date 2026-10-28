@@ -131,30 +131,53 @@ class MuseSparkClient:
         }
 
         from .guards import bounded_llm_call
+        # Truncated output (finish_reason=length) gets ONE retry with a larger
+        # token budget — a changed request strategy, not a blind repeat. Every
+        # other malformed response fails fast via the shared normalization path.
+        max_tokens = self.max_output_tokens
+        data = None
+        parsed: dict = {}
         async with bounded_llm_call():
-            async with httpx.AsyncClient(timeout=self._httpx_timeout()) as client:
-                resp = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            for attempt in (1, 2):
+                payload["max_completion_tokens"] = max_tokens
+                async with httpx.AsyncClient(timeout=self._httpx_timeout()) as client:
+                    resp = await client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
 
-        try:
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError):
-            raise ValueError("Model response missing choices[0].message.content")
-        parsed = _parse_json_response(content)
+                content, finish_reason = extract_message_content(data)
+                try:
+                    parsed = parse_model_json(content, finish_reason=finish_reason)
+                except ModelResponseError as exc:
+                    if (
+                        exc.code != "truncated"
+                        or attempt > 1
+                        or max_tokens >= TRUNCATED_RETRY_MAX_TOKENS
+                    ):
+                        raise
+                    max_tokens = min(max_tokens * 2, TRUNCATED_RETRY_MAX_TOKENS)
+                    logger.warning(
+                        "vision response truncated; retrying once with "
+                        "max_completion_tokens=%d",
+                        max_tokens,
+                    )
+                    continue
+                break
 
-        # Phase 6: validate shape before the result reaches agents. A valid
+        # Validate shape before the result reaches agents. A valid
         # analysis is a dict with an "objects" list; anything else fails fast
-        # (ValueError is non-retryable — the same request would fail again).
-        if not isinstance(parsed, dict) or not isinstance(parsed.get("objects"), list):
-            raise ValueError("Model response missing required 'objects' list")
+        # (ModelResponseError is a ValueError — non-retryable).
+        if not isinstance(parsed.get("objects"), list):
+            raise ModelResponseError(
+                "schema_violation", "Model response missing required 'objects' list"
+            )
 
         # Attach actual token usage so the accounting layer can record it.
         usage = data.get("usage") or {}
@@ -186,19 +209,205 @@ class MockMetaClient:
         return {"objects": [], "scene_summary": "No identifiable objects"}
 
 
-def _parse_json_response(content: str) -> dict:
-    """Extract JSON from model response, tolerating surrounding prose."""
-    content = content.strip()
-    # Strip markdown code fences if present
-    content = re.sub(r"^```(?:json)?\s*", "", content)
-    content = re.sub(r"\s*```$", "", content)
+class ModelResponseError(ValueError):
+    """Structured, actionable model-response failure.
+
+    Subclasses ValueError so the Phase 6 retry policy keeps treating
+    malformed responses as non-retryable (same request, same result).
+    `code` is a stable machine-readable category; the message carries a
+    truncated, credential-free excerpt for diagnostics.
+    """
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        finish_reason: Optional[str] = None,
+        content_type: Optional[str] = None,
+        excerpt: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.code = code
+        self.finish_reason = finish_reason
+        self.content_type = content_type
+        self.excerpt = excerpt
+
+
+# Finish reasons that mean the output was cut short (OpenAI-compatible API).
+TRUNCATED_FINISH_REASONS = frozenset({"length"})
+# Upper bound for the one-shot truncation retry's token budget.
+TRUNCATED_RETRY_MAX_TOKENS = 8000
+
+
+def extract_message_content(data) -> tuple[Optional[str], Optional[str]]:
+    """Validate a chat-completions envelope; return (text_or_None, finish_reason).
+
+    Shared by every vision/LLM call site. text is None only when the provider
+    returned JSON null content. Raises ModelResponseError on unexpected shapes
+    or provider-reported errors. Never raises AttributeError on None.
+    """
+    if not isinstance(data, dict):
+        raise ModelResponseError(
+            "invalid_envelope",
+            f"Model API returned unexpected response type: {type(data).__name__}",
+            content_type=type(data).__name__,
+        )
+    provider_error = data.get("error")
+    if provider_error:
+        detail = (
+            provider_error.get("message")
+            if isinstance(provider_error, dict)
+            else provider_error
+        )
+        raise ModelResponseError(
+            "provider_error",
+            f"Model API reported an error: {str(detail)[:200]}",
+        )
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ModelResponseError(
+            "missing_content", "Model response missing choices[0].message.content"
+        )
+    first = choices[0] if isinstance(choices[0], dict) else {}
+    message = first.get("message")
+    if not isinstance(message, dict):
+        raise ModelResponseError(
+            "missing_content", "Model response missing choices[0].message.content"
+        )
+    finish_reason = first.get("finish_reason")
+    content = message.get("content")
+    if content is None:
+        return None, finish_reason
+    if isinstance(content, str):
+        return content, finish_reason
+    if isinstance(content, list):
+        # Content-block form: join the text parts, ignore the rest.
+        parts = [
+            p.get("text", "")
+            for p in content
+            if isinstance(p, dict) and isinstance(p.get("text"), str)
+        ]
+        text = "".join(parts)
+        return (text if text else None), finish_reason
+    raise ModelResponseError(
+        "invalid_content_type",
+        f"Model response content has unexpected type: {type(content).__name__}",
+        content_type=type(content).__name__,
+        finish_reason=finish_reason,
+    )
+
+
+def _excerpt(text: str, pos: Optional[int] = None, width: int = 80) -> str:
+    """Short credential-free excerpt around a parse error (or the head)."""
+    flat = " ".join(str(text).split())
+    if pos is None:
+        return flat[:160]
+    start = max(0, pos - width)
+    return flat[start:start + 2 * width]
+
+
+def parse_model_json(content, *, finish_reason: Optional[str] = None) -> dict:
+    """Strictly parse model text output as a JSON object.
+
+    Tolerates one markdown-fenced block and prose-embedded JSON (legacy
+    provider behavior), but the candidate must parse as COMPLETE valid JSON —
+    repairs are never accepted. Raises ModelResponseError (never AttributeError
+    or raw json.JSONDecodeError) with a machine-readable code.
+    """
+    truncated = finish_reason in TRUNCATED_FINISH_REASONS
+    if content is None:
+        if truncated:
+            raise ModelResponseError(
+                "truncated",
+                "Model response was truncated (finish_reason=length) before "
+                "producing content",
+                finish_reason=finish_reason,
+            )
+        raise ModelResponseError(
+            "empty_content",
+            "Model returned an empty response",
+            finish_reason=finish_reason,
+        )
+    if not isinstance(content, str):
+        raise ModelResponseError(
+            "invalid_content_type",
+            f"Model response content has unexpected type: {type(content).__name__}",
+            content_type=type(content).__name__,
+            finish_reason=finish_reason,
+        )
+    text = content.strip()
+    if not text:
+        if truncated:
+            raise ModelResponseError(
+                "truncated",
+                "Model response was truncated (finish_reason=length)",
+                finish_reason=finish_reason,
+            )
+        raise ModelResponseError(
+            "empty_content",
+            "Model returned an empty response",
+            finish_reason=finish_reason,
+        )
+    # Tolerate a single markdown-fenced block (legacy behavior).
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+    candidate = fenced.group(1) if fenced else text
     try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", content, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-        raise ValueError(f"Model returned non-JSON response: {content[:300]}")
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError as first_exc:
+        if fenced is None:
+            # Legacy prose tolerance: accept ONLY a complete, valid object.
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if match:
+                try:
+                    parsed = json.loads(match.group())
+                except json.JSONDecodeError as second_exc:
+                    raise ModelResponseError(
+                        "malformed_json",
+                        f"Model returned malformed JSON ({second_exc}): "
+                        f"{_excerpt(match.group(), second_exc.pos)}",
+                        finish_reason=finish_reason,
+                        excerpt=_excerpt(match.group(), second_exc.pos),
+                    ) from second_exc
+                return _require_json_object(parsed, finish_reason)
+        if truncated:
+            raise ModelResponseError(
+                "truncated",
+                f"Model response was truncated (finish_reason=length): "
+                f"{_excerpt(candidate, first_exc.pos)}",
+                finish_reason=finish_reason,
+                excerpt=_excerpt(candidate, first_exc.pos),
+            ) from first_exc
+        if "{" not in candidate:
+            raise ModelResponseError(
+                "malformed_json",
+                f"Model returned non-JSON response: {_excerpt(candidate)}",
+                finish_reason=finish_reason,
+                excerpt=_excerpt(candidate),
+            ) from first_exc
+        raise ModelResponseError(
+            "malformed_json",
+            f"Model returned malformed JSON ({first_exc}): "
+            f"{_excerpt(candidate, first_exc.pos)}",
+            finish_reason=finish_reason,
+            excerpt=_excerpt(candidate, first_exc.pos),
+        ) from first_exc
+    return _require_json_object(parsed, finish_reason)
+
+
+def _require_json_object(parsed, finish_reason: Optional[str]) -> dict:
+    if not isinstance(parsed, dict):
+        raise ModelResponseError(
+            "schema_violation",
+            "Model response is not a JSON object",
+            finish_reason=finish_reason,
+        )
+    return parsed
+
+
+def _parse_json_response(content: str) -> dict:
+    """Backwards-compatible wrapper around parse_model_json (no finish reason)."""
+    return parse_model_json(content)
 
 
 def get_meta_client(
