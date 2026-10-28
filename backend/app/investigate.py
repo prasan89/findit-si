@@ -20,7 +20,8 @@ import aiosqlite
 
 from .database import get_db
 from .event_extractor import (
-    BIRD_SUBJECTS, PERSON_SUBJECTS, VEHICLE_SUBJECTS, contains_word,
+    BIRD_SUBJECTS, INSECT_HYPERNYMS, INSECT_LEMMA, INSECT_SUBJECTS,
+    PERSON_SUBJECTS, VEHICLE_SUBJECTS, contains_word,
 )
 from .models import (
     CrossCameraLink,
@@ -81,6 +82,23 @@ async def investigate(
                    ORDER BY upload_timestamp""",
             )).fetchall()
 
+        # Recordings that exist but cannot be searched (never indexed or
+        # failed) are reported, never silently skipped.
+        if recording_ids:
+            inelig_rows = await (await db.execute(
+                f"""SELECT original_filename, processing_status FROM recordings
+                    WHERE recording_id IN ({placeholders})
+                      AND processing_status NOT IN ('INDEXED', 'PARTIAL')""",
+                recording_ids,
+            )).fetchall()
+        else:
+            inelig_rows = await (await db.execute(
+                """SELECT original_filename, processing_status FROM recordings
+                   WHERE processing_status NOT IN ('INDEXED', 'PARTIAL')"""
+            )).fetchall()
+        ineligible = [(r["original_filename"], r["processing_status"])
+                      for r in inelig_rows]
+
         if not rec_rows:
             return InvestigationResult(
                 investigation_id=investigation_id,
@@ -91,7 +109,8 @@ async def investigate(
                 ordering_explanation="No indexed recordings found.",
                 searched_recordings=0,
                 total_events_found=0,
-                evidence_gaps=["No recordings have been processed yet."],
+                evidence_gaps=["No recordings have been processed yet."]
+                + _ineligible_notes(ineligible),
                 uncertainty_summary="",
             )
 
@@ -188,6 +207,7 @@ async def investigate(
                 f"{n_time_excluded} event(s) exist outside the requested time "
                 f"range and were excluded by the time filter."
             )
+        gaps = gaps + _ineligible_notes(ineligible)
         return InvestigationResult(
             investigation_id=investigation_id,
             query=query,
@@ -311,6 +331,7 @@ async def investigate(
 
     # Identify evidence gaps
     evidence_gaps = _identify_evidence_gaps(events, eligible_ids, rec_meta)
+    evidence_gaps = evidence_gaps + _ineligible_notes(ineligible)
 
     # Build narrative from retrieved evidence only
     narrative = _build_narrative(query, events, ts_reliable)
@@ -416,19 +437,24 @@ def _score_event(terms: list[str], ev: dict) -> float:
         " ".join(ev.get("observed_facts", [])),
     ])
 
-    # Subject gate: a query about people, vehicles, or birds must match
-    # subject evidence in the description — not a generic token like
+    # Subject gate: a query about people, vehicles, birds, or insects must
+    # match subject evidence in the description — not a generic token like
     # "detected", which appears in every `*_detected` type label. Subject
     # synonyms cover each other ("human" matches an event describing a
-    # "person"; "birds" matches "bird").
+    # "person"; "birds" matches "bird"; hypernym "insect" matches any insect
+    # evidence. Insect hyponyms ("grub", "ants") instead require their own
+    # lemma — ants are not grubs.
     query_person = any(t in PERSON_SUBJECTS for t in terms)
     query_vehicle = any(t in VEHICLE_SUBJECTS for t in terms)
     query_bird = any(t in BIRD_SUBJECTS for t in terms)
+    query_insect = any(t in INSECT_HYPERNYMS for t in terms)
     if query_person and not contains_word(descriptive, PERSON_SUBJECTS):
         return 0.0
     if query_vehicle and not contains_word(descriptive, VEHICLE_SUBJECTS):
         return 0.0
     if query_bird and not contains_word(descriptive, BIRD_SUBJECTS):
+        return 0.0
+    if query_insect and not contains_word(descriptive, INSECT_SUBJECTS):
         return 0.0
 
     hits = 0
@@ -440,6 +466,12 @@ def _score_event(terms: list[str], ev: dict) -> float:
             hits += 1
         elif t in BIRD_SUBJECTS:
             hits += 1
+        elif t in INSECT_HYPERNYMS:
+            hits += 1
+        elif t in INSECT_SUBJECTS:
+            forms = frozenset({t, INSECT_LEMMA[t]})
+            if contains_word(descriptive, forms):
+                hits += 1
         elif t in searchable:
             hits += 1
     # Require at least one keyword hit — confidence alone doesn't justify a result
@@ -541,6 +573,19 @@ def _identify_evidence_gaps(
             name = rec_meta.get(rid, {}).get("original_filename", rid)
             gaps.append(f"No matching events found in recording '{name}'.")
     return gaps
+
+
+def _ineligible_notes(ineligible: list[tuple]) -> list[str]:
+    """Report recordings that exist but could not be searched at all."""
+    notes = []
+    for filename, status in ineligible:
+        if status == "FAILED":
+            notes.append(f"Recording '{filename}' failed processing and "
+                         f"was not searched.")
+        else:
+            notes.append(f"Recording '{filename}' is not indexed yet "
+                         f"(status {status}) and was not searched.")
+    return notes
 
 
 def _build_narrative(query: str, events: list[Event], ts_reliable: bool) -> str:

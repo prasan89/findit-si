@@ -28,7 +28,9 @@ from .database import get_db
 # Bump when retrieval/scoring logic changes in ways that alter responses.
 # v2: "detected"/"detection" became query stopwords (generic-token fix);
 # earlier cached answers (e.g. dog query -> bird events) must not be served.
-CACHE_VERSION = "2"
+# v3: insect subject class added; never-indexed/failed recordings are now
+# reported in evidence gaps.
+CACHE_VERSION = "3"
 
 _IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 

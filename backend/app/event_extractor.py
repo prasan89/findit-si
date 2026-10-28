@@ -49,6 +49,30 @@ VEHICLE_SUBJECTS = frozenset({
 # Deliberately bird-only: broader "animal" words must not auto-classify
 # (or auto-match) other species, and other animals must not render as Bird.
 BIRD_SUBJECTS = frozenset({"bird", "birds"})
+# True insects (singular/plural) plus larval forms, for query relevance.
+# Retrieval-class only: insect evidence is typically secondary (carried,
+# crawled-upon), so it gates queries but never re-types the primary
+# subject — a bird scene with ants stays bird_detected. Spiders are
+# excluded (arachnids, not insects); "bug" is excluded (ambiguous with
+# listening devices and software defects in CCTV context).
+INSECT_SUBJECTS = frozenset({
+    "insect", "insects", "ant", "ants", "grub", "grubs",
+    "larva", "larvae", "fly", "flies", "beetle", "beetles",
+    "bee", "bees", "wasp", "wasps",
+})
+# Hypernym vs hyponym: "insect" matches any insect evidence, but a hyponym
+# query ("grub") must match its own lemma — ants are not grubs. Singular and
+# plural of the same lemma are equivalent.
+INSECT_HYPERNYMS = frozenset({"insect", "insects"})
+INSECT_LEMMA = {
+    "ant": "ants", "ants": "ant",
+    "grub": "grubs", "grubs": "grub",
+    "larva": "larvae", "larvae": "larva",
+    "fly": "flies", "flies": "fly",
+    "beetle": "beetles", "beetles": "beetle",
+    "bee": "bees", "bees": "bee",
+    "wasp": "wasps", "wasps": "wasp",
+}
 OBJECT_SUBJECTS = frozenset({
     "bag", "bags", "backpack", "backpacks", "suitcase", "suitcases",
     "luggage", "package", "packages",
