@@ -28,7 +28,7 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
-MIN_EVENT_SCORE = 0.15
+MIN_EVENT_SCORE = 0.25
 MAX_EVENTS_RETURNED = 20
 
 
@@ -201,6 +201,7 @@ async def investigate(
         ts_reliable = False
 
     # Cap results
+    total_before_cap = len(scored_events)
     scored_events = scored_events[:MAX_EVENTS_RETURNED]
 
     # Convert to Event models
@@ -274,7 +275,7 @@ async def investigate(
         timestamp_ordering_reliable=ts_reliable,
         ordering_explanation=ordering_explanation,
         searched_recordings=len(eligible_ids),
-        total_events_found=len(scored_events),
+        total_events_found=total_before_cap,
         evidence_gaps=evidence_gaps,
         uncertainty_summary=uncertainty_summary,
     )
@@ -328,6 +329,9 @@ def _score_event(terms: list[str], ev: dict) -> float:
     ]).lower()
 
     hits = sum(1 for t in terms if t in searchable)
+    # Require at least one keyword hit — confidence alone doesn't justify a result
+    if hits == 0:
+        return 0.0
     score = (hits / len(terms)) * 0.7 + ev.get("confidence", 0.5) * 0.3
     return min(score, 1.0)
 

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import VideoLibrary from '@/components/VideoLibrary'
 import SearchPanel from '@/components/SearchPanel'
 import InvestigationPanel from '@/components/InvestigationPanel'
+import UsageBadge from '@/components/UsageBadge'
 import type { Recording, SearchResult, InvestigationResult } from '@/types'
 
 type Tab = 'library' | 'investigate' | 'search'
@@ -35,9 +36,12 @@ export default function Home() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       <header className="mb-8">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-3xl font-bold text-gray-900">RealityTrace</h1>
-          <span className="text-sm text-gray-400 font-medium">Evidence-Backed CCTV Investigation</span>
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-3xl font-bold text-gray-900">RealityTrace</h1>
+            <span className="text-sm text-gray-400 font-medium">Evidence-Backed CCTV Investigation</span>
+          </div>
+          <UsageBadge />
         </div>
         <p className="text-gray-500 mt-1">
           Upload CCTV recordings and investigate incidents with structured, evidence-backed event timelines.

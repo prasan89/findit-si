@@ -1,0 +1,112 @@
+{
+  "timestamp": "2026-10-28T04:31:15Z",
+  "recording_ids": [
+    "2def7ea0-ba7f-45f3-ab96-16f0f4b41303",
+    "424f3e29-3ecd-43b2-b6bd-46fbc7c600bc",
+    "8ac27efc-4730-4d39-92f4-9b2f85cd4ebc"
+  ],
+  "event_recall": {
+    "found": 3,
+    "total": 3,
+    "rate": 1.0,
+    "details": [
+      {
+        "gt_id": "GT-001",
+        "found": true,
+        "best_timestamp_error_seconds": 0.5,
+        "has_evidence_frames": true
+      },
+      {
+        "gt_id": "GT-002",
+        "found": true,
+        "best_timestamp_error_seconds": 0.5,
+        "has_evidence_frames": true
+      },
+      {
+        "gt_id": "GT-003",
+        "found": true,
+        "best_timestamp_error_seconds": 0.5,
+        "has_evidence_frames": true
+      }
+    ]
+  },
+  "queries": [
+    {
+      "query_id": "Q1",
+      "query": "red person at entrance",
+      "latency_seconds": 0.0,
+      "events_returned": 1,
+      "true_positives": [
+        "GT-001"
+      ],
+      "false_negatives": [],
+      "false_positives": [],
+      "precision": 1.0,
+      "recall": 1.0,
+      "narrative_length": 252,
+      "evidence_gaps": [
+        "No matching events found in recording 'parking_camera.mp4'.",
+        "No matching events found in recording 'hallway_camera.mp4'."
+      ]
+    },
+    {
+      "query_id": "Q2",
+      "query": "blue bag in hallway",
+      "latency_seconds": 0.0,
+      "events_returned": 1,
+      "true_positives": [
+        "GT-002"
+      ],
+      "false_negatives": [],
+      "false_positives": [],
+      "precision": 1.0,
+      "recall": 1.0,
+      "narrative_length": 238,
+      "evidence_gaps": [
+        "No matching events found in recording 'parking_camera.mp4'.",
+        "No matching events found in recording 'entrance_camera.mp4'."
+      ]
+    },
+    {
+      "query_id": "Q3",
+      "query": "green vehicle parking",
+      "latency_seconds": 0.0,
+      "events_returned": 1,
+      "true_positives": [
+        "GT-003"
+      ],
+      "false_negatives": [],
+      "false_positives": [],
+      "precision": 1.0,
+      "recall": 1.0,
+      "narrative_length": 190,
+      "evidence_gaps": [
+        "No matching events found in recording 'hallway_camera.mp4'.",
+        "No matching events found in recording 'entrance_camera.mp4'."
+      ]
+    },
+    {
+      "query_id": "Q4",
+      "query": "show all events between 00:00 and 00:15",
+      "latency_seconds": 0.0,
+      "events_returned": 3,
+      "true_positives": [
+        "GT-001"
+      ],
+      "false_negatives": [],
+      "false_positives": [],
+      "precision": 0.333,
+      "recall": 1.0,
+      "narrative_length": 553,
+      "evidence_gaps": []
+    }
+  ],
+  "cross_camera": {
+    "total_links": 6,
+    "correct": 2,
+    "false_associations": 4
+  },
+  "avg_query_precision": 0.83325,
+  "avg_query_recall": 1.0,
+  "avg_latency_seconds": 0.0
+}

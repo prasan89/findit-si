@@ -220,7 +220,7 @@ def _build_event(
     for label in object_labels:
         observed_facts.append(f"Observed: {label}")
     if scene_parts:
-        observed_facts.append(f"Scene context: {scene_parts[0][:200]}")
+        observed_facts.append(f"Scene: {scene_parts[0][:200]}")
 
     # Build inferred claims — labeled as inferences, not facts
     inferred_claims: list[str] = []
@@ -239,8 +239,9 @@ def _build_event(
     if not recording_datetime:
         uncertainty_notes.append("No absolute recording timestamp — relative timestamps only")
 
-    # Build action description
-    action_description = _build_action_description(object_labels, event_type)
+    # Action description: prefer model's scene_summary (contains activity context from CCTV prompt)
+    # Fall back to template only when the model returned no scene description
+    action_description = scene_parts[0][:300] if scene_parts else _build_action_description(object_labels, event_type)
 
     # Timestamp absolute
     timestamp_absolute = None

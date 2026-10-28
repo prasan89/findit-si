@@ -19,30 +19,30 @@ logger = logging.getLogger(__name__)
 API_BASE_URL = "https://api.meta.ai/v1"
 MUSE_SPARK_MODEL = "muse-spark-1.3"
 
-ANALYSIS_PROMPT = """Analyze this video frame and identify all visible objects that could be searched for later (e.g. "where did I last see my blue notebook?").
+ANALYSIS_PROMPT = """You are analyzing a CCTV video frame for a security investigation. Describe what is OBSERVED — not inferred.
 
-For each object provide:
-1. A specific label (e.g. "blue notebook", "car keys", "water bottle", "laptop")
-2. Attributes: color, shape, approximate size, and any distinctive details
-3. A brief scene description placing the object in context
-4. A confidence score 0.0–1.0
+Report:
+1. Any people or vehicles present — appearance (clothing color, size, gait), position, and what they are doing
+2. Any notable objects — bags, packages, equipment, vehicles — with color, size, and location
+3. Scene context — location type (entrance, corridor, parking, etc.), lighting, and any unusual features
+4. Activity or motion — entry, exit, movement direction, stationary, interacting with something
 
 Return ONLY valid JSON — no prose, no markdown fences:
 {
   "objects": [
     {
-      "label": "object name",
+      "label": "concise label (e.g. 'person in blue jacket', 'dark sedan', 'black backpack')",
       "attributes": {
-        "color": "color",
-        "shape": "shape",
-        "size": "size",
-        "distinctive_details": "notable features"
+        "color": "primary color(s)",
+        "shape": "body type or form factor",
+        "size": "approximate size relative to scene",
+        "distinctive_details": "any notable features: markings, logos, gait, posture"
       },
-      "scene_description": "object location and surrounding context",
+      "scene_description": "what this subject/object is doing and where in the scene",
       "confidence": 0.9
     }
   ],
-  "scene_summary": "brief overall scene description"
+  "scene_summary": "one sentence: location type, who/what is present, and the primary observable activity"
 }"""
 
 
@@ -113,7 +113,15 @@ class MuseSparkClient:
             data = resp.json()
 
         content = data["choices"][0]["message"]["content"]
-        return _parse_json_response(content)
+        parsed = _parse_json_response(content)
+
+        # Attach actual token usage so the accounting layer can record it.
+        usage = data.get("usage") or {}
+        parsed["_usage"] = {
+            "tokens_in": usage.get("prompt_tokens", 0),
+            "tokens_out": usage.get("completion_tokens", 0),
+        }
+        return parsed
 
 
 class MockMetaClient:

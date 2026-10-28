@@ -1,0 +1,103 @@
+{
+  "_comment": "Deterministic evaluation ground truth for RealityTrace. All clips are synthetic FFmpeg color-block videos.",
+  "cameras": [
+    {
+      "clip": "clips/entrance_camera.mp4",
+      "camera_name": "Entrance Camera",
+      "camera_location": "Front Door",
+      "recording_datetime": "2024-01-15T10:00:00",
+      "recording_timezone": "UTC",
+      "duration_seconds": 15
+    },
+    {
+      "clip": "clips/hallway_camera.mp4",
+      "camera_name": "Hallway Camera",
+      "camera_location": "Main Corridor",
+      "recording_datetime": "2024-01-15T10:02:00",
+      "recording_timezone": "UTC",
+      "duration_seconds": 20
+    },
+    {
+      "clip": "clips/parking_camera.mp4",
+      "camera_name": "Parking Camera",
+      "camera_location": "Rear Parking Lot",
+      "recording_datetime": "2024-01-15T10:01:00",
+      "recording_timezone": "UTC",
+      "duration_seconds": 10
+    }
+  ],
+  "ground_truth_events": [
+    {
+      "id": "GT-001",
+      "camera": "Entrance Camera",
+      "timestamp_seconds_range": [3.0, 8.0],
+      "expected_keywords": ["red", "person", "figure", "subject"],
+      "event_type": "person_detected",
+      "visible_in_single_camera": false,
+      "cross_camera_candidate": "GT-002",
+      "notes": "Red rectangular figure visible from t=3s to t=8s. Absolute time: 10:00:03–10:00:08 UTC."
+    },
+    {
+      "id": "GT-002",
+      "camera": "Hallway Camera",
+      "timestamp_seconds_range": [5.0, 12.0],
+      "expected_keywords": ["blue", "bag", "object", "package"],
+      "event_type": "unattended_object",
+      "visible_in_single_camera": false,
+      "cross_camera_candidate": "GT-001",
+      "notes": "Blue rectangular object visible from t=5s to t=12s. Absolute time: 10:02:05–10:02:12 UTC. Temporal gap from GT-001 end = 117s — within MAX_TEMPORAL_GAP_SECONDS=300."
+    },
+    {
+      "id": "GT-003",
+      "camera": "Parking Camera",
+      "timestamp_seconds_range": [2.0, 6.0],
+      "expected_keywords": ["green", "vehicle", "car"],
+      "event_type": "vehicle_detected",
+      "visible_in_single_camera": true,
+      "cross_camera_candidate": null,
+      "notes": "Green rectangular vehicle visible from t=2s to t=6s. No cross-camera match expected."
+    }
+  ],
+  "expected_gaps": [
+    "The parking camera event should NOT produce a cross-camera link to the entrance or hallway cameras (different event type, large temporal gap, no shared appearance tokens)."
+  ],
+  "queries": [
+    {
+      "id": "Q1",
+      "query": "red person at entrance",
+      "expected_events": ["GT-001"],
+      "expected_not_returned": ["GT-003"],
+      "min_expected_score": 0.5
+    },
+    {
+      "id": "Q2",
+      "query": "blue bag in hallway",
+      "expected_events": ["GT-002"],
+      "expected_not_returned": ["GT-003"],
+      "min_expected_score": 0.5
+    },
+    {
+      "id": "Q3",
+      "query": "green vehicle parking",
+      "expected_events": ["GT-003"],
+      "expected_not_returned": ["GT-001"],
+      "min_expected_score": 0.5
+    },
+    {
+      "id": "Q4",
+      "query": "show all events between 00:00 and 00:15",
+      "expected_events": ["GT-001"],
+      "expected_not_returned": [],
+      "notes": "Time filter: entrance camera events at t=0-15s. Hallway and parking at later absolute times (but parser uses video-relative time not absolute)."
+    }
+  ],
+  "methodology": {
+    "clip_generation": "FFmpeg color-block synthetic videos. No real individuals, no real locations.",
+    "model_dependency": "Results depend on vision model output. With MockMetaClient, all frames return empty objects[] — most events will not be detected. Real model required for meaningful precision/recall.",
+    "known_limitations": [
+      "Color blocks are not realistic CCTV footage — real models may describe them differently or not at all.",
+      "Event grouping depends on model returning objects in the same frames as the colored blocks appear.",
+      "Cross-camera correlation depends on shared appearance tokens (e.g. 'red', 'blue') — if model uses different words, links will not form."
+    ]
+  }
+}

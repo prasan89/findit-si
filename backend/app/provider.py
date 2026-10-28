@@ -217,25 +217,32 @@ class AccountedFrameAnalyzer:
                 result = await self.delegate.analyze_frame(frame_data)
                 latency_ms = (time.monotonic() - t0) * 1000.0
 
-                # Heuristic: 4 chars ≈ 1 token for JSON output.
-                # Input tokens (prompt + image) are not returned on this path;
-                # real usage would need the API's usage.prompt_tokens field.
+                # Extract actual token counts if the delegate embedded them.
+                # MuseSparkClient attaches _usage; MockMetaClient does not.
                 import json as _json
-                response_text = _json.dumps(result)
-                tokens_out_est = max(1, len(response_text) // 4)
+                usage_meta = result.pop("_usage", None) or {}
+                tokens_in_actual = usage_meta.get("tokens_in", 0)
+                if tokens_in_actual == 0:
+                    # Heuristic fallback: 4 chars ≈ 1 token for output JSON.
+                    # Input tokens estimated as ~546 per frame (measured average).
+                    tokens_in_actual = 0  # leave at 0 for mock; real client always provides
+                tokens_out_actual = usage_meta.get("tokens_out", 0)
+                if tokens_out_actual == 0:
+                    response_text = _json.dumps(result)
+                    tokens_out_actual = max(1, len(response_text) // 4)
 
                 cost = _estimate_cost(
                     self.delegate.model_version,
-                    tokens_in=0,
-                    tokens_out=tokens_out_est,
+                    tokens_in=tokens_in_actual,
+                    tokens_out=tokens_out_actual,
                     images=1,
                 )
                 record = UsageRecord(
                     provider=self.provider,
                     model=self.delegate.model_version,
                     operation="analyze_frame",
-                    tokens_in=0,
-                    tokens_out=tokens_out_est,
+                    tokens_in=tokens_in_actual,
+                    tokens_out=tokens_out_actual,
                     images_processed=1,
                     latency_ms=latency_ms,
                     success=True,
