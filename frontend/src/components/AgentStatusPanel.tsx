@@ -2,13 +2,13 @@
 import type { AgentRunResult, MultiAgentInvestigationResult } from '@/types'
 
 const STATUS_CONFIG: Record<string, { cls: string; label: string }> = {
-  completed: { cls: 'rt-badge-green',  label: 'Completed' },
-  failed:    { cls: 'rt-badge-red',    label: 'Failed'    },
-  skipped:   { cls: 'rt-badge-amber',  label: 'Skipped'   },
-  timed_out: { cls: 'rt-badge-amber',  label: 'Timed out' },
-  running:   { cls: 'rt-badge-blue',   label: 'Running'   },
-  pending:   { cls: 'rt-badge-gray',   label: 'Pending'   },
-  mocked:    { cls: 'rt-badge-gray',   label: 'Mocked'    },
+  completed: { cls: 'rt-badge-green',  label: 'completed' },
+  failed:    { cls: 'rt-badge-red',    label: 'failed'    },
+  skipped:   { cls: 'rt-badge-amber',  label: 'skipped'   },
+  timed_out: { cls: 'rt-badge-amber',  label: 'timed_out' },
+  running:   { cls: 'rt-badge-blue',   label: 'running'   },
+  pending:   { cls: 'rt-badge-gray',   label: 'pending'   },
+  mocked:    { cls: 'rt-badge-gray',   label: 'mocked'    },
 }
 
 const AGENT_DESCRIPTIONS: Record<string, string> = {

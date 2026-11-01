@@ -32,11 +32,11 @@ function describeValue(value: unknown): string {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
-  'possible-assault':              'Possible Assault',
-  'possible-theft':                'Possible Theft',
+  'possible-assault':              'Possible assault',
+  'possible-theft':                'Possible theft',
   confrontation:                   'Confrontation',
-  'sudden-fall':                   'Sudden Fall',
-  'suspicious-approach-departure': 'Suspicious Activity',
+  'sudden-fall':                   'Sudden fall',
+  'suspicious-approach-departure': 'Suspicious activity',
   'other-anomaly':                 'Anomaly',
 }
 
@@ -44,6 +44,12 @@ function categoryBadge(cat: string): string {
   if (cat.includes('assault') || cat.includes('fall')) return 'rt-badge-red'
   if (cat.includes('theft') || cat.includes('confrontation') || cat.includes('suspicious')) return 'rt-badge-amber'
   return 'rt-badge-gray'
+}
+
+function confidenceLabel(score: number, pct: number): string {
+  if (score >= 0.75) return `High confidence (${pct}%)`
+  if (score >= 0.5) return `Medium confidence (${pct}%)`
+  return `Low confidence (${pct}%)`
 }
 
 function confidenceBadge(score: number): string {
@@ -124,10 +130,10 @@ export default function TemporalEventCard({
             <span className="rt-badge-gray font-mono">{String(index).padStart(2, '0')}</span>
             <span className={categoryBadge(ev.category)}>{typeLabel}</span>
             <span className={confidenceBadge(ev.confidence)}>
-              {(ev.confidence * 100).toFixed(0)}% confidence
+              {confidenceLabel(ev.confidence, Math.round(ev.confidence * 100))}
             </span>
-            {!reliableTs && <span className="rt-badge-amber">Approx. timestamp</span>}
-            {ev.single_frame_candidate && <span className="rt-badge-amber">Single-frame</span>}
+            {!reliableTs && <span className="rt-badge-amber">Approximate timestamp</span>}
+            {ev.single_frame_candidate && <span className="rt-badge-amber">Single-frame candidate</span>}
           </div>
 
           {/* Time + camera */}
@@ -165,7 +171,7 @@ export default function TemporalEventCard({
                   <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5">
                     <path d="M8 5v14l11-7L8 5z" fill="currentColor"/>
                   </svg>
-                  Play clip ({formatTs(ev.clip.start_seconds)}–{formatTs(ev.clip.end_seconds)})
+                  Play event clip ({formatTs(ev.clip.start_seconds)}–{formatTs(ev.clip.end_seconds)})
                 </button>
               ) : (
                 <video src={ev.clip.clip_url} controls preload="metadata" className="w-full max-h-64 rounded-lg bg-black" />
@@ -232,7 +238,7 @@ export default function TemporalEventCard({
                 {ev.uncertain.map((u, i) => <li key={i}>~ {u}</li>)}
               </ul>
               <p className="text-[11px] mt-2 text-amber-600 border-t border-amber-200 pt-1.5">
-                {ev.confirming_frame_count} confirming frames · {ev.evidence_frames.length} thumbnails · {ev.timestamp_source}
+                {ev.confirming_frame_count} confirming frame{ev.confirming_frame_count === 1 ? '' : 's'} · {ev.evidence_frames.length} thumbnail{ev.evidence_frames.length === 1 ? '' : 's'} · timestamp source: {ev.timestamp_source}
               </p>
             </div>
           )}

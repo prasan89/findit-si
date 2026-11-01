@@ -125,13 +125,13 @@ export default function TemporalTimeline({ recordings, onInvestigated }: Props) 
             </select>
           </div>
           <div>
-            <label className="rt-label">Start (s)</label>
-            <input type="number" min="0" step="0.1" value={start} onChange={e => setStart(e.target.value)}
+            <label htmlFor="tt-start" className="rt-label">Start (s)</label>
+            <input id="tt-start" type="number" min="0" step="0.1" value={start} onChange={e => setStart(e.target.value)}
               placeholder="0" className="rt-input" />
           </div>
           <div>
-            <label className="rt-label">End (s)</label>
-            <input type="number" min="0" step="0.1" value={end} onChange={e => setEnd(e.target.value)}
+            <label htmlFor="tt-end" className="rt-label">End (s)</label>
+            <input id="tt-end" type="number" min="0" step="0.1" value={end} onChange={e => setEnd(e.target.value)}
               placeholder="∞" className="rt-input" />
           </div>
           <div>
@@ -148,11 +148,11 @@ export default function TemporalTimeline({ recordings, onInvestigated }: Props) 
 
         <div className="flex items-center gap-3">
           <button onClick={fetchEvents} disabled={loading || !recordingId} className="rt-btn-primary">
-            {loading ? 'Loading…' : 'Load Timeline'}
+            {loading ? 'Loading…' : 'Load timeline'}
           </button>
           {response && (
             <span className="text-sm text-[#64748B]">
-              {response.count} event{response.count !== 1 ? 's' : ''} · {response.timestamp_source}
+              {response.count} event(s) · {response.timestamp_source}
             </span>
           )}
         </div>

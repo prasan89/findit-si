@@ -26,10 +26,16 @@ function confidenceBadge(score: number): string {
   return 'rt-badge-red'
 }
 
-function confidenceLabel(score: number): string {
-  if (score >= 0.75) return 'High'
-  if (score >= 0.5) return 'Medium'
-  return 'Low'
+function confidenceLabel(score: number, pct: number): string {
+  if (score >= 0.75) return `High confidence (${pct}%)`
+  if (score >= 0.5) return `Medium confidence (${pct}%)`
+  return `Low confidence (${pct}%)`
+}
+
+function relevanceLabel(score: number, pct: number): string {
+  if (score >= 0.75) return `Strong match (${pct}%)`
+  if (score >= 0.5) return `Partial match (${pct}%)`
+  return `Weak match (${pct}%)`
 }
 
 function eventTypeBadge(type: string): string {
@@ -45,11 +51,11 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   unattended_object:               'Object',
   entry_exit_detected:             'Entry/Exit',
   scene_change:                    'Scene Change',
-  'possible-theft':                'Possible Theft',
-  'possible-assault':              'Possible Assault',
+  'possible-theft':                'Possible theft',
+  'possible-assault':              'Possible assault',
   confrontation:                   'Confrontation',
-  'sudden-fall':                   'Sudden Fall',
-  'suspicious-approach-departure': 'Suspicious Activity',
+  'sudden-fall':                   'Sudden fall',
+  'suspicious-approach-departure': 'Suspicious activity',
   'other-anomaly':                 'Anomaly',
 }
 
@@ -134,15 +140,15 @@ export default function EventCard({ event: ev, index, highlight, onPlayEvidence 
               <span className="rt-badge-gray font-mono text-xs">{String(index).padStart(2, '0')}</span>
               <span className={eventTypeBadge(ev.event_type)}>{typeLabel}</span>
               {ev.is_primary_finding && (
-                <span className="rt-badge bg-[#EFF6FF] text-[#2563EB] ring-1 ring-[#BFDBFE]">★ Primary</span>
+                <span className="rt-badge bg-[#EFF6FF] text-[#2563EB] ring-1 ring-[#BFDBFE]">★ Primary finding</span>
               )}
               {hasRelevance ? (
                 <span className={confidenceBadge(ev.relevance_score as number)}>
-                  {((ev.relevance_score as number) * 100).toFixed(0)}% match
+                  {relevanceLabel(ev.relevance_score as number, Math.round((ev.relevance_score as number) * 100))}
                 </span>
               ) : (
                 <span className={confidenceBadge(ev.confidence)}>
-                  {confidenceLabel(ev.confidence)} ({(ev.confidence * 100).toFixed(0)}%)
+                  {confidenceLabel(ev.confidence, Math.round(ev.confidence * 100))}
                 </span>
               )}
               {!ev.has_reliable_timestamp && (
@@ -186,6 +192,26 @@ export default function EventCard({ event: ev, index, highlight, onPlayEvidence 
 
           {/* Action description */}
           <p className="text-sm font-medium text-[#0F172A]">{ev.action_description}</p>
+
+          {/* Tracked entities */}
+          {ev.entities && ev.entities.length > 0 && (
+            <details>
+              <summary className="text-xs text-[#2563EB] cursor-pointer hover:text-[#1D4ED8] font-medium">
+                Tracked entities ({ev.entities.length})
+              </summary>
+              <ul className="text-xs text-[#64748B] mt-1.5 space-y-1 pl-2">
+                {ev.entities.map(ent => (
+                  <li key={ent.entity_id} className="flex gap-2 items-baseline">
+                    <span className="text-[#94A3B8] shrink-0">·</span>
+                    <span>{ent.display_label ?? ent.head ?? ent.entity_id}</span>
+                    {ent.first_seen_seconds != null && ent.last_seen_seconds != null && (
+                      <span className="text-[#94A3B8] font-mono">{formatTs(ent.first_seen_seconds)}–{formatTs(ent.last_seen_seconds)}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
 
           {/* Action sequence */}
           {ev.action_sequence && ev.action_sequence.length > 0 && (
@@ -238,7 +264,7 @@ export default function EventCard({ event: ev, index, highlight, onPlayEvidence 
               {hiddenFacts.length > 0 && (
                 <details className="mt-1">
                   <summary className="text-xs text-[#64748B] cursor-pointer hover:text-[#0F172A]">
-                    Show all {facts.length} ({hiddenFacts.length} more)
+                    Show all {facts.length} observations ({hiddenFacts.length} more)
                   </summary>
                   <ul className="text-xs text-[#64748B] space-y-0.5 mt-1">
                     {hiddenFacts.map((f, i) => (
