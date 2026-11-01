@@ -31,6 +31,7 @@ async def run(ctx: InvestigationContext) -> AgentResult[TemporalReport]:
                     inconsistencies=[],
                 ),
                 duration_ms=0.0,
+                error="No events retrieved to analyze",
             )
 
         sorted_events = sorted(events, key=_sort_key)

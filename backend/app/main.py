@@ -20,6 +20,7 @@ from .storage import LocalStorageBackend
 from .routes import recordings, search as search_router, investigations as investigations_router, usage as usage_router
 from .routes import multi_agent_investigations as multi_agent_router
 from .routes import video_streaming as video_streaming_router
+from .routes import temporal_events as temporal_events_router
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,13 @@ _RATE_LIMITED_ROUTES = frozenset({
     ("POST", "/api/investigations/multi-agent"),
     ("POST", "/api/recordings/upload"),
 })
+
+
+def _is_rate_limited(method: str, path: str) -> bool:
+    if (method, path) in _RATE_LIMITED_ROUTES:
+        return True
+    # Temporal refine spends vision budget; the recording id is dynamic.
+    return method == "POST" and path.startswith("/api/recordings/") and path.endswith("/refine")
 
 
 class ObservabilityMiddleware(BaseHTTPMiddleware):
@@ -45,7 +53,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
 
         settings = get_settings()
         route_key = (request.method, request.url.path)
-        if route_key in _RATE_LIMITED_ROUTES:
+        if _is_rate_limited(*route_key):
             client_host = request.client.host if request.client else "unknown"
             allowed, retry_after = check_rate_limit(
                 f"ip:{client_host}:{route_key[1]}", settings.rate_limit_per_minute)
@@ -87,6 +95,22 @@ async def lifespan(app: FastAPI):
     # Validate provider configuration (warn-only; missing keys serve mocks)
     from .provider_config import validate_provider_config
     validate_provider_config(settings)
+
+    # Register storage and meta_client in the app-level registry so that
+    # components running outside of FastAPI's DI (e.g. investigate auto-trigger)
+    # can reach them without import cycles.
+    from .meta_client import get_meta_client
+    from .provider import build_accounted_client
+    from .deps import register_app_deps
+    _startup_client = get_meta_client()
+    _accounted_client = build_accounted_client(
+        delegate=_startup_client,
+        db_path=settings.db_path,
+        provider=settings.vision_provider,
+        budget_limit_usd=settings.budget_limit_usd,
+        budget_reserve_usd=settings.budget_reserve_usd,
+    )
+    register_app_deps(storage=storage, meta_client=_accounted_client)
 
     # Recover recordings stuck in PROCESSING from a prior crash/restart
     await _recover_stuck_recordings(settings, storage)
@@ -176,6 +200,7 @@ def create_app() -> FastAPI:
 
     app.include_router(recordings.router, prefix="/api/recordings", tags=["recordings"])
     app.include_router(video_streaming_router.router, prefix="/api/recordings", tags=["recordings"])
+    app.include_router(temporal_events_router.router, prefix="/api/recordings", tags=["recordings"])
     app.include_router(search_router.router, prefix="/api/search", tags=["search"])
     app.include_router(investigations_router.router, prefix="/api/investigations", tags=["investigations"])
     app.include_router(multi_agent_router.router, prefix="/api/investigations", tags=["investigations"])

@@ -397,6 +397,15 @@ class InvestigationOrchestrator:
             results.append(r8)
         except Exception as exc:
             logger.warning("Best-effort synthesis failed: %s", type(exc).__name__)
+            results[:] = [r for r in results
+                          if r.agent_name != "ReportSynthesisAgent"]
+            results.append(AgentResult(
+                agent_name="ReportSynthesisAgent",
+                status=AgentStatus.FAILED,
+                output=None,
+                duration_ms=0.0,
+                error=f"Best-effort synthesis failed: {exc}",
+            ))
 
     async def _run_agent(self, name: str, fn, ctx: InvestigationContext) -> AgentResult:
         try:

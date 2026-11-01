@@ -7,6 +7,7 @@ from typing import Optional
 import aiosqlite
 
 from .database import get_db
+from .event_extractor import term_matches
 from .models import ObjectAttributes, SearchResult, Sighting
 
 # Minimum score to consider a match credible
@@ -203,10 +204,10 @@ def _relevance_score(terms: list[str], label: str, attrs: dict, scene: Optional[
         (scene or '').lower(),
     ])
 
-    hits = sum(1 for t in terms if t in searchable)
+    hits = sum(1 for t in terms if term_matches(searchable, t))
     # Bonus for label exact match
     label_lower = label.lower()
-    label_hits = sum(1 for t in terms if t in label_lower)
+    label_hits = sum(1 for t in terms if term_matches(label_lower, t))
 
     score = (hits / len(terms)) * 0.6 + (label_hits / len(terms)) * 0.4
     return min(score, 1.0)
@@ -263,8 +264,10 @@ def _explain_match(terms: list[str], g: dict) -> str:
     attrs = g['object_attributes'] if isinstance(g['object_attributes'], dict) else {}
     scene = g.get('scene_description', '')
 
-    matched_in_label = [t for t in terms if t in label.lower()]
-    matched_in_attrs = [t for t in terms if any(t in str(v).lower() for v in attrs.values())]
+    matched_in_label = [t for t in terms if term_matches(label, t)]
+    matched_in_attrs = [t for t in terms
+                        if any(term_matches(str(v), t)
+                               for v in attrs.values() if v)]
 
     if matched_in_label:
         parts.append(f"Object identified as '{label}'")

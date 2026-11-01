@@ -214,12 +214,24 @@ export default function InvestigationPanel({ recordings, investigationResult, on
           </div>
 
           {/* Narrative */}
-          {investigationResult.narrative && (
+          {(investigationResult.summary || investigationResult.narrative) && (
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
               <h4 className="text-sm font-semibold text-gray-700 mb-2">Incident Summary</h4>
-              <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans">
-                {investigationResult.narrative}
-              </pre>
+              {investigationResult.summary && (
+                <p className="text-sm text-gray-900 font-medium">
+                  {investigationResult.summary}
+                </p>
+              )}
+              {investigationResult.narrative && (
+                <details className="mt-2">
+                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
+                    Full evidence narrative
+                  </summary>
+                  <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans mt-1">
+                    {investigationResult.narrative}
+                  </pre>
+                </details>
+              )}
             </div>
           )}
 

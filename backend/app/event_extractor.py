@@ -76,7 +76,50 @@ INSECT_LEMMA = {
 OBJECT_SUBJECTS = frozenset({
     "bag", "bags", "backpack", "backpacks", "suitcase", "suitcases",
     "luggage", "package", "packages",
+    "box", "boxes", "carton", "cartons", "crate", "crates",
+    "parcel", "parcels",
 })
+# Animal subjects for query relevance. Hypernym ("animal") matches animal
+# evidence only — never bird or person evidence (broad words are not
+# auto-synonyms; see test_animal_does_not_match_people). Hyponyms ("dog")
+# require their own lemma — a cat is not a dog. Retrieval-class only: no
+# animal event category exists (see test_dog_labels_stay_unforced) —
+# unknown subjects stay scene_change and match by description text.
+ANIMAL_HYPERNYMS = frozenset({"animal", "animals", "pet", "pets"})
+ANIMAL_SUBJECTS = frozenset({
+    "animal", "animals", "pet", "pets",
+    "dog", "dogs", "puppy", "puppies",
+    "cat", "cats", "kitten", "kittens",
+    "cow", "cows", "cattle", "buffalo", "buffaloes",
+    "horse", "horses", "goat", "goats", "sheep",
+    "monkey", "monkeys", "pig", "pigs",
+    "donkey", "donkeys", "camel", "camels",
+    "elephant", "elephants", "deer",
+    "rabbit", "rabbits", "squirrel", "squirrels",
+    "rat", "rats", "mouse", "mice",
+    "snake", "snakes", "lizard", "lizards",
+})
+ANIMAL_LEMMA = {
+    "dog": "dogs", "dogs": "dog",
+    "puppy": "puppies", "puppies": "puppy",
+    "cat": "cats", "cats": "cat",
+    "kitten": "kittens", "kittens": "kitten",
+    "cow": "cows", "cows": "cow",
+    "buffalo": "buffaloes", "buffaloes": "buffalo",
+    "horse": "horses", "horses": "horse",
+    "goat": "goats", "goats": "goat",
+    "monkey": "monkeys", "monkeys": "monkey",
+    "pig": "pigs", "pigs": "pig",
+    "donkey": "donkeys", "donkeys": "donkey",
+    "camel": "camels", "camels": "camel",
+    "elephant": "elephants", "elephants": "elephant",
+    "rabbit": "rabbits", "rabbits": "rabbit",
+    "squirrel": "squirrels", "squirrels": "squirrel",
+    "rat": "rats", "rats": "rat",
+    "mouse": "mice", "mice": "mouse",
+    "snake": "snakes", "snakes": "snake",
+    "lizard": "lizards", "lizards": "lizard",
+}
 ENTRY_SUBJECTS = frozenset({
     "door", "doors", "gate", "gates", "entrance", "entrances",
     "exit", "exits",
@@ -102,6 +145,196 @@ def contains_word(text: str, words: frozenset) -> bool:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def term_matches(text: str, term: str) -> bool:
+    """Word-boundary match of a single query term against text.
+
+    Substring matching ("dog" matching "hotdog", "car" matching "cardboard")
+    promoted unrelated events to primary findings; all retrieval matching
+    now goes through word boundaries.
+    """
+    if not text or not term:
+        return False
+    return re.search(r"\b" + re.escape(term.lower()) + r"\b",
+                     text.lower()) is not None
+
+
+def normalize_description(label: str, attrs: Optional[dict]) -> str:
+    """Merge a label with its color/details without duplicating words.
+
+    The model often repeats the color inside the label ("black motorcycle"
+    with color "black"); blind prepending produced "black black motorcycle".
+    """
+    desc = (label or "").strip()
+    if not desc:
+        return ""
+    attrs = attrs or {}
+    color = str(attrs.get("color") or "").strip()
+    if color and color.lower() not in desc.lower():
+        desc = f"{color} {desc}"
+    details = str(attrs.get("distinctive_details") or "").strip()
+    if details and details.lower() not in desc.lower():
+        desc = f"{desc} ({details})"
+    # Collapse model stutter ("black black motorcycle" written verbatim).
+    desc = re.sub(r"\b(\w+)(\s+\1\b)+", r"\1", desc, flags=re.IGNORECASE)
+    return desc
+
+
+# Filler tokens ignored when comparing entity labels across frames.
+_ENTITY_FILLERS = frozenset({
+    "a", "an", "the", "in", "on", "of", "with", "and", "near", "at",
+    "by", "beside", "outside", "inside", "left", "right", "center",
+    "centre", "side", "frame", "edge", "foreground", "background",
+    "far", "mid",
+})
+
+# Head-noun synonyms: the same person is "man" in one frame and "person"
+# in the next; normalize so tracking links them.
+_HEAD_SYNONYMS = {
+    "men": "person", "man": "person", "woman": "person",
+    "women": "person", "human": "person", "humans": "person",
+    "people": "person", "persons": "person", "boy": "person",
+    "girl": "person", "child": "person",
+}
+for _lemma_map in (ANIMAL_LEMMA, INSECT_LEMMA):
+    for _a, _b in _lemma_map.items():
+        _singular = min(_a, _b, key=len)
+        _HEAD_SYNONYMS[_a] = _singular
+        _HEAD_SYNONYMS[_b] = _singular
+del _lemma_map, _a, _b, _singular
+
+# Candidate head nouns: the entity kind is the first known noun in the
+# label ("person in dark dress" -> person, "brown dog lying" -> dog).
+_HEAD_NOUNS = frozenset(set(_HEAD_SYNONYMS) | {
+    "person", "dog", "cat", "bird", "car", "vehicle", "truck", "van",
+    "motorcycle", "bike", "scooter", "bus", "bicycle", "box", "bag",
+    "backpack", "suitcase", "package", "stool", "chair", "table", "gate",
+    "door", "shop", "tree", "motorcyclist", "driver", "passenger", "rider",
+})
+
+# Minimum content-token Jaccard to link two labels to one entity, and the
+# maximum gap (in distinct-frame steps) for "adjacent" frames.
+ENTITY_JACCARD_THRESHOLD = 0.5
+ENTITY_MAX_FRAME_GAP = 2
+
+
+def _entity_signature(label: str) -> tuple[str, frozenset]:
+    tokens = [t for t in re.findall(r"[a-z0-9]+", label.lower())
+              if t not in _ENTITY_FILLERS]
+    head = next((t for t in tokens if t in _HEAD_NOUNS),
+                tokens[-1] if tokens else "")
+    head = _HEAD_SYNONYMS.get(head, head)
+    return head, frozenset(tokens)
+
+
+def track_entities(group: list[dict]) -> list[dict]:
+    """Link same-entity observations across adjacent frames.
+
+    The vision model rephrases labels per frame ("person in dark long
+    garment" vs "person in long dark garment"); without tracking, one
+    person appears as N different evidence entries. Links share a head
+    noun, token Jaccard >= 0.5, and nearby frames. Deterministic:
+    single time-ordered pass, entities numbered by first appearance.
+    """
+    ordered = sorted(group, key=lambda o: o["video_timestamp_seconds"])
+    frame_index = {ts: i for i, ts in
+                   enumerate(sorted({o["video_timestamp_seconds"]
+                                     for o in ordered}))}
+    entities: list[dict] = []
+
+    def similarity(head_a, toks_a, head_b, toks_b) -> float:
+        if head_a != head_b or not head_a:
+            return 0.0
+        union = toks_a | toks_b
+        if not union:
+            return 0.0
+        return len(toks_a & toks_b) / len(union)
+
+    for obs in ordered:
+        head, toks = _entity_signature(obs.get("object_label") or "")
+        fidx = frame_index[obs["video_timestamp_seconds"]]
+        best, best_sim = None, 0.0
+        for ent in entities:
+            if fidx - ent["_last_fidx"] > ENTITY_MAX_FRAME_GAP:
+                continue
+            sim = similarity(head, toks, ent["_head"], ent["_toks"])
+            if sim >= ENTITY_JACCARD_THRESHOLD and sim > best_sim:
+                best, best_sim = ent, sim
+        if best is None:
+            best = {
+                "entity_id": f"E{len(entities) + 1}",
+                "_head": head, "_toks": set(toks),
+                "_last_fidx": fidx,
+                "first_seen_seconds": obs["video_timestamp_seconds"],
+                "last_seen_seconds": obs["video_timestamp_seconds"],
+                "frame_timestamps": set(),
+                "observation_count": 0,
+                "_best": None, "_best_score": -1.0,
+            }
+            entities.append(best)
+        best["_toks"] |= toks
+        best["_last_fidx"] = fidx
+        best["last_seen_seconds"] = obs["video_timestamp_seconds"]
+        best["frame_timestamps"].add(obs["video_timestamp_seconds"])
+        best["observation_count"] += 1
+        score = obs.get("detection_score", 0.5)
+        if score > best["_best_score"]:
+            best["_best_score"] = score
+            best["_best"] = obs
+
+    tracks = []
+    for ent in entities:
+        best = ent.pop("_best") or {}
+        attrs: dict = {}
+        if best.get("object_attributes"):
+            try:
+                attrs = json.loads(best["object_attributes"])
+            except Exception:
+                pass
+        tracks.append({
+            "entity_id": ent["entity_id"],
+            "head": ent["_head"] or "object",
+            "display_label": normalize_description(
+                best.get("object_label", ""), attrs),
+            "first_seen_seconds": ent["first_seen_seconds"],
+            "last_seen_seconds": ent["last_seen_seconds"],
+            "frame_count": len(ent["frame_timestamps"]),
+            "observation_count": ent["observation_count"],
+            "representative_frame": best.get("source_frame_path"),
+        })
+    return tracks
+
+
+MAX_ACTION_STEPS = 20
+
+
+def build_action_sequence(group: list[dict]) -> tuple[list[dict], bool]:
+    """Compress consecutive same-scene observations into timestamped steps.
+
+    Returns (steps, truncated). Each step carries its span plus the frame
+    that opens it, so the timeline can show what happened when instead of
+    a single generic scene summary.
+    """
+    ordered = sorted(group, key=lambda o: o["video_timestamp_seconds"])
+    steps: list[dict] = []
+    for obs in ordered:
+        scene = (obs.get("scene_description") or "").strip()
+        if not scene:
+            continue
+        ts = obs["video_timestamp_seconds"]
+        if steps and steps[-1]["description"] == scene[:300]:
+            steps[-1]["end_seconds"] = ts
+        else:
+            steps.append({
+                "step": len(steps) + 1,
+                "start_seconds": ts,
+                "end_seconds": ts,
+                "description": scene[:300],
+                "frame_path": obs.get("source_frame_path"),
+            })
+    truncated = len(steps) > MAX_ACTION_STEPS
+    return steps[:MAX_ACTION_STEPS], truncated
 
 
 async def extract_events_for_recording(recording_id: str, db_path: str) -> int:
@@ -169,10 +402,29 @@ async def extract_events_for_recording(recording_id: str, db_path: str) -> int:
         if event:
             events.append(event)
 
-    # Persist events (start/end_seconds columns added by the Phase 4
-    # migration; fall back to the legacy column set on older databases).
+    # Persist events (span/entity/sequence columns added by migrations;
+    # fall back through legacy column sets on older databases).
     async with get_db(db_path) as db:
         for ev in events:
+            base_values = (
+                ev["event_id"],
+                ev["recording_id"],
+                ev["timestamp_seconds"],
+                ev.get("timestamp_absolute"),
+                1 if ev.get("has_reliable_timestamp") else 0,
+                ev["event_type"],
+                ev.get("actor_description"),
+                json.dumps(ev["object_descriptions"]),
+                ev["action_description"],
+                ev.get("scene_description"),
+                json.dumps(ev["evidence_frames"]),
+                ev["confidence"],
+                json.dumps(ev["observed_facts"]),
+                json.dumps(ev["inferred_claims"]),
+                json.dumps(ev["uncertainty_notes"]),
+                json.dumps(ev["source_observation_ids"]),
+                _now(),
+            )
             try:
                 await db.execute(
                     """INSERT OR REPLACE INTO events(
@@ -181,59 +433,49 @@ async def extract_events_for_recording(recording_id: str, db_path: str) -> int:
                         object_descriptions, action_description, scene_description,
                         evidence_frames, confidence, observed_facts, inferred_claims,
                         uncertainty_notes, source_observation_ids, created_at,
-                        start_seconds, end_seconds
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (
-                        ev["event_id"],
-                        ev["recording_id"],
-                        ev["timestamp_seconds"],
-                        ev.get("timestamp_absolute"),
-                        1 if ev.get("has_reliable_timestamp") else 0,
-                        ev["event_type"],
-                        ev.get("actor_description"),
-                        json.dumps(ev["object_descriptions"]),
-                        ev["action_description"],
-                        ev.get("scene_description"),
-                        json.dumps(ev["evidence_frames"]),
-                        ev["confidence"],
-                        json.dumps(ev["observed_facts"]),
-                        json.dumps(ev["inferred_claims"]),
-                        json.dumps(ev["uncertainty_notes"]),
-                        json.dumps(ev["source_observation_ids"]),
-                        _now(),
+                        start_seconds, end_seconds, entities_json,
+                        action_sequence_json
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    base_values + (
                         ev.get("start_seconds"),
                         ev.get("end_seconds"),
+                        json.dumps(ev.get("entities", [])),
+                        json.dumps(ev.get("action_sequence", [])),
                     ),
                 )
             except Exception:
-                await db.execute(
-                    """INSERT OR REPLACE INTO events(
-                        event_id, recording_id, timestamp_seconds, timestamp_absolute,
-                        has_reliable_timestamp, event_type, actor_description,
-                        object_descriptions, action_description, scene_description,
-                        evidence_frames, confidence, observed_facts, inferred_claims,
-                        uncertainty_notes, source_observation_ids, created_at
-                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (
-                        ev["event_id"],
-                        ev["recording_id"],
-                        ev["timestamp_seconds"],
-                        ev.get("timestamp_absolute"),
-                        1 if ev.get("has_reliable_timestamp") else 0,
-                        ev["event_type"],
-                        ev.get("actor_description"),
-                        json.dumps(ev["object_descriptions"]),
-                        ev["action_description"],
-                        ev.get("scene_description"),
-                        json.dumps(ev["evidence_frames"]),
-                        ev["confidence"],
-                        json.dumps(ev["observed_facts"]),
-                        json.dumps(ev["inferred_claims"]),
-                        json.dumps(ev["uncertainty_notes"]),
-                        json.dumps(ev["source_observation_ids"]),
-                        _now(),
-                    ),
-                )
+                try:
+                    await db.execute(
+                        """INSERT OR REPLACE INTO events(
+                            event_id, recording_id, timestamp_seconds, timestamp_absolute,
+                            has_reliable_timestamp, event_type, actor_description,
+                            object_descriptions, action_description, scene_description,
+                            evidence_frames, confidence, observed_facts, inferred_claims,
+                            uncertainty_notes, source_observation_ids, created_at,
+                            start_seconds, end_seconds
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        base_values + (
+                            ev.get("start_seconds"),
+                            ev.get("end_seconds"),
+                        ),
+                    )
+                except Exception:
+                    await db.execute(
+                        """INSERT OR REPLACE INTO events(
+                            event_id, recording_id, timestamp_seconds, timestamp_absolute,
+                            has_reliable_timestamp, event_type, actor_description,
+                            object_descriptions, action_description, scene_description,
+                            evidence_frames, confidence, observed_facts, inferred_claims,
+                            uncertainty_notes, source_observation_ids, created_at
+                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        base_values,
+                    )
+        # Event changes are recording changes: bump updated_at so the
+        # investigation-result cache fingerprint invalidates stale rows.
+        await db.execute(
+            "UPDATE recordings SET updated_at = ? WHERE recording_id = ?",
+            (_now(), recording_id),
+        )
         await db.commit()
 
     logger.info(
@@ -282,12 +524,16 @@ def _build_event(
     # Phase 4: multi-frame confirmation. Distinct frame timestamps (not raw
     # observation rows — one frame can yield several objects).
     distinct_frames = {o["video_timestamp_seconds"] for o in group}
-    if len(distinct_frames) < MIN_CONFIRMING_FRAMES:
+    single_frame = len(distinct_frames) < MIN_CONFIRMING_FRAMES
+    if single_frame:
+        # Allow single-frame groups through at reduced confidence instead of
+        # silently dropping them. Brief incidents (3-5s at 1 FPS) may genuinely
+        # produce only one confirming frame; the temporal pipeline then picks
+        # them up with dense sampling. The uncertainty note makes this visible.
         logger.debug(
-            "Dropping single-frame group at t=%.1fs (%d obs): unconfirmed",
+            "Single-frame group at t=%.1fs (%d obs): preserving with low confidence",
             group[0]["video_timestamp_seconds"], len(group),
         )
-        return None
 
     # Representative timestamp = middle of group; span = group bounds.
     # Phase 4: the span is persisted (start/end_seconds) instead of discarded.
@@ -311,12 +557,9 @@ def _build_event(
                     attrs = json.loads(obs["object_attributes"])
                 except Exception:
                     pass
-            desc = label
-            if attrs.get("color"):
-                desc = f"{attrs['color']} {desc}"
-            if attrs.get("distinctive_details"):
-                desc += f" ({attrs['distinctive_details']})"
-            object_labels.append(desc)
+            desc = normalize_description(label, attrs)
+            if desc not in object_labels:
+                object_labels.append(desc)
 
         if obs.get("scene_description") and obs["scene_description"] not in scene_parts:
             scene_parts.append(obs["scene_description"])
@@ -327,6 +570,11 @@ def _build_event(
 
     if avg_confidence < MIN_CONFIDENCE:
         return None
+
+    # Cap single-frame events below 0.5 confidence and add an uncertainty
+    # note so investigators know to verify visually.
+    if single_frame:
+        avg_confidence = min(avg_confidence, 0.45)
 
     # Determine event_type heuristically
     event_type = _infer_event_type(object_labels, scene_parts)
@@ -347,6 +595,11 @@ def _build_event(
 
     # Uncertainty notes
     uncertainty_notes: list[str] = []
+    if single_frame:
+        uncertainty_notes.append(
+            "Single-frame observation — brief event, not confirmed by adjacent frames; "
+            "verify visually or use Timeline tab for dense temporal analysis"
+        )
     low_conf_obs = [o for o in group if o.get("detection_score", 0.5) < 0.5]
     if low_conf_obs:
         uncertainty_notes.append(
@@ -381,6 +634,15 @@ def _build_event(
         sorted_timestamps=sorted_timestamps,
     )
 
+    # Entity tracks across adjacent frames + timestamped action steps.
+    entities = track_entities(group)
+    action_sequence, steps_truncated = build_action_sequence(group)
+    if steps_truncated:
+        uncertainty_notes.append(
+            f"Action sequence truncated to {MAX_ACTION_STEPS} steps — "
+            f"see evidence frames for full coverage"
+        )
+
     return {
         "event_id": str(uuid.uuid4()),
         "recording_id": recording_id,
@@ -404,6 +666,8 @@ def _build_event(
         "inferred_claims": inferred_claims,
         "uncertainty_notes": uncertainty_notes,
         "source_observation_ids": [o["observation_id"] for o in group],
+        "entities": entities,
+        "action_sequence": action_sequence,
     }
 
 

@@ -69,6 +69,25 @@ export interface CrossCameraLink {
   explanation: string
 }
 
+export interface TrackedEntity {
+  entity_id: string
+  head?: string
+  display_label?: string
+  first_seen_seconds?: number
+  last_seen_seconds?: number
+  frame_count?: number
+  observation_count?: number
+  representative_frame?: string | null
+}
+
+export interface ActionStep {
+  step: number
+  start_seconds?: number | null
+  end_seconds?: number | null
+  description: string
+  frame_path?: string | null
+}
+
 export interface Event {
   event_id: string
   recording_id: string
@@ -76,6 +95,8 @@ export interface Event {
   camera_name?: string
   camera_location?: string
   timestamp_seconds: number
+  start_seconds?: number | null
+  end_seconds?: number | null
   timestamp_absolute?: string
   has_reliable_timestamp: boolean
   event_type: string
@@ -90,6 +111,12 @@ export interface Event {
   uncertainty_notes: string[]
   recording_filename: string
   cross_camera_links: CrossCameraLink[]
+  entities?: TrackedEntity[]
+  action_sequence?: ActionStep[]
+  relevance_score?: number | null
+  matched_excerpts?: string[]
+  primary_match?: string | null
+  is_primary_finding?: boolean
 }
 
 export interface InvestigationRequest {
@@ -104,12 +131,69 @@ export interface InvestigationResult {
   query: string
   events: Event[]
   narrative: string
+  summary?: string
   timestamp_ordering_reliable: boolean
   ordering_explanation: string
   searched_recordings: number
   total_events_found: number
   evidence_gaps: string[]
   uncertainty_summary: string
+}
+
+// ── Temporal (incident timeline) types ───────────────────────────────────────
+// Mirrors backend/app/models.py TemporalEvent / TemporalEvidenceFrame / TemporalClip.
+
+export interface TemporalEvidenceFrame {
+  frame_path: string
+  timestamp_seconds: number
+  role: string // "before" | "during" | "after"
+  timestamp_source: string // "container_pts" | "coarse_grid"
+  pts_seconds?: number | null
+}
+
+export interface TemporalClip {
+  start_seconds: number
+  end_seconds: number
+  timestamp_source: string
+  provenance: Record<string, unknown>
+  clip_url?: string | null
+}
+
+export interface TemporalEvent {
+  event_id: string
+  recording_id: string
+  category: string
+  candidate_types: string[]
+  stages: string[]
+  start_seconds: number
+  end_seconds: number
+  timestamp_seconds: number
+  timestamp_source: string
+  confidence: number
+  confirming_frame_count: number
+  single_frame_candidate: boolean
+  tracks: Record<string, unknown>[]
+  observable_actions: Record<string, unknown>[]
+  action_sequence: string[]
+  confirmed: string[]
+  uncertain: string[]
+  observed_facts: string[]
+  evidence_frames: TemporalEvidenceFrame[]
+  clip?: TemporalClip | null
+  provenance: Record<string, unknown>
+}
+
+export interface TemporalEventsResponse {
+  recording_id: string
+  events: TemporalEvent[]
+  count: number
+  timestamp_source: string
+  filters: {
+    start?: number | null
+    end?: number | null
+    min_confidence?: number | null
+    include_single_frame: boolean
+  }
 }
 
 // ── Phase 3: Multi-agent investigation types ─────────────────────────────────

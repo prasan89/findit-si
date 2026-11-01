@@ -98,3 +98,36 @@ test('handles missing final report without crashing', () => {
   expect(screen.getByText('0/8 completed')).toBeInTheDocument()
   expect(screen.queryByText('Key Findings')).not.toBeInTheDocument()
 })
+
+test('shows skipped count with the explicit skip reason', () => {
+  const agents = ALL_EIGHT.map((name) =>
+    agent({
+      agent_name: name,
+      status: name === 'CrossCameraCorrelationAgent' ? 'skipped' : 'completed',
+      error: name === 'CrossCameraCorrelationAgent'
+        ? 'Fewer than 2 recordings — cross-camera correlation requires multiple cameras'
+        : undefined,
+    }),
+  )
+  render(<AgentStatusPanel result={resultWith(agents)} />)
+
+  expect(screen.getByText('7/8 completed')).toBeInTheDocument()
+  expect(screen.getByText('1 skipped')).toBeInTheDocument()
+  expect(screen.getByText(/Fewer than 2 recordings/)).toBeInTheDocument()
+})
+
+test('falls back to the output skipped_reason when error is absent', () => {
+  const agents = ALL_EIGHT.map((name) =>
+    agent({
+      agent_name: name,
+      status: name === 'CrossCameraCorrelationAgent' ? 'skipped' : 'completed',
+      output: name === 'CrossCameraCorrelationAgent'
+        ? { skipped_reason: 'legacy reason from output payload' }
+        : undefined,
+    }),
+  )
+  render(<AgentStatusPanel result={resultWith(agents)} />)
+
+  expect(screen.getByText('1 skipped')).toBeInTheDocument()
+  expect(screen.getByText(/legacy reason from output payload/)).toBeInTheDocument()
+})

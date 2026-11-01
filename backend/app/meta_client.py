@@ -61,6 +61,45 @@ class FrameAnalyzer(Protocol):
         ...
 
 
+CLIP_ANALYSIS_PROMPT = """You are analyzing a short CCTV clip for a security investigation. The frames below are consecutive samples from one continuous clip, each labeled with its video timestamp in seconds. Describe what is OBSERVED across the clip — not inferred.
+
+Report:
+1. Temporary track IDs — assign track_1, track_2, ... to each distinct person or vehicle visible across frames (IDs are valid for this clip only; never identify individuals, describe appearance only)
+2. Observable actions per track — posture and motion cues actually visible (standing, walking with direction, running, reaching, falling, carrying), each tied to the timestamp(s) where it is visible
+3. Action sequence — ordered list of observed changes across the clip (e.g. "at 12.0s track_1 begins moving toward track_2")
+4. Confirmed vs uncertain — facts visible in multiple frames vs single-frame or occluded/ambiguous observations
+
+Rules:
+- Observed facts only. If something is occluded, low-resolution, or ambiguous, say so and put it under uncertain instead of guessing.
+- One clip cannot prove intent, cause, or identity — describe visible states and let the timeline decide.
+- Never state or imply a crime verdict (no guilty/innocent, assault/theft/robbery confirmations, or accusations against any person). Use neutral observable-action language only.
+
+Return ONLY valid JSON — no prose, no markdown fences:
+{
+  "tracks": [
+    {"track_id": "track_1", "description": "appearance + positions across frames", "confidence": 0.8}
+  ],
+  "observable_actions": [
+    {"track_id": "track_1", "action": "walking left to right", "timestamps": [12.0, 13.0], "confidence": 0.85}
+  ],
+  "action_sequence": ["at 12.0s track_1 walks left to right across the entrance"],
+  "confirmed": ["track_1 visible in all frames"],
+  "uncertain": ["track_2 partially occluded in the first frame"]
+}"""
+
+
+@runtime_checkable
+class TemporalClipAnalyzer(Protocol):
+    """Interface for multi-frame clip analysis (temporal pipeline)."""
+    model_version: str
+
+    async def analyze_clip(
+        self, frames: list[bytes], timestamps: list[float]
+    ) -> dict:
+        """Return parsed clip analysis with tracks/action_sequence/confirmed/uncertain."""
+        ...
+
+
 class MuseSparkClient:
     """
     Muse Spark 1.3 via Meta Model API chat completions.
@@ -194,6 +233,81 @@ class MuseSparkClient:
         }
         return parsed
 
+    async def analyze_clip(
+        self, frames: list[bytes], timestamps: list[float]
+    ) -> dict:
+        """Analyze consecutive clip frames as one temporal unit.
+
+        Each image part is preceded by its video timestamp label so the
+        model can order observations. Timestamps come from the caller
+        (container PTS or API bounds), never from fixed literals.
+        """
+        if not frames:
+            raise ValueError("analyze_clip requires at least one frame")
+        if len(timestamps) != len(frames):
+            raise ValueError("frames and timestamps must have equal length")
+        content: list[dict] = []
+        for frame_data, ts in zip(frames, timestamps):
+            b64 = base64.b64encode(frame_data).decode("utf-8")
+            content.append(
+                {"type": "text",
+                 "text": f"[frame at video timestamp {float(ts):.3f}s]"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}",
+                              "detail": "high"},
+            })
+        content.append({"type": "text", "text": CLIP_ANALYSIS_PROMPT})
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": content}],
+            "max_completion_tokens": self.max_output_tokens,
+            "temperature": 0.1,
+            "response_format": {"type": "json_object"},
+        }
+        from .guards import bounded_llm_call
+        max_tokens = self.max_output_tokens
+        data = None
+        parsed: dict = {}
+        async with bounded_llm_call():
+            for attempt in (1, 2):
+                payload["max_completion_tokens"] = max_tokens
+                async with httpx.AsyncClient(timeout=self._httpx_timeout()) as client:
+                    resp = await client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                content_text, finish_reason = extract_message_content(data)
+                try:
+                    parsed = parse_model_json(
+                        content_text, finish_reason=finish_reason)
+                except ModelResponseError as exc:
+                    if exc.raw_response is None and isinstance(content_text, str):
+                        exc.raw_response = content_text[:MAX_RAW_FAILURE_CHARS]
+                    if (exc.code != "truncated" or attempt > 1
+                            or max_tokens >= TRUNCATED_RETRY_MAX_TOKENS):
+                        raise
+                    max_tokens = min(max_tokens * 2, TRUNCATED_RETRY_MAX_TOKENS)
+                    logger.warning(
+                        "clip response truncated; retrying once with "
+                        "max_completion_tokens=%d", max_tokens)
+                    continue
+                break
+        validate_clip_analysis(parsed)
+        usage = data.get("usage") or {}
+        parsed["_usage"] = {
+            "tokens_in": usage.get("prompt_tokens", 0),
+            "tokens_out": usage.get("completion_tokens", 0),
+        }
+        parsed["_images"] = len(frames)
+        return parsed
+
 
 class MockMetaClient:
     """
@@ -214,6 +328,53 @@ class MockMetaClient:
         if h in self.scenario_map:
             return self.scenario_map[h]
         return {"objects": [], "scene_summary": "No identifiable objects"}
+
+    async def analyze_clip(
+        self, frames: list[bytes], timestamps: list[float]
+    ) -> dict:
+        """Deterministic clip synthesis from per-frame scenario entries."""
+        if not frames:
+            raise ValueError("analyze_clip requires at least one frame")
+        if len(timestamps) != len(frames):
+            raise ValueError("frames and timestamps must have equal length")
+        self._call_count += 1
+        per_frame = []
+        for frame_data in frames:
+            h = hashlib.sha256(frame_data).hexdigest()
+            per_frame.append(self.scenario_map.get(
+                h, {"objects": [], "scene_summary": "No identifiable objects"}))
+        labels: list[str] = []
+        for entry in per_frame:
+            for obj in entry.get("objects", []):
+                label = obj.get("label", "unknown")
+                if label not in labels:
+                    labels.append(label)
+        tracks = [
+            {"track_id": f"track_{i + 1}",
+             "description": f"{label} observed across clip frames",
+             "confidence": 0.7}
+            for i, label in enumerate(labels)
+        ]
+        action_sequence = []
+        for ts, entry in zip(timestamps, per_frame):
+            summary = entry.get("scene_summary", "no change observed")
+            action_sequence.append(f"at {float(ts):.1f}s observed: {summary}")
+        multi = len(frames) > 1
+        confirmed = ([f"{len(frames)} frames analyzed in sequence"]
+                     if multi else [])
+        uncertain = ([] if multi else ["single frame only — motion unverified"])
+        return {
+            "tracks": tracks,
+            "observable_actions": [
+                {"track_id": t["track_id"], "action": "visible in clip frames",
+                 "timestamps": [float(ts) for ts in timestamps],
+                 "confidence": 0.6}
+                for t in tracks
+            ],
+            "action_sequence": action_sequence,
+            "confirmed": confirmed,
+            "uncertain": uncertain,
+        }
 
 
 class ModelResponseError(ValueError):
@@ -456,6 +617,30 @@ def validate_frame_analysis(parsed) -> dict:
         raise ModelResponseError(
             "schema_violation", "Model response 'scene_summary' must be a string"
         )
+    return parsed
+
+
+def validate_clip_analysis(parsed) -> dict:
+    """Validate a parsed clip analysis against the temporal schema.
+
+    Requires tracks, observable_actions, and action_sequence lists plus
+    confirmed/uncertain lists. Returns parsed unchanged.
+    Raises ModelResponseError(schema_violation).
+    """
+    if not isinstance(parsed, dict):
+        raise ModelResponseError(
+            "schema_violation", "Clip response is not a JSON object")
+    for key in ("tracks", "observable_actions", "action_sequence",
+                "confirmed", "uncertain"):
+        if not isinstance(parsed.get(key), list):
+            raise ModelResponseError(
+                "schema_violation",
+                f"Clip response missing required '{key}' list")
+    for action in parsed["observable_actions"]:
+        if not isinstance(action, dict) or "action" not in action:
+            raise ModelResponseError(
+                "schema_violation",
+                "Clip observable_actions entries must be objects with 'action'")
     return parsed
 
 

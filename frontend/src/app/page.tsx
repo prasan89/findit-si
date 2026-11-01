@@ -3,10 +3,11 @@ import { useState, useEffect, useCallback } from 'react'
 import VideoLibrary from '@/components/VideoLibrary'
 import SearchPanel from '@/components/SearchPanel'
 import InvestigationPanel from '@/components/InvestigationPanel'
+import TemporalTimeline from '@/components/TemporalTimeline'
 import UsageBadge from '@/components/UsageBadge'
 import type { Recording, SearchResult, InvestigationResult } from '@/types'
 
-type Tab = 'library' | 'investigate' | 'search'
+type Tab = 'library' | 'timeline' | 'investigate' | 'search'
 
 export default function Home() {
   const [recordings, setRecordings] = useState<Recording[]>([])
@@ -29,6 +30,7 @@ export default function Home() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'library', label: `Cameras (${recordings.length})` },
+    { id: 'timeline', label: 'Timeline' },
     { id: 'investigate', label: 'Investigate' },
     { id: 'search', label: 'Search' },
   ]
@@ -69,6 +71,15 @@ export default function Home() {
           recordings={recordings}
           onUploadComplete={fetchRecordings}
           onDelete={fetchRecordings}
+        />
+      )}
+      {activeTab === 'timeline' && (
+        <TemporalTimeline
+          recordings={recordings}
+          onInvestigated={result => {
+            setInvestigationResult(result)
+            setActiveTab('investigate')
+          }}
         />
       )}
       {activeTab === 'investigate' && (

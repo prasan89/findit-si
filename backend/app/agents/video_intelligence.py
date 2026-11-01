@@ -30,6 +30,7 @@ async def run(ctx: InvestigationContext) -> AgentResult[VisualSummaryReport]:
                 model_used=spec.model,
             ),
             duration_ms=0.0,
+            error="No events retrieved to analyze",
         )
 
     try:

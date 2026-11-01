@@ -30,6 +30,13 @@ function AgentRow({ agent }: { agent: AgentRunResult }) {
   const style = STATUS_STYLES[agent.status] ?? STATUS_STYLES.pending
   const ms = agent.duration_ms > 0 ? `${(agent.duration_ms / 1000).toFixed(2)}s` : '—'
   const cost = agent.cost_usd > 0 ? `$${agent.cost_usd.toFixed(5)}` : '—'
+  const outputReason = agent.output && typeof agent.output.skipped_reason === 'string'
+    ? agent.output.skipped_reason
+    : null
+  const reason = agent.error || outputReason
+  const reasonCls = agent.status === 'failed' || agent.status === 'timed_out'
+    ? 'text-red-600 bg-red-50'
+    : 'text-amber-700 bg-amber-50'
 
   return (
     <div className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-0">
@@ -41,9 +48,9 @@ function AgentRow({ agent }: { agent: AgentRunResult }) {
         <div className="text-xs text-gray-500">
           {AGENT_DESCRIPTIONS[agent.agent_name] ?? ''}
         </div>
-        {agent.error && (
-          <div className="mt-1 text-xs text-red-600 bg-red-50 rounded px-2 py-1 truncate" title={agent.error}>
-            {agent.error}
+        {reason && (
+          <div className={`mt-1 text-xs rounded px-2 py-1 ${reasonCls}`} title={reason}>
+            {reason}
           </div>
         )}
       </div>
@@ -58,6 +65,7 @@ function AgentRow({ agent }: { agent: AgentRunResult }) {
 export default function AgentStatusPanel({ result }: Props) {
   const completed = result.agents.filter(a => a.status === 'completed').length
   const failed = result.agents.filter(a => a.status === 'failed').length
+  const skipped = result.agents.filter(a => a.status === 'skipped' || a.status === 'timed_out').length
   const totalCost = result.total_cost_usd
 
   return (
@@ -67,6 +75,7 @@ export default function AgentStatusPanel({ result }: Props) {
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <span>{completed}/{result.agents.length} completed</span>
           {failed > 0 && <span className="text-red-500">{failed} failed</span>}
+          {skipped > 0 && <span className="text-amber-600">{skipped} skipped</span>}
           <span>${totalCost.toFixed(5)}</span>
           <span>{(result.total_duration_ms / 1000).toFixed(2)}s</span>
         </div>

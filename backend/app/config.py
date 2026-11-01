@@ -58,7 +58,12 @@ class Settings(BaseSettings):
 
     # Phase 6: pipeline + cost safeguards
     investigation_max_concurrent: int = 4
-    investigation_max_llm_calls: int = 8
+    investigation_max_llm_calls: int = 12
+
+    # Temporal auto-trigger: max seconds to wait for on-demand temporal
+    # refinement inside investigate() for incident-vocabulary queries.
+    # 0 disables the auto-trigger entirely.
+    temporal_auto_trigger_timeout_s: float = 30.0
 
     # Phase 8: cost & performance
     llm_max_concurrent: int = 2  # max parallel Meta API requests per process
@@ -73,6 +78,20 @@ class Settings(BaseSettings):
 
     # Phase 6: cache retention (0 = keep indefinitely)
     frame_cache_retention_days: int = 0
+
+    # Temporal event detection: coarse-to-fine adaptive sampling.
+    # Stage 0 (motion prefilter) is free; stage 1 coarse vision covers the
+    # full duration; stage 2 dense vision covers candidate windows only.
+    temporal_coarse_fps: float = 1.0
+    temporal_dense_fps: float = 4.0
+    temporal_motion_threshold: float = 0.3  # ffmpeg scene-detect threshold
+    temporal_pre_context_s: float = 5.0
+    temporal_post_context_s: float = 5.0
+    temporal_max_dense_seconds_per_recording: float = 60.0
+    temporal_max_refine_seconds_per_query: float = 30.0
+    temporal_max_clip_seconds: float = 60.0
+    temporal_min_candidate_gap_s: float = 2.0
+    temporal_sequence_gap_s: float = 8.0
 
     # Phase 6: security boundaries
     api_token: str = ""  # when set, mutating endpoints require X-API-Token

@@ -171,19 +171,41 @@ class TestTemporalRetrieval:
 
 @pytest.mark.asyncio
 class TestMultiFrameConfirmation:
-    async def test_single_frame_group_produces_no_event(self, test_db, db_path):
+    async def test_single_frame_group_produces_low_confidence_event(self, test_db, db_path):
+        # Single-frame groups now surface as low-confidence events (not dropped).
+        # Brief CCTV incidents may genuinely produce only one confirming frame;
+        # they are preserved at confidence < 0.5 with an uncertainty note.
         await insert_recording(test_db, RECORDING_ID_1)
         await insert_observation(test_db, RECORDING_ID_1, object_label="purple helicopter",
                                video_timestamp_seconds=13.0, detection_score=0.9)
-        assert await extract_events_for_recording(RECORDING_ID_1, db_path) == 0
+        n = await extract_events_for_recording(RECORDING_ID_1, db_path)
+        assert n == 1
+        # Verify the event has low confidence and an uncertainty note
+        import aiosqlite
+        async with get_db(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await (await db.execute(
+                "SELECT confidence, uncertainty_notes FROM events")).fetchone()
+        assert row["confidence"] <= 0.5
+        import json
+        notes = json.loads(row["uncertainty_notes"])
+        assert any("Single-frame" in n for n in notes)
 
-    async def test_single_frame_multi_object_still_unconfirmed(self, test_db, db_path):
-        # Several objects in ONE frame still count as one confirming frame.
+    async def test_single_frame_multi_object_still_low_confidence(self, test_db, db_path):
+        # Several objects in ONE frame: still single-frame (one timestamp),
+        # surfaced at low confidence rather than dropped.
         await insert_recording(test_db, RECORDING_ID_1)
         for label in ("person", "bag", "car"):
             await insert_observation(test_db, RECORDING_ID_1, object_label=label,
                                    video_timestamp_seconds=13.0, detection_score=0.9)
-        assert await extract_events_for_recording(RECORDING_ID_1, db_path) == 0
+        n = await extract_events_for_recording(RECORDING_ID_1, db_path)
+        assert n == 1
+        import aiosqlite
+        async with get_db(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await (await db.execute(
+                "SELECT confidence FROM events")).fetchone()
+        assert row["confidence"] <= 0.5
 
     async def test_two_frames_confirm_event(self, test_db, db_path):
         await insert_recording(test_db, RECORDING_ID_1)

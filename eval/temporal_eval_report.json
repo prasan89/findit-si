@@ -1,0 +1,319 @@
+{
+  "dataset": {
+    "dataset_id": "realitytrace-temporal-regression",
+    "version": "1.0.0"
+  },
+  "code_revision": "adb78a9",
+  "generated_at": "2026-11-01T06:01:22Z",
+  "coverage": {
+    "gt_total": 6,
+    "negatives_total": 3,
+    "ran": [
+      "REG-N01",
+      "REG-N02",
+      "REG-N03",
+      "REG-T01",
+      "REG-T02",
+      "REG-T03",
+      "REG-T04",
+      "REG-T05",
+      "REG-T06"
+    ],
+    "skipped": [],
+    "skip_note": "Skipped scenarios are excluded from every denominator; a skip is not a pass."
+  },
+  "detection": {
+    "tp": 6,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "precision_denominator": 6,
+    "recall_denominator": 6
+  },
+  "by_event_type": {
+    "confrontation": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "precision_denominator": 2,
+      "recall_denominator": 2,
+      "n_gt": 2,
+      "low_sample": true
+    },
+    "possible-assault": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "precision_denominator": 1,
+      "recall_denominator": 1,
+      "n_gt": 1,
+      "low_sample": true
+    },
+    "sudden-fall": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "precision_denominator": 1,
+      "recall_denominator": 1,
+      "n_gt": 1,
+      "low_sample": true
+    },
+    "suspicious-approach-departure": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "precision_denominator": 2,
+      "recall_denominator": 2,
+      "n_gt": 2,
+      "low_sample": true
+    }
+  },
+  "matching": {
+    "matched_gt_ids": [
+      "REG-T01",
+      "REG-T02",
+      "REG-T03",
+      "REG-T04",
+      "REG-T05",
+      "REG-T06"
+    ],
+    "false_negative_gt_ids": [],
+    "false_positive_pred_indices": []
+  },
+  "localization": {
+    "relative_error": {
+      "n": 6,
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": null,
+      "p90_note": "n<10: high percentile not meaningful",
+      "min": 0.0,
+      "max": 0.0
+    },
+    "start_boundary_error": {
+      "n": 6,
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": null,
+      "p90_note": "n<10: high percentile not meaningful",
+      "min": 0.0,
+      "max": 0.0
+    },
+    "end_boundary_error": {
+      "n": 6,
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": null,
+      "p90_note": "n<10: high percentile not meaningful",
+      "min": 0.0,
+      "max": 0.0
+    },
+    "n_matched": 6,
+    "n_missing_boundary": 0,
+    "per_match": [
+      {
+        "gt_id": "REG-T01",
+        "relative_error_seconds": 0.0,
+        "absolute_error_seconds": null,
+        "start_boundary_error_seconds": 0.0,
+        "end_boundary_error_seconds": 0.0
+      },
+      {
+        "gt_id": "REG-T02",
+        "relative_error_seconds": 0.0,
+        "absolute_error_seconds": null,
+        "start_boundary_error_seconds": 0.0,
+        "end_boundary_error_seconds": 0.0
+      },
+      {
+        "gt_id": "REG-T03",
+        "relative_error_seconds": 0.0,
+        "absolute_error_seconds": null,
+        "start_boundary_error_seconds": 0.0,
+        "end_boundary_error_seconds": 0.0
+      },
+      {
+        "gt_id": "REG-T04",
+        "relative_error_seconds": 0.0,
+        "absolute_error_seconds": null,
+        "start_boundary_error_seconds": 0.0,
+        "end_boundary_error_seconds": 0.0
+      },
+      {
+        "gt_id": "REG-T05",
+        "relative_error_seconds": 0.0,
+        "absolute_error_seconds": null,
+        "start_boundary_error_seconds": 0.0,
+        "end_boundary_error_seconds": 0.0
+      },
+      {
+        "gt_id": "REG-T06",
+        "relative_error_seconds": 0.0,
+        "absolute_error_seconds": null,
+        "start_boundary_error_seconds": 0.0,
+        "end_boundary_error_seconds": 0.0
+      }
+    ]
+  },
+  "false_positives": {
+    "fp_on_negatives": 0,
+    "negatives_evaluated": 3,
+    "fp_per_negative_scenario": 0.0,
+    "per_negative": {
+      "REG-N01": 0,
+      "REG-N02": 0,
+      "REG-N03": 0
+    }
+  },
+  "grounding": {
+    "claims_total": 6,
+    "claims_with_evidence": 6,
+    "coverage": 1.0,
+    "reference_validity": 1.0,
+    "references_total": 12,
+    "references_valid": 12,
+    "invalid_refs": [],
+    "support_rate": null,
+    "support_note": "support_rate is None: no human annotations exist; validity is bounds-existence only."
+  },
+  "latency": {
+    "n": 9,
+    "mean_seconds": 0.25949153254623525,
+    "max_seconds": 1.1265206669922918,
+    "min_seconds": 0.004810374986846,
+    "per_scenario": {
+      "REG-T01": 1.039,
+      "REG-T02": 0.006,
+      "REG-T03": 0.008,
+      "REG-T04": 0.005,
+      "REG-T05": 1.127,
+      "REG-T06": 0.068,
+      "REG-N01": 0.008,
+      "REG-N02": 0.008,
+      "REG-N03": 0.067
+    }
+  },
+  "per_scenario": [
+    {
+      "gt_id": "REG-T01",
+      "scenario": "incident-multi-stage",
+      "n_events": 1,
+      "categories": [
+        "possible-assault"
+      ],
+      "status": "COMPLETED",
+      "partial": false,
+      "timestamp_source": "container_pts",
+      "wall_seconds": 1.039
+    },
+    {
+      "gt_id": "REG-T02",
+      "scenario": "brief-contact",
+      "n_events": 1,
+      "categories": [
+        "confrontation"
+      ],
+      "status": "PARTIAL",
+      "partial": true,
+      "timestamp_source": "coarse_grid",
+      "wall_seconds": 0.006
+    },
+    {
+      "gt_id": "REG-T03",
+      "scenario": "boundary-start",
+      "n_events": 1,
+      "categories": [
+        "sudden-fall"
+      ],
+      "status": "PARTIAL",
+      "partial": true,
+      "timestamp_source": "coarse_grid",
+      "wall_seconds": 0.008
+    },
+    {
+      "gt_id": "REG-T04",
+      "scenario": "boundary-end",
+      "n_events": 1,
+      "categories": [
+        "suspicious-approach-departure"
+      ],
+      "status": "PARTIAL",
+      "partial": true,
+      "timestamp_source": "coarse_grid",
+      "wall_seconds": 0.005
+    },
+    {
+      "gt_id": "REG-T05",
+      "scenario": "low-res",
+      "n_events": 1,
+      "categories": [
+        "confrontation"
+      ],
+      "status": "COMPLETED",
+      "partial": false,
+      "timestamp_source": "container_pts",
+      "wall_seconds": 1.127
+    },
+    {
+      "gt_id": "REG-T06",
+      "scenario": "night",
+      "n_events": 1,
+      "categories": [
+        "suspicious-approach-departure"
+      ],
+      "status": "COMPLETED",
+      "partial": false,
+      "timestamp_source": "container_pts",
+      "wall_seconds": 0.068
+    },
+    {
+      "gt_id": "REG-N01",
+      "scenario": "normal-passing",
+      "n_events": 0,
+      "categories": [],
+      "status": "PARTIAL",
+      "partial": true,
+      "timestamp_source": "coarse_grid",
+      "wall_seconds": 0.008
+    },
+    {
+      "gt_id": "REG-N02",
+      "scenario": "normal-greeting",
+      "n_events": 0,
+      "categories": [],
+      "status": "PARTIAL",
+      "partial": true,
+      "timestamp_source": "coarse_grid",
+      "wall_seconds": 0.008
+    },
+    {
+      "gt_id": "REG-N03",
+      "scenario": "empty-scene",
+      "n_events": 0,
+      "categories": [],
+      "status": "COMPLETED",
+      "partial": false,
+      "timestamp_source": "container_pts",
+      "wall_seconds": 0.067
+    }
+  ],
+  "honesty": {
+    "fidelity": "unresolved-fidelity: scripted synthetic observations and ffmpeg color-segment videos only; no labeled incident footage in the workspace.",
+    "vision": "mocked (MockMetaClient); dense video frames add no observations. Metrics measure pipeline logic, not model perception.",
+    "latency": "wall-clock on this machine with mocked vision; framework overhead only."
+  }
+}

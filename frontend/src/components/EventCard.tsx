@@ -9,6 +9,8 @@ interface Props {
   onPlayEvidence?: (recordingId: string, timestamp: number) => void
 }
 
+const MAX_VISIBLE_FACTS = 5
+
 function formatTs(secs: number): string {
   const h = Math.floor(secs / 3600)
   const m = Math.floor((secs % 3600) / 60)
@@ -24,6 +26,12 @@ function confidenceLabel(score: number): { text: string; cls: string } {
   return { text: 'Low', cls: 'bg-red-100 text-red-800' }
 }
 
+function relevanceLabel(score: number): { text: string; cls: string } {
+  if (score >= 0.75) return { text: 'Strong match', cls: 'bg-green-100 text-green-800' }
+  if (score >= 0.5) return { text: 'Partial match', cls: 'bg-yellow-100 text-yellow-800' }
+  return { text: 'Weak match', cls: 'bg-red-100 text-red-800' }
+}
+
 const EVENT_TYPE_LABELS: Record<string, string> = {
   person_detected: 'Person',
   vehicle_detected: 'Vehicle',
@@ -31,6 +39,12 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   unattended_object: 'Object',
   entry_exit_detected: 'Entry/Exit',
   scene_change: 'Scene Change',
+  'possible-theft': 'Possible theft',
+  'possible-assault': 'Possible assault',
+  confrontation: 'Confrontation',
+  'sudden-fall': 'Sudden fall',
+  'suspicious-approach-departure': 'Suspicious approach',
+  'other-anomaly': 'Anomaly',
 }
 
 export default function EventCard({ event: ev, index, highlight, onPlayEvidence }: Props) {
@@ -39,10 +53,20 @@ export default function EventCard({ event: ev, index, highlight, onPlayEvidence 
   )
   const conf = confidenceLabel(ev.confidence)
   const typeLabel = EVENT_TYPE_LABELS[ev.event_type] ?? ev.event_type
+  const hasRelevance = ev.relevance_score !== undefined && ev.relevance_score !== null
+  const rel = hasRelevance ? relevanceLabel(ev.relevance_score as number) : null
 
   const tsLabel = ev.timestamp_absolute
     ? new Date(ev.timestamp_absolute).toLocaleString()
     : `Video @${formatTs(ev.timestamp_seconds)}`
+  const cameraLabel = ev.camera_name || `Camera ${ev.recording_id.slice(0, 8)}`
+  const hasSpan = ev.start_seconds !== undefined && ev.start_seconds !== null &&
+    ev.end_seconds !== undefined && ev.end_seconds !== null &&
+    ev.end_seconds > ev.start_seconds
+
+  const facts = ev.observed_facts
+  const visibleFacts = facts.slice(0, MAX_VISIBLE_FACTS)
+  const hiddenFacts = facts.slice(MAX_VISIBLE_FACTS)
 
   return (
     <div className={`rounded-xl border p-4 ${highlight ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}`}>
@@ -50,12 +74,18 @@ export default function EventCard({ event: ev, index, highlight, onPlayEvidence 
         {/* Evidence frame panel */}
         <div className="flex-shrink-0 space-y-2">
           {activeFrame && (
-            <img
-              src={`/${activeFrame.frame_path}`}
-              alt={`Evidence frame (${activeFrame.role})`}
-              className="w-44 h-32 object-cover rounded-lg bg-gray-100"
-              onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-            />
+            <div>
+              <img
+                src={`/${activeFrame.frame_path}`}
+                alt={`Evidence frame (${activeFrame.role})`}
+                title={`${activeFrame.frame_path} @ ${activeFrame.timestamp_seconds.toFixed(1)}s`}
+                className="w-44 h-32 object-cover rounded-lg bg-gray-100"
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+              <div className="text-[11px] text-gray-500 text-center mt-1">
+                t={activeFrame.timestamp_seconds.toFixed(1)}s · {activeFrame.role}
+              </div>
+            </div>
           )}
           {onPlayEvidence && (
             <button
@@ -101,9 +131,20 @@ export default function EventCard({ event: ev, index, highlight, onPlayEvidence 
               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-800">
                 {typeLabel}
               </span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${conf.cls}`}>
-                {conf.text} confidence ({(ev.confidence * 100).toFixed(0)}%)
-              </span>
+              {ev.is_primary_finding && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-600 text-white">
+                  ★ Primary finding
+                </span>
+              )}
+              {rel && hasRelevance ? (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rel.cls}`}>
+                  {rel.text} ({((ev.relevance_score as number) * 100).toFixed(0)}%)
+                </span>
+              ) : (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${conf.cls}`}>
+                  {conf.text} confidence ({(ev.confidence * 100).toFixed(0)}%)
+                </span>
+              )}
               {!ev.has_reliable_timestamp && (
                 <span className="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded">
                   Relative timestamp
@@ -114,34 +155,128 @@ export default function EventCard({ event: ev, index, highlight, onPlayEvidence 
 
           {/* Camera and time */}
           <div className="text-sm text-gray-700">
-            <span className="font-medium">
-              {ev.camera_name ?? ev.recording_filename}
+            <span className="font-medium" title={ev.recording_filename || ev.recording_id}>
+              {cameraLabel}
             </span>
             {ev.camera_location && (
               <span className="text-gray-500 ml-1">· {ev.camera_location}</span>
             )}
+            {ev.recording_filename && (
+              <span className="text-gray-400 ml-1 text-xs">· {ev.recording_filename}</span>
+            )}
             <span className="text-gray-400 mx-2">·</span>
             <span>{tsLabel}</span>
+            {hasRelevance && (
+              <span className="text-gray-400 ml-2 text-xs">
+                detection {(ev.confidence * 100).toFixed(0)}%
+              </span>
+            )}
           </div>
+          {hasSpan && (
+            <div className="text-xs text-gray-500">
+              Span {formatTs(ev.start_seconds as number)}–{formatTs(ev.end_seconds as number)}
+              {' '}({((ev.end_seconds as number) - (ev.start_seconds as number)).toFixed(1)}s)
+            </div>
+          )}
+
+          {/* Primary match callout */}
+          {ev.primary_match && (
+            <div className="text-xs text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <span className="font-semibold">Primary finding: </span>
+              {ev.primary_match}
+            </div>
+          )}
 
           {/* Action description */}
           <p className="text-sm font-medium text-gray-900">{ev.action_description}</p>
 
+          {/* Action sequence */}
+          {ev.action_sequence && ev.action_sequence.length > 0 && (
+            <details>
+              <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
+                Action sequence ({ev.action_sequence.length} step{ev.action_sequence.length === 1 ? '' : 's'})
+              </summary>
+              <ol className="mt-1 space-y-1">
+                {ev.action_sequence.map(step => (
+                  <li key={step.step} className="text-xs text-gray-700 flex gap-2 items-baseline">
+                    <span className="text-gray-400 font-mono shrink-0 w-6">{step.step}.</span>
+                    <span className="flex-1">{step.description}</span>
+                    {step.start_seconds !== undefined && step.start_seconds !== null &&
+                      step.end_seconds !== undefined && step.end_seconds !== null && (
+                      <span className="text-gray-400 font-mono shrink-0">
+                        {formatTs(step.start_seconds)}–{formatTs(step.end_seconds)}
+                      </span>
+                    )}
+                    {step.frame_path && (
+                      <button
+                        onClick={() => setActiveFrame({
+                          frame_path: step.frame_path as string,
+                          timestamp_seconds: step.start_seconds ?? ev.timestamp_seconds,
+                          role: 'during',
+                        })}
+                        className="text-blue-600 hover:text-blue-800 shrink-0"
+                      >
+                        view
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
+
           {/* Observed facts */}
-          {ev.observed_facts.length > 0 && (
+          {facts.length > 0 && (
             <div>
               <h4 className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1">
                 Observed facts
               </h4>
               <ul className="text-xs text-gray-700 space-y-0.5">
-                {ev.observed_facts.map((f, i) => (
+                {visibleFacts.map((f, i) => (
                   <li key={i} className="flex gap-1">
                     <span className="text-green-600">✓</span>
                     <span>{f}</span>
                   </li>
                 ))}
               </ul>
+              {hiddenFacts.length > 0 && (
+                <details className="mt-1">
+                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
+                    Show all {facts.length} observations ({hiddenFacts.length} more)
+                  </summary>
+                  <ul className="text-xs text-gray-700 space-y-0.5 mt-1">
+                    {hiddenFacts.map((f, i) => (
+                      <li key={i} className="flex gap-1">
+                        <span className="text-green-600">✓</span>
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </div>
+          )}
+
+          {/* Tracked entities */}
+          {ev.entities && ev.entities.length > 0 && (
+            <details>
+              <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
+                Tracked entities ({ev.entities.length})
+              </summary>
+              <ul className="text-xs text-gray-700 mt-1 space-y-0.5">
+                {ev.entities.map(ent => (
+                  <li key={ent.entity_id} className="flex gap-2 items-baseline">
+                    <span className="font-mono text-gray-500 shrink-0">{ent.entity_id}</span>
+                    <span className="flex-1">{ent.display_label || ent.head || ent.entity_id}</span>
+                    {ent.first_seen_seconds !== undefined && ent.last_seen_seconds !== undefined && (
+                      <span className="text-gray-400 font-mono shrink-0">
+                        {formatTs(ent.first_seen_seconds)}–{formatTs(ent.last_seen_seconds)}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
 
           {/* Inferred claims */}

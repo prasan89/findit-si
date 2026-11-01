@@ -419,6 +419,96 @@ class AccountedFrameAnalyzer:
 
         raise last_exc  # type: ignore[misc]
 
+    async def analyze_clip(
+        self, frames: list[bytes], timestamps: list[float]
+    ) -> dict:
+        """Accounted multi-frame clip analysis (temporal pipeline).
+
+        Requires the delegate to implement analyze_clip (both shipped
+        clients do). Retries only transient failures, like analyze_frame.
+        """
+        analyze_clip = getattr(self.delegate, "analyze_clip", None)
+        if analyze_clip is None:
+            raise AttributeError(
+                f"{type(self.delegate).__name__} does not implement "
+                "analyze_clip; the temporal pipeline needs a "
+                "TemporalClipAnalyzer delegate"
+            )
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, self.max_attempts + 1):
+            await self._check_budget()
+            t0 = time.monotonic()
+            try:
+                result = await analyze_clip(frames, timestamps)
+                latency_ms = (time.monotonic() - t0) * 1000.0
+                import json as _json
+                usage_meta = result.pop("_usage", None) or {}
+                tokens_in_actual = usage_meta.get("tokens_in", 0)
+                tokens_out_actual = usage_meta.get("tokens_out", 0)
+                if tokens_out_actual == 0:
+                    response_text = _json.dumps(result)
+                    tokens_out_actual = max(1, len(response_text) // 4)
+                images = result.pop("_images", len(frames)) or len(frames)
+                cost = _estimate_cost(
+                    self.delegate.model_version,
+                    tokens_in=tokens_in_actual,
+                    tokens_out=tokens_out_actual,
+                    images=images,
+                )
+                record = UsageRecord(
+                    provider=self.provider,
+                    model=self.delegate.model_version,
+                    operation="analyze_clip",
+                    tokens_in=tokens_in_actual,
+                    tokens_out=tokens_out_actual,
+                    images_processed=images,
+                    latency_ms=latency_ms,
+                    success=True,
+                    estimated_cost_usd=cost,
+                    recording_id=self.recording_id,
+                )
+                await record_usage(self.db_path, record)
+                return result
+            except BudgetExceededError:
+                raise
+            except Exception as exc:
+                latency_ms = (time.monotonic() - t0) * 1000.0
+                last_exc = exc
+                record = UsageRecord(
+                    provider=self.provider,
+                    model=self.delegate.model_version,
+                    operation="analyze_clip",
+                    latency_ms=latency_ms,
+                    success=False,
+                    recording_id=self.recording_id,
+                )
+                await record_usage(self.db_path, record)
+                if not is_transient_error(exc):
+                    logger.warning(
+                        "analyze_clip attempt %d/%d failed with non-retryable %s; "
+                        "not retrying",
+                        attempt, self.max_attempts, type(exc).__name__,
+                    )
+                    raise
+                if attempt < self.max_attempts:
+                    backoff = compute_backoff_seconds(
+                        attempt, base_seconds=self.base_backoff,
+                        max_seconds=self.max_backoff,
+                        jitter=self.retry_jitter)
+                    backoff = retry_after_seconds(
+                        exc, backoff, max_seconds=self.max_backoff)
+                    logger.warning(
+                        "analyze_clip attempt %d/%d failed (%s); retrying in %.1fs",
+                        attempt, self.max_attempts, type(exc).__name__, backoff,
+                    )
+                    await asyncio.sleep(backoff)
+                else:
+                    logger.error(
+                        "analyze_clip failed after %d attempts: %s",
+                        self.max_attempts, type(exc).__name__,
+                    )
+        raise last_exc  # type: ignore[misc]
+
 
 def build_accounted_client(
     delegate: FrameAnalyzer,

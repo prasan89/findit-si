@@ -9,6 +9,7 @@ Guarantees:
 - The narrative is assembled from retrieved evidence text only.
 - No events are fabricated; if data is absent, evidence_gaps is populated.
 """
+import asyncio
 import json
 import logging
 import re
@@ -20,8 +21,9 @@ import aiosqlite
 
 from .database import get_db
 from .event_extractor import (
-    BIRD_SUBJECTS, INSECT_HYPERNYMS, INSECT_LEMMA, INSECT_SUBJECTS,
-    PERSON_SUBJECTS, VEHICLE_SUBJECTS, contains_word,
+    ANIMAL_HYPERNYMS, ANIMAL_LEMMA, ANIMAL_SUBJECTS, BIRD_SUBJECTS,
+    INSECT_HYPERNYMS, INSECT_LEMMA, INSECT_SUBJECTS, OBJECT_SUBJECTS,
+    PERSON_SUBJECTS, VEHICLE_SUBJECTS, contains_word, term_matches,
 )
 from .models import (
     CrossCameraLink,
@@ -34,6 +36,26 @@ logger = logging.getLogger(__name__)
 
 MIN_EVENT_SCORE = 0.25
 MAX_EVENTS_RETURNED = 20
+
+# Flat set of all incident vocabulary words used by INCIDENT_CATEGORY_MAP
+# (populated lazily after the map is defined so it stays DRY).
+_INCIDENT_TERMS: Optional[frozenset] = None
+
+
+def _incident_term_set() -> frozenset:
+    """All vocabulary words that trigger temporal detection auto-trigger."""
+    global _INCIDENT_TERMS
+    if _INCIDENT_TERMS is None:
+        words: set[str] = set()
+        for vocab, _ in INCIDENT_CATEGORY_MAP:
+            words |= vocab
+        _INCIDENT_TERMS = frozenset(words)
+    return _INCIDENT_TERMS
+
+
+def _is_incident_query(terms: list[str]) -> bool:
+    """True when the tokenized query contains at least one incident word."""
+    return bool(set(terms) & _incident_term_set())
 
 
 async def investigate(
@@ -143,7 +165,26 @@ async def investigate(
             eligible_ids,
         )).fetchall()
 
-    if not event_rows:
+    # Incident-term queries also surface stored temporal incident
+    # candidates (neutral vision text never matches "snatch"/"attack").
+    # Loaded before the empty check so incident-only videos still match.
+    incident_categories = _incident_categories_for_terms(query_terms)
+    incident_dicts: list[dict] = []
+    if incident_categories:
+        inc_start = (time_start_seconds if time_start_seconds is not None
+                     else temporal_filter.get("start"))
+        inc_end = (time_end_seconds if time_end_seconds is not None
+                   else temporal_filter.get("end"))
+        # Auto-trigger temporal detection when incident vocabulary is present
+        # and temporal_events has never been populated for these recordings.
+        # This ensures investigations don't require a manual "Refine" step.
+        await _maybe_auto_trigger_temporal(
+            db_path, eligible_ids, query_terms, rec_meta)
+        incident_dicts = await _load_incident_events(
+            db_path, eligible_ids, incident_categories, rec_meta,
+            inc_start, inc_end)
+
+    if not event_rows and not incident_dicts:
         gaps = [
             f"Recording '{rec_meta[rid]['original_filename']}' has been processed but "
             f"no events were extracted — the video may contain no identifiable objects."
@@ -182,6 +223,8 @@ async def investigate(
         ev_dict["inferred_claims"] = _load_json(ev_dict.get("inferred_claims", "[]"), [])
         ev_dict["uncertainty_notes"] = _load_json(ev_dict.get("uncertainty_notes", "[]"), [])
         ev_dict["evidence_frames"] = _load_json(ev_dict.get("evidence_frames", "[]"), [])
+        ev_dict["entities"] = _load_json(ev_dict.get("entities_json"), [])
+        ev_dict["action_sequence"] = _load_json(ev_dict.get("action_sequence_json"), [])
 
         # Apply time filter
         ts = ev_dict["timestamp_seconds"]
@@ -197,6 +240,10 @@ async def investigate(
         score = _score_event(query_terms, ev_dict)
         if score >= MIN_EVENT_SCORE:
             scored_events.append((score, ev_dict))
+
+    for incident_dict in incident_dicts:
+        scored_events.append(
+            (incident_dict["_incident_relevance"], incident_dict))
 
     if not scored_events:
         gaps = [f"No events matched the query '{query}'."]
@@ -216,6 +263,7 @@ async def investigate(
                 f"No events matching '{query}' were found across "
                 f"{len(eligible_ids)} indexed recording(s)."
             ),
+            summary=_build_summary(query, []),
             timestamp_ordering_reliable=False,
             ordering_explanation="No matching events.",
             searched_recordings=len(eligible_ids),
@@ -302,6 +350,14 @@ async def investigate(
         rec_tz = ev_dict.get("rec_tz") or ev_dict.get("recording_timezone")
         cam_name = ev_dict.get("cam_name") or ev_dict.get("camera_name")
 
+        if ev_dict.get("_incident_preset"):
+            relevance = ev_dict["_incident_relevance"]
+            excerpts = ev_dict.get("matched_excerpts", [])
+            primary_match = ev_dict.get("primary_match")
+        else:
+            relevance, excerpts, primary_match = score_relevance(
+                query_terms, ev_dict)
+
         event = Event(
             event_id=ev_dict["event_id"],
             recording_id=ev_dict["recording_id"],
@@ -325,9 +381,23 @@ async def investigate(
             uncertainty_notes=ev_dict["uncertainty_notes"],
             recording_filename=ev_dict.get("original_filename", ""),
             cross_camera_links=cc_links,
+            entities=ev_dict.get("entities", []),
+            action_sequence=ev_dict.get("action_sequence", []),
+            relevance_score=relevance,
+            matched_excerpts=excerpts,
+            primary_match=primary_match,
         )
         events.append(event)
         all_uncertainty_notes.extend(ev_dict["uncertainty_notes"])
+
+    # Flag the single best-relevance event as the primary finding.
+    if events:
+        primary = max(
+            events,
+            key=lambda e: e.relevance_score
+            if e.relevance_score is not None else 0.0,
+        )
+        primary.is_primary_finding = True
 
     # Identify evidence gaps
     evidence_gaps = _identify_evidence_gaps(events, eligible_ids, rec_meta)
@@ -335,6 +405,7 @@ async def investigate(
 
     # Build narrative from retrieved evidence only
     narrative = _build_narrative(query, events, ts_reliable)
+    summary = _build_summary(query, events)
 
     uncertainty_summary = "; ".join(sorted(set(all_uncertainty_notes)))[:500] if all_uncertainty_notes else ""
 
@@ -343,6 +414,7 @@ async def investigate(
         query=query,
         events=events,
         narrative=narrative,
+        summary=summary,
         timestamp_ordering_reliable=ts_reliable,
         ordering_explanation=ordering_explanation,
         searched_recordings=len(eligible_ids),
@@ -437,17 +509,22 @@ def _score_event(terms: list[str], ev: dict) -> float:
         " ".join(ev.get("observed_facts", [])),
     ])
 
-    # Subject gate: a query about people, vehicles, birds, or insects must
-    # match subject evidence in the description — not a generic token like
-    # "detected", which appears in every `*_detected` type label. Subject
-    # synonyms cover each other ("human" matches an event describing a
-    # "person"; "birds" matches "bird"; hypernym "insect" matches any insect
-    # evidence. Insect hyponyms ("grub", "ants") instead require their own
-    # lemma — ants are not grubs.
+    # Subject gate: a query about people, vehicles, birds, insects,
+    # animals, or carried objects must match subject evidence in the
+    # description — not a generic token like "detected", which appears in
+    # every `*_detected` type label. Subject synonyms cover each other
+    # ("human" matches an event describing a "person"; "birds" matches
+    # "bird"; hypernym "insect"/"animal" matches any insect/animal
+    # evidence). Hyponyms ("grub", "dog") instead require their own lemma
+    # — ants are not grubs, cats are not dogs. Broad words are not
+    # auto-synonyms across classes: "animal" matches animal evidence only,
+    # never bird or person evidence (test_animal_does_not_match_people).
     query_person = any(t in PERSON_SUBJECTS for t in terms)
     query_vehicle = any(t in VEHICLE_SUBJECTS for t in terms)
     query_bird = any(t in BIRD_SUBJECTS for t in terms)
     query_insect = any(t in INSECT_HYPERNYMS for t in terms)
+    query_animal = any(t in ANIMAL_HYPERNYMS for t in terms)
+    query_object = any(t in OBJECT_SUBJECTS for t in terms)
     if query_person and not contains_word(descriptive, PERSON_SUBJECTS):
         return 0.0
     if query_vehicle and not contains_word(descriptive, VEHICLE_SUBJECTS):
@@ -455,6 +532,10 @@ def _score_event(terms: list[str], ev: dict) -> float:
     if query_bird and not contains_word(descriptive, BIRD_SUBJECTS):
         return 0.0
     if query_insect and not contains_word(descriptive, INSECT_SUBJECTS):
+        return 0.0
+    if query_animal and not contains_word(descriptive, ANIMAL_SUBJECTS):
+        return 0.0
+    if query_object and not contains_word(descriptive, OBJECT_SUBJECTS):
         return 0.0
 
     hits = 0
@@ -472,13 +553,417 @@ def _score_event(terms: list[str], ev: dict) -> float:
             forms = frozenset({t, INSECT_LEMMA[t]})
             if contains_word(descriptive, forms):
                 hits += 1
-        elif t in searchable:
+        elif t in ANIMAL_HYPERNYMS:
+            hits += 1
+        elif t in ANIMAL_SUBJECTS:
+            forms = frozenset({t, ANIMAL_LEMMA.get(t, t)})
+            if contains_word(descriptive, forms):
+                hits += 1
+        elif t in OBJECT_SUBJECTS:
+            # Covered by the gate above.
+            hits += 1
+        elif term_matches(searchable, t):
             hits += 1
     # Require at least one keyword hit — confidence alone doesn't justify a result
     if hits == 0:
         return 0.0
     score = (hits / len(terms)) * 0.7 + ev.get("confidence", 0.5) * 0.3
     return min(score, 1.0)
+
+
+# Incident vocabulary mapped to temporal-detection categories. An incident
+# term in the query surfaces stored temporal incident candidates for the
+# eligible recordings — the vision model describes attacks neutrally
+# ("person", "motorcycle"), so keyword text alone can never match them.
+INCIDENT_CATEGORY_MAP: list[tuple[frozenset, frozenset]] = [
+    # Theft vocabulary also surfaces violent-contact candidates: a
+    # chain-snatch is a grab plus force, and neutral vision text never
+    # states the object transfer — the correlator can only reach
+    # possible-assault from approach/contact/departure stages. Both stay
+    # observation-only candidates, never confirmed verdicts.
+    (frozenset({"theft", "thief", "thieves", "steal", "stealing", "stole",
+                "stolen", "snatch", "snatched", "snatching", "snatcher",
+                "rob", "robbed", "robber", "robbery", "robberies",
+                "burglar", "burglary", "loot", "looted", "pickpocket",
+                "shoplift", "mugging", "mugged"}),
+     frozenset({"possible-theft", "possible-assault"})),
+    (frozenset({"attack", "attacked", "attacking", "attacker",
+                "assault", "assaulted", "assaulting", "assailant",
+                "fight", "fighting", "hit", "hitting", "beat", "beating",
+                "threat", "threaten", "threatening", "harass",
+                "stab", "stabbing", "shoot", "shooting", "shot",
+                "violence", "violent"}),
+     frozenset({"possible-assault", "confrontation"})),
+    (frozenset({"fall", "fell", "fallen", "falling", "collapse",
+                "collapsed", "collapsing", "faint", "fainted",
+                "stumble", "stumbled", "tripped", "slip", "slipped"}),
+     frozenset({"sudden-fall"})),
+    (frozenset({"escape", "escaped", "escaping", "flee", "fleeing",
+                "fled", "runaway", "chase", "chasing", "pursuit"}),
+     frozenset({"suspicious-approach-departure"})),
+    (frozenset({"incident", "incidents", "crime", "criminal", "suspicious",
+                "anomaly", "anomalous"}),
+     frozenset({"possible-theft", "possible-assault", "confrontation",
+                "sudden-fall", "suspicious-approach-departure",
+                "other-anomaly"})),
+]
+
+MAX_INCIDENT_EVENTS = 10
+
+
+def _incident_categories_for_terms(terms: list[str]) -> set[str]:
+    """Temporal categories implied by incident vocabulary in the query."""
+    categories: set[str] = set()
+    term_set = set(terms)
+    for vocabulary, cats in INCIDENT_CATEGORY_MAP:
+        if term_set & vocabulary:
+            categories |= set(cats)
+    return categories
+
+
+def _subject_evidence_forms(term: str) -> Optional[frozenset]:
+    """Word forms that satisfy a subject term (synonyms/lemmas included)."""
+    if term in PERSON_SUBJECTS:
+        return PERSON_SUBJECTS
+    if term in VEHICLE_SUBJECTS:
+        return VEHICLE_SUBJECTS
+    if term in BIRD_SUBJECTS:
+        return BIRD_SUBJECTS
+    if term in INSECT_HYPERNYMS:
+        return INSECT_SUBJECTS
+    if term in INSECT_SUBJECTS:
+        return frozenset({term, INSECT_LEMMA[term]})
+    if term in ANIMAL_HYPERNYMS:
+        return ANIMAL_SUBJECTS
+    if term in ANIMAL_SUBJECTS:
+        return frozenset({term, ANIMAL_LEMMA.get(term, term)})
+    if term in OBJECT_SUBJECTS:
+        return OBJECT_SUBJECTS
+    return None
+
+
+def _term_evidence_weight(term: str, headline: str, blob: str) -> float:
+    """Prominence weight: 1.0 for headline matches, 0.5 for buried ones.
+
+    A term matching the event's headline (action/type) means the event is
+    *about* the query; a term appearing only deep in the fact blob is
+    weaker evidence. Subject synonyms count via their evidence forms.
+    """
+    forms = _subject_evidence_forms(term)
+    if forms is not None:
+        if contains_word(headline, forms):
+            return 1.0
+        if contains_word(blob, forms):
+            return 0.5
+        return 0.0
+    if term_matches(headline, term):
+        return 1.0
+    if term_matches(blob, term):
+        return 0.5
+    return 0.0
+
+
+def score_relevance(terms: list[str], ev_dict: dict) -> tuple[float, list[str], Optional[str]]:
+    """Calibrated query-time relevance plus supporting excerpts.
+
+    Returns (relevance, matched_excerpts, primary_match). `relevance`
+    blends prominence-weighted term coverage with the stored detection
+    confidence; `primary_match` is the single evidence string the UI
+    should headline (the action when it matches, else the first matching
+    fact) so a buried mention never presents as the headline finding.
+    """
+    if not terms:
+        return 1.0, [], None
+    headline = " ".join([
+        ev_dict.get("action_description", ""),
+        ev_dict.get("event_type", "").replace("_", " "),
+    ])
+    blob = " ".join([
+        ev_dict.get("scene_description", "") or "",
+        " ".join(ev_dict.get("object_descriptions", [])),
+        " ".join(ev_dict.get("observed_facts", [])),
+    ])
+    weights = [_term_evidence_weight(t, headline, headline + " " + blob)
+               for t in terms]
+    coverage = sum(weights) / len(terms)
+    relevance = min(0.7 * coverage + 0.3 * ev_dict.get("confidence", 0.5), 1.0)
+
+    def _matches(text: str) -> bool:
+        for t in terms:
+            forms = _subject_evidence_forms(t)
+            if forms is not None:
+                if contains_word(text, forms):
+                    return True
+            elif term_matches(text, t):
+                return True
+        return False
+
+    excerpts: list[str] = []
+    for fact in list(ev_dict.get("observed_facts", [])) + \
+            list(ev_dict.get("object_descriptions", [])):
+        if fact and _matches(fact) and fact not in excerpts:
+            excerpts.append(fact)
+        if len(excerpts) >= 3:
+            break
+    primary_match: Optional[str] = None
+    if _matches(ev_dict.get("action_description", "")):
+        primary_match = ev_dict.get("action_description") or None
+    elif excerpts:
+        primary_match = excerpts[0]
+    return round(relevance, 3), excerpts, primary_match
+
+
+async def _count_temporal_events(db_path: str, recording_id: str) -> int:
+    """Return count of temporal_events rows for this recording."""
+    try:
+        async with get_db(db_path) as db:
+            row = await (await db.execute(
+                "SELECT COUNT(*) FROM temporal_events WHERE recording_id = ?",
+                (recording_id,))).fetchone()
+            return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
+async def _maybe_auto_trigger_temporal(
+    db_path: str,
+    eligible_ids: list[str],
+    query_terms: list[str],
+    rec_meta: dict,
+) -> None:
+    """Auto-trigger temporal detection for recordings with no prior refinement.
+
+    Only fires when the query contains incident vocabulary. Idempotent:
+    recordings that already have temporal_events rows are skipped. Bounded
+    by temporal_auto_trigger_timeout_s per recording (0 = disabled).
+    Storage and meta_client are resolved from app state; if unavailable
+    (e.g. in tests without a running server), the trigger silently no-ops.
+    """
+    if not _is_incident_query(query_terms):
+        return
+    try:
+        from .config import get_settings
+        settings = get_settings()
+        timeout_s = settings.temporal_auto_trigger_timeout_s
+    except Exception:
+        timeout_s = 30.0
+    if timeout_s <= 0:
+        return
+    # Resolve storage and meta_client from the app's dependency registry.
+    # If the registry is not populated (e.g. unit tests without a running
+    # server), silently skip and fall through to stored temporal_events.
+    try:
+        from .deps import is_registered, get_storage_instance, get_meta_client_instance
+        if not is_registered():
+            logger.debug("temporal auto-trigger: app deps not registered, skipping")
+            return
+        storage = get_storage_instance()
+        meta_client = get_meta_client_instance()
+    except Exception:
+        logger.debug("temporal auto-trigger: app deps unavailable, skipping")
+        return
+    from .temporal_pipeline import run_temporal_detection
+    for recording_id in eligible_ids:
+        existing = await _count_temporal_events(db_path, recording_id)
+        if existing > 0:
+            logger.debug(
+                "temporal auto-trigger: %s already has %d events, skipping",
+                recording_id, existing)
+            continue
+        logger.info(
+            "temporal auto-trigger: running for %s (query incident match)",
+            recording_id)
+        try:
+            result = await asyncio.wait_for(
+                run_temporal_detection(
+                    recording_id=recording_id,
+                    db_path=db_path,
+                    storage=storage,
+                    meta_client=meta_client,
+                    reason="auto_trigger_investigation",
+                ),
+                timeout=timeout_s,
+            )
+            n_events = len(result.get("events", []))
+            logger.info(
+                "temporal auto-trigger: %s produced %d events (status=%s)",
+                recording_id, n_events, result.get("status"))
+        except asyncio.TimeoutError:
+            logger.warning(
+                "temporal auto-trigger timed out after %.0fs for %s",
+                timeout_s, recording_id)
+        except Exception as exc:
+            logger.warning(
+                "temporal auto-trigger failed for %s: %s", recording_id, exc)
+
+
+async def _load_incident_events(
+    db_path: str,
+    eligible_ids: list[str],
+    categories: set[str],
+    rec_meta: dict,
+    eff_start: Optional[float],
+    eff_end: Optional[float],
+) -> list[dict]:
+    """Load stored temporal incident candidates as event dicts.
+
+    Returns at most MAX_INCIDENT_EVENTS dicts shaped like the standard
+    retrieval path (plus preset relevance fields), so incident windows
+    surface in the timeline even though their neutral vision text never
+    matches incident vocabulary.
+    """
+    if not categories or not eligible_ids:
+        return []
+    placeholders = ",".join("?" * len(eligible_ids))
+    cat_placeholders = ",".join("?" * len(categories))
+    try:
+        async with get_db(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            rows = await (await db.execute(
+                f"""SELECT event_id, recording_id, category, start_seconds,
+                           end_seconds, timestamp_seconds, timestamp_source,
+                           confidence, evidence_json
+                    FROM temporal_events
+                    WHERE recording_id IN ({placeholders})
+                      AND category IN ({cat_placeholders})
+                    ORDER BY timestamp_seconds
+                    LIMIT {MAX_INCIDENT_EVENTS}""",
+                eligible_ids + sorted(categories),
+            )).fetchall()
+    except Exception:
+        # temporal_events table predates some databases; absence means
+        # no incident candidates, never an error.
+        return []
+    incident_dicts = []
+    for row in rows:
+        evd = _temporal_row_to_event_dict(dict(row), rec_meta)
+        if evd is None:
+            continue
+        ts = evd["timestamp_seconds"]
+        if eff_start is not None and ts < eff_start:
+            continue
+        if eff_end is not None and ts > eff_end:
+            continue
+        incident_dicts.append(evd)
+    return incident_dicts
+
+
+def _temporal_row_to_event_dict(row: dict, rec_meta: dict) -> Optional[dict]:
+    """Convert a temporal incident row to a standard event dict."""
+    evidence = _load_json(row.get("evidence_json"), {})
+    if not isinstance(evidence, dict):
+        evidence = {}
+    rid = row["recording_id"]
+    meta = rec_meta.get(rid, {})
+    start = row.get("start_seconds", 0.0) or 0.0
+    end = row.get("end_seconds", start) or start
+    confidence = row.get("confidence", 0.5) or 0.5
+
+    action_steps = [s for s in evidence.get("action_sequence", [])
+                    if isinstance(s, str) and s.strip()]
+    observed = [f for f in evidence.get("observed_facts", [])
+                if isinstance(f, str)]
+    confirmed = [c for c in evidence.get("confirmed", [])
+                 if isinstance(c, str)]
+    action_description = ("; ".join(action_steps[:3]) or
+                          (observed[0] if observed else None) or
+                          f"{row.get('category', 'incident')} candidate "
+                          f"{start:.1f}s–{end:.1f}s")
+    steps = [{
+        "step": i + 1,
+        "start_seconds": start,
+        "end_seconds": end,
+        "description": step,
+        "frame_path": None,
+    } for i, step in enumerate(action_steps)]
+    frames = []
+    for f in evidence.get("evidence_frames", []) or []:
+        if not isinstance(f, dict) or not f.get("frame_path"):
+            continue
+        frames.append({
+            "frame_path": f["frame_path"],
+            "timestamp_seconds": f.get("timestamp_seconds", start),
+            "role": f.get("role", "during"),
+        })
+    uncertainty = [u for u in evidence.get("uncertain", [])
+                   if isinstance(u, str)]
+    if evidence.get("single_frame_candidate"):
+        uncertainty.append(
+            "Single-frame candidate — brief window, verify visually")
+    uncertainty.append(
+        "Incident category is an observation-only candidate, not a "
+        "confirmed crime classification")
+
+    timestamp_absolute = None
+    has_reliable = False
+    rec_dt = meta.get("recording_datetime")
+    if rec_dt:
+        try:
+            dt = datetime.fromisoformat(rec_dt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            mid = (start + end) / 2.0
+            abs_dt = datetime.fromtimestamp(dt.timestamp() + mid,
+                                            tz=timezone.utc)
+            timestamp_absolute = abs_dt.isoformat()
+            has_reliable = True
+        except Exception:
+            pass
+
+    relevance = round(min(0.95, 0.80 + 0.15 * confidence), 3)
+    candidate_lines = [f for f in observed if f.startswith("Candidate ")]
+    incident_primary = (action_steps[0] if action_steps else
+                        (candidate_lines[0] if candidate_lines else
+                         (observed[0] if observed else None)))
+    return {
+        "event_id": row["event_id"],
+        "recording_id": rid,
+        "timestamp_seconds": row.get("timestamp_seconds",
+                                     (start + end) / 2.0),
+        "start_seconds": start,
+        "end_seconds": end,
+        "timestamp_absolute": timestamp_absolute,
+        "has_reliable_timestamp": has_reliable,
+        "event_type": row.get("category", "other-anomaly"),
+        "actor_description": None,
+        "object_descriptions": [],
+        "action_description": action_description,
+        "scene_description": None,
+        "evidence_frames": frames,
+        "confidence": confidence,
+        "observed_facts": observed + [f"Confirmed: {c}" for c in confirmed],
+        "inferred_claims": [],
+        "uncertainty_notes": uncertainty,
+        "entities": evidence.get("tracks", []) or [],
+        "action_sequence": steps,
+        "original_filename": meta.get("original_filename", ""),
+        "rec_dt": rec_dt,
+        "rec_tz": meta.get("recording_timezone"),
+        "cam_name": meta.get("camera_name"),
+        "cam_loc": meta.get("camera_location"),
+        "_incident_preset": True,
+        "_incident_relevance": relevance,
+        "matched_excerpts": (observed + confirmed)[:3],
+        "primary_match": incident_primary,
+    }
+
+
+def _build_summary(query: str, events: list) -> str:
+    """Concise one-line summary: primary finding first, then counts."""
+    if not events:
+        return f"No events matched '{query}'."
+    primary = max(events,
+                  key=lambda e: e.relevance_score
+                  if e.relevance_score is not None else 0.0)
+    label = (primary.primary_match or primary.action_description or
+             primary.event_type).strip()
+    if len(label) > 90:
+        label = label[:87] + "..."
+    n_rec = len({e.recording_id for e in events})
+    ts = _format_ts(primary.timestamp_seconds)
+    return (f"Best match: {label} at {ts} in "
+            f"'{primary.recording_filename or primary.recording_id[:8]}' — "
+            f"{len(events)} event(s) across {n_rec} recording(s).")
 
 
 def validate_category_support(ev_dict: dict) -> list[str]:

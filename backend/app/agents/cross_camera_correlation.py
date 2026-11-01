@@ -28,6 +28,7 @@ async def run(ctx: InvestigationContext) -> AgentResult[CorrelationReport]:
                     skipped_reason="Fewer than 2 recordings — cross-camera correlation requires multiple cameras",
                 ),
                 duration_ms=(time.monotonic() - t0) * 1000,
+                error="Fewer than 2 recordings — cross-camera correlation requires multiple cameras",
             )
 
         links_created = await correlate_across_cameras(ctx.db_path, ctx.recording_ids)

@@ -51,6 +51,11 @@ async def extract_frames(
     """
     Extract frames from video using ffmpeg.
     Returns list of (timestamp_seconds, frame_path).
+
+    Timestamps are sourced from actual container PTS via ffprobe when
+    available (PTS-accurate). Falls back to synthetic index/fps for
+    containers where ffprobe cannot enumerate frames.
+
     Raises RuntimeError if ffmpeg fails.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -76,11 +81,47 @@ async def extract_frames(
         raise RuntimeError(f"ffmpeg failed: {stderr.decode()[:500]}")
 
     frames = sorted(output_dir.glob('frame_*.jpg'))
+
+    # Attempt PTS-accurate timestamps: ffprobe lists all container frames;
+    # we sample that list at the same nominal interval as ffmpeg's fps filter.
+    pts_map = await _build_frame_pts_map(video_path, fps, len(frames))
+
     result = []
     for i, f in enumerate(frames):
-        ts = i / fps
+        ts = pts_map[i] if i < len(pts_map) else i / fps
         result.append((ts, f))
     return result[:max_frames]
+
+
+async def _build_frame_pts_map(
+    video_path: Path,
+    fps: float,
+    n_frames: int,
+) -> list[float]:
+    """Build a list of n_frames PTS-accurate timestamps for extracted frames.
+
+    Uses get_container_frame_pts() from adaptive_sampler to get all
+    container frame times, then picks the subset corresponding to ffmpeg's
+    fps filter (one frame every 1/fps seconds, starting at 0).
+
+    Returns [] on any error — callers fall back to synthetic i/fps.
+    """
+    if n_frames == 0:
+        return []
+    try:
+        from .adaptive_sampler import get_container_frame_pts, snap_to_pts
+        container_pts = await get_container_frame_pts(video_path)
+        if not container_pts:
+            return []
+        step = 1.0 / fps if fps > 0 else 1.0
+        pts_map: list[float] = []
+        for i in range(n_frames):
+            nominal = i * step
+            pts_map.append(snap_to_pts(nominal, container_pts))
+        return pts_map
+    except Exception as exc:
+        logger.debug("PTS map build failed, using synthetic timestamps: %s", exc)
+        return []
 
 
 def compute_content_hash(data: bytes) -> str:
@@ -244,6 +285,90 @@ async def prune_frame_cache(db_path: str, retention_days: int) -> int:
         return cursor.rowcount if cursor.rowcount is not None else 0
 
 
+async def _get_video_codec(video_path: Path) -> Optional[str]:
+    """Return the video stream codec name (e.g. 'h264', 'hevc') via ffprobe."""
+    cmd = [
+        "ffprobe", "-v", "quiet", "-print_format", "json",
+        "-select_streams", "v:0", "-show_entries", "stream=codec_name",
+        str(video_path),
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        info = json.loads(out)
+        streams = info.get("streams", [])
+        if streams:
+            return streams[0].get("codec_name")
+    except Exception:
+        pass
+    return None
+
+
+async def _ensure_h264(
+    video_path: Path,
+    recording_id: str,
+    storage: LocalStorageBackend,
+    db_path: str,
+) -> Path:
+    """Transcode to H.264 when the source codec is not browser-compatible.
+
+    Browser-safe codecs (h264 / avc1 / avc) are passed through unchanged.
+    All others (h265/hevc, vp9, av1, mjpeg, …) are transcoded to H.264 with
+    CRF 23 / fast preset and faststart moov for progressive streaming.
+
+    Returns the (possibly new) Path to use for all subsequent processing.
+    The recording row's video_path is updated in-place if transcoding runs.
+    """
+    BROWSER_SAFE = frozenset({"h264", "avc", "avc1"})
+    codec = await _get_video_codec(video_path)
+    if codec and codec.lower() in BROWSER_SAFE:
+        return video_path  # already compatible — no-op
+
+    if codec:
+        logger.info(
+            "Transcoding recording %s from codec %s → H.264 for browser playback",
+            recording_id[:8], codec)
+    else:
+        logger.warning(
+            "Could not detect codec for recording %s; attempting H.264 transcode",
+            recording_id[:8])
+
+    # Output alongside original with _h264 suffix to avoid overwriting source.
+    h264_path = video_path.with_name(video_path.stem + "_h264.mp4")
+    cmd = [
+        "ffmpeg", "-i", str(video_path),
+        "-c:v", "libx264", "-crf", "23", "-preset", "fast",
+        "-c:a", "aac", "-movflags", "+faststart",
+        "-y", str(h264_path),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    try:
+        _, stderr = await _communicate_with_timeout(
+            proc, _ffmpeg_timeout_s(), "H.264 transcode")
+    except RuntimeError as exc:
+        logger.warning("H.264 transcode failed for %s: %s; using original",
+                       recording_id[:8], exc)
+        return video_path
+
+    if proc.returncode != 0 or not h264_path.exists():
+        logger.warning("H.264 transcode failed for %s (rc=%s); using original",
+                       recording_id[:8], proc.returncode)
+        return video_path
+
+    # Persist new path in the recordings row
+    new_rel_path = storage.videos_dir.name + "/" + h264_path.name
+    async with get_db(db_path) as db:
+        await db.execute(
+            "UPDATE recordings SET video_path = ?, updated_at = ? WHERE recording_id = ?",
+            (new_rel_path, _now(), recording_id))
+        await db.commit()
+
+    logger.info("Transcoded %s → %s", video_path.name, h264_path.name)
+    return h264_path
+
+
 async def process_recording(
     recording_id: str,
     db_path: str,
@@ -296,6 +421,10 @@ async def process_recording(
 
     try:
         video_path = await storage.get_video_path(video_rel_path)
+
+        # Transcode non-browser-compatible codecs (H.265/HEVC, MJPEG, etc.)
+        # to H.264 so video preview works in all major browsers.
+        video_path = await _ensure_h264(video_path, recording_id, storage, db_path)
 
         # Get duration
         duration = await get_video_duration(video_path)

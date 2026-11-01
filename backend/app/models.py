@@ -116,12 +116,92 @@ class Event(BaseModel):
     uncertainty_notes: list[str] = []
     recording_filename: str = ""
     cross_camera_links: list[CrossCameraLink] = []
+    # Entity tracks across adjacent frames + timestamped action steps
+    # (persisted by extraction; empty for legacy rows).
+    entities: list = []
+    action_sequence: list = []
+    # Query-time relevance (set by investigate(); absent when unranked):
+    # calibrated match strength plus the exact evidence behind it.
+    relevance_score: Optional[float] = None
+    matched_excerpts: list[str] = []
+    primary_match: Optional[str] = None
+    is_primary_finding: bool = False
 
     @field_validator("confidence")
     @classmethod
     def confidence_range(cls, v: float) -> float:
         if not 0.0 <= v <= 1.0:
             raise ValueError("confidence must be 0.0–1.0")
+        return v
+
+
+# ── Temporal event-detection models ─────────────────────────────────────────
+
+class TemporalEvidenceFrame(BaseModel):
+    frame_path: str
+    timestamp_seconds: float
+    role: str  # "before" | "during" | "after"
+    timestamp_source: str = "coarse_grid"  # "container_pts" | "coarse_grid"
+    pts_seconds: Optional[float] = None
+
+
+class TemporalClip(BaseModel):
+    start_seconds: float
+    end_seconds: float
+    timestamp_source: str = "coarse_grid"
+    provenance: dict = {}
+    clip_url: Optional[str] = None
+
+
+class TemporalEvent(BaseModel):
+    event_id: str
+    recording_id: str
+    category: str  # possible-assault|possible-theft|confrontation|sudden-fall|suspicious-approach-departure|other-anomaly
+    candidate_types: list[str] = []
+    stages: list[str] = []
+    start_seconds: float
+    end_seconds: float
+    timestamp_seconds: float
+    timestamp_source: str = "coarse_grid"
+    confidence: float
+    confirming_frame_count: int = 0
+    single_frame_candidate: bool = False
+    tracks: list[dict] = []
+    observable_actions: list[dict] = []
+    action_sequence: list[str] = []
+    confirmed: list[str] = []
+    uncertain: list[str] = []
+    observed_facts: list[str] = []
+    evidence_frames: list[TemporalEvidenceFrame] = []
+    clip: Optional[TemporalClip] = None
+    provenance: dict = {}
+
+    @field_validator("confidence")
+    @classmethod
+    def confidence_range(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("confidence must be 0.0–1.0")
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def category_observation_only(cls, v: str) -> str:
+        from .temporal_correlator import SEQUENCE_CATEGORIES, is_crime_verdict
+        if is_crime_verdict(v) or v not in SEQUENCE_CATEGORIES:
+            raise ValueError(f"category must be one of {SEQUENCE_CATEGORIES}")
+        return v
+
+
+class RefineRequest(BaseModel):
+    start: float
+    end: float
+    reason: str = ""
+
+    @field_validator("start", "end")
+    @classmethod
+    def times_non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("refine bounds must be >= 0")
         return v
 
 
@@ -178,3 +258,6 @@ class InvestigationResult(BaseModel):
     request_id: Optional[str] = None
     # Phase 8: True when this response was served from the result cache.
     cache_hit: bool = False
+    # Concise one-line incident summary (primary finding first); the full
+    # narrative stays in `narrative` for expandable detail.
+    summary: str = ""

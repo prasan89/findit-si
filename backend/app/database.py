@@ -120,7 +120,9 @@ async def create_tables(db_path: str) -> None:
                 source_observation_ids TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL,
                 start_seconds REAL,
-                end_seconds REAL
+                end_seconds REAL,
+                entities_json TEXT,
+                action_sequence_json TEXT
             )
         """)
 
@@ -233,6 +235,47 @@ async def create_tables(db_path: str) -> None:
             ON investigation_traces(status)
         """)
 
+        # Temporal event detection: per-event evidence JSON + refine audit log
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS temporal_events (
+                event_id TEXT PRIMARY KEY,
+                recording_id TEXT NOT NULL REFERENCES recordings(recording_id) ON DELETE CASCADE,
+                category TEXT NOT NULL,
+                start_seconds REAL NOT NULL,
+                end_seconds REAL NOT NULL,
+                timestamp_seconds REAL NOT NULL,
+                timestamp_source TEXT NOT NULL DEFAULT 'coarse_grid',
+                confidence REAL NOT NULL DEFAULT 0.5,
+                single_frame_candidate INTEGER NOT NULL DEFAULT 0,
+                evidence_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS temporal_refine_log (
+                refine_id TEXT PRIMARY KEY,
+                recording_id TEXT NOT NULL REFERENCES recordings(recording_id) ON DELETE CASCADE,
+                start_seconds REAL NOT NULL,
+                end_seconds REAL NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                dense_seconds REAL NOT NULL DEFAULT 0.0,
+                status TEXT NOT NULL DEFAULT 'COMPLETED',
+                uncovered_spans TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_temporal_events_recording
+            ON temporal_events(recording_id)
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_temporal_events_span
+            ON temporal_events(start_seconds, end_seconds)
+        """)
+
         # Idempotent migrations for existing databases
         try:
             await db.execute("ALTER TABLE recordings ADD COLUMN camera_name TEXT")
@@ -250,6 +293,9 @@ async def create_tables(db_path: str) -> None:
             # Phase 4: event span columns (nullable; older DBs migrate on boot)
             "ALTER TABLE events ADD COLUMN start_seconds REAL",
             "ALTER TABLE events ADD COLUMN end_seconds REAL",
+            # Entity tracks + action sequences (JSON; nullable; older DBs migrate on boot)
+            "ALTER TABLE events ADD COLUMN entities_json TEXT",
+            "ALTER TABLE events ADD COLUMN action_sequence_json TEXT",
             # Phase 6: upload content hash for duplicate detection/reporting
             "ALTER TABLE recordings ADD COLUMN content_hash TEXT",
             # Phase 6: prompt-versioned cache keys (existing rows default to v1
