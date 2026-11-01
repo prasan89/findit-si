@@ -64,7 +64,13 @@ export default function EventCard({ event: ev, index, highlight, onPlayEvidence 
     ev.end_seconds !== undefined && ev.end_seconds !== null &&
     ev.end_seconds > ev.start_seconds
 
-  const facts = ev.observed_facts
+  // Filter internal bookkeeping lines from the displayed facts list.
+  // "Candidate <type>…" lines are coarse-grid internals stored for provenance
+  // but are not human-readable evidence — they belong in a debug view only.
+  // "Observed sequence span…" is the container line; suppress it too.
+  const facts = ev.observed_facts.filter(
+    f => !f.startsWith('Candidate ') && !f.startsWith('Observed sequence span')
+  )
   const visibleFacts = facts.slice(0, MAX_VISIBLE_FACTS)
   const hiddenFacts = facts.slice(MAX_VISIBLE_FACTS)
 

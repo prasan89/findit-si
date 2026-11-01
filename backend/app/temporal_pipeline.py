@@ -336,7 +336,8 @@ async def run_temporal_detection(
                      if seq.start_seconds <= c.start_seconds
                      and c.end_seconds <= seq.end_seconds) if candidates else True
         evidence_frames = _select_evidence_frames(
-            observations, seq.start_seconds, seq.end_seconds, timestamp_source)
+            observations, seq.start_seconds, seq.end_seconds, timestamp_source,
+            candidates=candidates)
         mid = (seq.start_seconds + seq.end_seconds) / 2.0
         clip_url = None
         clip_obj = None
@@ -436,11 +437,39 @@ async def run_temporal_detection(
 
 
 def _select_evidence_frames(observations: list[dict], start: float, end: float,
-                            timestamp_source: str) -> list[dict]:
+                            timestamp_source: str,
+                            candidates: list | None = None) -> list[dict]:
+    """Select before/during/after evidence frames for a sequence.
+
+    The 'during' frame prioritises the timestamp closest to the highest-
+    confidence candidate signal within the window (e.g. t=9–10s for a
+    contact_confrontation) rather than the observation with the globally
+    highest detection_score (which often picks a vehicle or background
+    object). When no candidate list is supplied, falls back to the frame
+    with the highest detection_score (original behaviour).
+    """
     frames: list[dict] = []
     during = [o for o in observations if start <= o["video_timestamp_seconds"] <= end]
     if during:
-        best = max(during, key=lambda o: o.get("detection_score", 0))
+        # Prefer the frame nearest the peak-confidence candidate signal.
+        if candidates:
+            # Find the candidate with highest confidence in the window
+            window_cands = [c for c in candidates
+                            if start <= getattr(c, "start_seconds", 0) and
+                            getattr(c, "end_seconds", 0) <= end]
+            if window_cands:
+                peak_cand = max(window_cands,
+                                key=lambda c: getattr(c, "confidence", 0))
+                peak_ts = (getattr(peak_cand, "start_seconds", 0) +
+                           getattr(peak_cand, "end_seconds", 0)) / 2.0
+                # Pick observation with same frame (same source_frame_path) or
+                # nearest timestamp to the candidate peak
+                best = min(during,
+                           key=lambda o: abs(o["video_timestamp_seconds"] - peak_ts))
+            else:
+                best = max(during, key=lambda o: o.get("detection_score", 0))
+        else:
+            best = max(during, key=lambda o: o.get("detection_score", 0))
         frames.append({"frame_path": best["source_frame_path"],
                        "timestamp_seconds": best["video_timestamp_seconds"],
                        "role": "during", "timestamp_source": timestamp_source,

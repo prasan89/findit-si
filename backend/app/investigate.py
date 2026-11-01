@@ -865,10 +865,22 @@ def _temporal_row_to_event_dict(row: dict, rec_meta: dict) -> Optional[dict]:
                 if isinstance(f, str)]
     confirmed = [c for c in evidence.get("confirmed", [])
                  if isinstance(c, str)]
-    action_description = ("; ".join(action_steps[:3]) or
-                          (observed[0] if observed else None) or
-                          f"{row.get('category', 'incident')} candidate "
-                          f"{start:.1f}s–{end:.1f}s")
+    # Build action_description from observed motion signals, not internal
+    # candidate-type labels. Candidate lines ("Candidate sudden_approach…")
+    # are coarse-grid internals — never the headline shown to the user.
+    candidate_lines = [f for f in observed if f.startswith("Candidate ")]
+    motion_lines = [f for f in observed if not f.startswith("Candidate ")
+                    and not f.startswith("Observed sequence span")]
+    # Extract the per-candidate signal phrases from evidence for a plain-
+    # language summary ("motion toward subject; arms raised toward motorcycle")
+    observable = list(evidence.get("observable_actions", []) or [])
+    action_description = (
+        "; ".join(action_steps[:3])
+        or "; ".join(observable[:2])
+        or (motion_lines[0] if motion_lines else None)
+        or f"Observed activity in {row.get('category', 'incident')} window "
+           f"{start:.1f}s–{end:.1f}s"
+    )
     steps = [{
         "step": i + 1,
         "start_seconds": start,
@@ -890,6 +902,20 @@ def _temporal_row_to_event_dict(row: dict, rec_meta: dict) -> Optional[dict]:
     if evidence.get("single_frame_candidate"):
         uncertainty.append(
             "Single-frame candidate — brief window, verify visually")
+    # Explicit note when object-transfer (chain removal, bag snatch) was not
+    # confirmed by clip analysis. Coarse 1 FPS sampling cannot verify whether
+    # the object actually changed hands — only dense re-analysis or visual
+    # review can confirm that.
+    category = row.get("category", "")
+    clip_unavailable = any("clip analysis unavailable" in u or
+                           "clip analysis failed" in u
+                           for u in uncertainty)
+    if category in ("possible-theft", "possible-assault") and clip_unavailable:
+        uncertainty.append(
+            "Object transfer (e.g. chain or bag removal) not visually confirmed "
+            "— coarse 1 FPS sampling captures approach/contact/departure postures "
+            "but cannot verify the moment of transfer; use Timeline tab for dense "
+            "re-analysis or verify visually from the video")
     uncertainty.append(
         "Incident category is an observation-only candidate, not a "
         "confirmed crime classification")
@@ -911,10 +937,16 @@ def _temporal_row_to_event_dict(row: dict, rec_meta: dict) -> Optional[dict]:
             pass
 
     relevance = round(min(0.95, 0.80 + 0.15 * confidence), 3)
-    candidate_lines = [f for f in observed if f.startswith("Candidate ")]
-    incident_primary = (action_steps[0] if action_steps else
-                        (candidate_lines[0] if candidate_lines else
-                         (observed[0] if observed else None)))
+    # primary_match must be an observed action or confirmed fact — never an
+    # internal "Candidate <type>" line. Those are coarse-grid bookkeeping;
+    # surfacing them as the headline (Incident Summary, Primary finding badge)
+    # replaces the actual scene description with a technical label.
+    incident_primary = (
+        action_steps[0] if action_steps else
+        (observable[0] if observable else
+         (motion_lines[0] if motion_lines else
+          (confirmed[0] if confirmed else None)))
+    )
     return {
         "event_id": row["event_id"],
         "recording_id": rid,
