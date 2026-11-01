@@ -22,6 +22,7 @@ import aiosqlite
 from .database import get_db
 from .event_extractor import (
     ANIMAL_HYPERNYMS, ANIMAL_LEMMA, ANIMAL_SUBJECTS, BIRD_SUBJECTS,
+    FURNITURE_HYPERNYMS, FURNITURE_LEMMA, FURNITURE_SUBJECTS,
     INSECT_HYPERNYMS, INSECT_LEMMA, INSECT_SUBJECTS, OBJECT_SUBJECTS,
     PERSON_SUBJECTS, VEHICLE_SUBJECTS, contains_word, term_matches,
 )
@@ -30,6 +31,8 @@ from .models import (
     EvidenceFrame,
     Event,
     InvestigationResult,
+    MatchClassification,
+    VideoAnalysisSummary,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,7 +91,7 @@ async def investigate(
             rec_rows = await (await db.execute(
                 f"""SELECT recording_id, original_filename, recording_datetime,
                            recording_timezone, camera_name, camera_location,
-                           video_duration_seconds
+                           video_duration_seconds, thumbnail_path, processing_status
                     FROM recordings
                     WHERE recording_id IN ({placeholders})
                       AND processing_status IN ('INDEXED', 'PARTIAL')""",
@@ -98,7 +101,7 @@ async def investigate(
             rec_rows = await (await db.execute(
                 """SELECT recording_id, original_filename, recording_datetime,
                           recording_timezone, camera_name, camera_location,
-                          video_duration_seconds
+                          video_duration_seconds, thumbnail_path, processing_status
                    FROM recordings
                    WHERE processing_status IN ('INDEXED', 'PARTIAL')
                    ORDER BY upload_timestamp""",
@@ -108,18 +111,23 @@ async def investigate(
         # failed) are reported, never silently skipped.
         if recording_ids:
             inelig_rows = await (await db.execute(
-                f"""SELECT original_filename, processing_status FROM recordings
+                f"""SELECT recording_id, original_filename, processing_status,
+                           video_duration_seconds, thumbnail_path,
+                           camera_name, camera_location FROM recordings
                     WHERE recording_id IN ({placeholders})
                       AND processing_status NOT IN ('INDEXED', 'PARTIAL')""",
                 recording_ids,
             )).fetchall()
         else:
             inelig_rows = await (await db.execute(
-                """SELECT original_filename, processing_status FROM recordings
+                """SELECT recording_id, original_filename, processing_status,
+                          video_duration_seconds, thumbnail_path,
+                          camera_name, camera_location FROM recordings
                    WHERE processing_status NOT IN ('INDEXED', 'PARTIAL')"""
             )).fetchall()
         ineligible = [(r["original_filename"], r["processing_status"])
                       for r in inelig_rows]
+        ineligible_meta = [dict(r) for r in inelig_rows]
 
         if not rec_rows:
             return InvestigationResult(
@@ -134,6 +142,7 @@ async def investigate(
                 evidence_gaps=["No recordings have been processed yet."]
                 + _ineligible_notes(ineligible),
                 uncertainty_summary="",
+                video_summaries=_build_video_summaries([], [], {}, ineligible_meta, query_terms),
             )
 
         rec_meta = {
@@ -201,6 +210,7 @@ async def investigate(
             total_events_found=0,
             evidence_gaps=gaps or ["No events found."],
             uncertainty_summary="",
+            video_summaries=_build_video_summaries([], eligible_ids, rec_meta, ineligible_meta, query_terms),
         )
 
     # Build link index
@@ -270,6 +280,7 @@ async def investigate(
             total_events_found=0,
             evidence_gaps=gaps,
             uncertainty_summary="",
+            video_summaries=_build_video_summaries([], eligible_ids, rec_meta, ineligible_meta, query_terms),
         )
 
     # Sort chronologically — use the aliased rec_dt column
@@ -409,6 +420,10 @@ async def investigate(
 
     uncertainty_summary = "; ".join(sorted(set(all_uncertainty_notes)))[:500] if all_uncertainty_notes else ""
 
+    # Build per-video summaries for the investigation results list view
+    video_summaries = _build_video_summaries(
+        events, eligible_ids, rec_meta, ineligible_meta, query_terms)
+
     return InvestigationResult(
         investigation_id=investigation_id,
         query=query,
@@ -421,6 +436,7 @@ async def investigate(
         total_events_found=total_before_cap,
         evidence_gaps=evidence_gaps,
         uncertainty_summary=uncertainty_summary,
+        video_summaries=video_summaries,
     )
 
 
@@ -451,11 +467,149 @@ def _tokenize(query: str) -> list[str]:
         # "dog" token matching nothing). Subject evidence must come from
         # the description instead.
         "detected", "detection", "detections",
+        # Directional particles and prepositions that appear constantly in
+        # motion descriptions ("walked away", "moved out", "taken off") and
+        # match almost any movement event regardless of subject. They carry
+        # no discriminating retrieval signal when used alone.
+        "away", "out", "off", "up", "down", "over",
     }
     return [w for w in words if w not in stopwords]
 
 
 def _parse_temporal_query(query: str) -> dict:
+    """Extract time constraints from a query.
+
+    Supported (all video-relative seconds, consistent with stored
+    timestamp_seconds):
+    - 'between MM:SS and MM:SS' -> {"start", "end"}
+    - 'before MM:SS'             -> {"end"}
+    - 'after MM:SS'              -> {"start"}
+    - 'first ...' / '... last'   -> {"select": "first"/"last"}
+
+    Returns {} when no temporal operator is present. Clock-time (absolute)
+    queries are NOT supported — MM:SS always means video-relative.
+    """
+    result: dict = {}
+    q = query.lower()
+    m = re.search(r"between\s+(\d{1,2}):(\d{2})\s+and\s+(\d{1,2}):(\d{2})", q)
+    if m:
+        result["start"] = int(m.group(1)) * 60 + int(m.group(2))
+        result["end"] = int(m.group(3)) * 60 + int(m.group(4))
+    else:
+        m_before = re.search(r"before\s+(\d{1,2}):(\d{2})", q)
+        if m_before:
+            result["end"] = int(m_before.group(1)) * 60 + int(m_before.group(2))
+        m_after = re.search(r"after\s+(\d{1,2}):(\d{2})", q)
+        if m_after:
+            result["start"] = int(m_after.group(1)) * 60 + int(m_after.group(2))
+    if re.search(r"\bfirst\b", q):
+        result["select"] = "first"
+    elif re.search(r"\blast\b", q):
+        result["select"] = "last"
+    return result
+
+
+# ── Action-intent vocabulary ───────────────────────────────────────────────────
+#
+# Maps action/event terms from natural-language queries to synonym sets that
+# the vision model may have used when describing the same action. Used to
+# expand query matching beyond the exact words the user typed.
+#
+# Rules:
+# - Each key is a query-side word a user might type.
+# - Each value is a frozenset of words the vision model might have written.
+# - Synonyms are lemma roots (no inflections) — matching uses word-boundary
+#   regex so "carry" matches "carrying", "carried" etc. via stem check.
+# - Action matching is ONLY used to weight the action_description headline;
+#   it does not gate events (a chair present without removal is still
+#   POSSIBLE_MATCH, not NO_MATCH).
+
+_ACTION_SYNONYMS: dict[str, frozenset] = {
+    # Removal / transport
+    "taken":      frozenset({"taken", "carried", "carries", "removed", "moved",
+                              "transported", "transporting", "transport",
+                              "lifted", "picked", "relocated", "taken out", "carry",
+                              "carrying", "carrying out", "moving", "dragging", "drag",
+                              "hauled", "hauling", "brought", "bringing"}),
+    "removed":    frozenset({"removed", "carried", "carries", "taken", "moved",
+                              "transported", "transporting", "lifted", "relocated"}),
+    "carried":    frozenset({"carried", "carry", "carries", "carrying", "taken", "moved",
+                              "transported", "transporting", "lifted", "hauled", "hauling"}),
+    "moved":      frozenset({"moved", "moving", "carried", "carries", "taken", "relocated",
+                              "transported", "transporting", "dragged", "dragging"}),
+    "picked":     frozenset({"picked", "pick", "picking", "lifted", "grabbed",
+                              "grabbed", "taken"}),
+    "transported": frozenset({"transported", "transporting", "transport", "carried",
+                               "carries", "moved", "taken", "moved out", "relocated"}),
+    # Entry / arrival
+    "entered":    frozenset({"entered", "entering", "enter", "arrived", "arriving",
+                              "came", "come", "coming", "walked in", "going in",
+                              "got in", "came in", "crossed", "passed through"}),
+    "entered":    frozenset({"entered", "entering", "enter", "arrived", "arriving",
+                              "came", "come", "coming"}),
+    # Exit / departure
+    "left":       frozenset({"left", "leaving", "leave", "exited", "exiting",
+                              "exit", "departed", "going out", "walked out",
+                              "came out", "went out"}),
+    "exited":     frozenset({"exited", "exiting", "exit", "left", "leaving",
+                              "departed", "went out", "walked out"}),
+    # Delivery / placement
+    "delivered":  frozenset({"delivered", "delivering", "deliver", "placed",
+                              "dropped", "left", "deposited", "brought",
+                              "placed down", "put down"}),
+    "placed":     frozenset({"placed", "placing", "put", "deposited", "left",
+                              "set down", "laid", "positioned"}),
+    # Detection / appearance
+    "appeared":   frozenset({"appeared", "appearing", "appear", "entered",
+                              "visible", "seen", "spotted", "detected",
+                              "emerged", "came into view"}),
+}
+
+# Action-query trigger words — when any of these appear in the query tokens,
+# we know the user wants to verify an *action*, not just object presence.
+# Events where the action_description does not confirm the action are
+# downgraded from POSSIBLE_MATCH to NEEDS_REVIEW when the target object
+# only appears in background observation facts, not as the primary subject.
+_ACTION_QUERY_TERMS = frozenset({
+    "taken", "removed", "carried", "moved", "transported", "picked",
+    "entered", "left", "exited", "delivered", "placed", "appeared",
+    "take", "remove", "carry", "move", "transport", "pick",
+    "enter", "leave", "exit", "deliver", "place", "appear",
+    "brought", "bring", "bringing", "dragged", "drag", "dragging",
+    "went", "gone", "came", "come",
+})
+
+
+def _action_synonyms_for_terms(query_terms: list[str]) -> frozenset:
+    """Return expanded action vocabulary for the query's action terms."""
+    synonyms: set[str] = set()
+    for t in query_terms:
+        if t in _ACTION_SYNONYMS:
+            synonyms |= _ACTION_SYNONYMS[t]
+    return frozenset(synonyms)
+
+
+def _action_confirmed_in_headline(
+    action_description: str,
+    action_synonyms: frozenset,
+) -> bool:
+    """Return True when the action_description explicitly describes the action.
+
+    Checks both exact terms and the expanded synonym set. The action_description
+    is the vision model's primary description of what happened in this event —
+    if it describes removal/entry/transport, the event is about that action.
+    """
+    if not action_synonyms or not action_description:
+        return False
+    text = action_description.lower()
+    for syn in action_synonyms:
+        # Check for any word in the synonym set appearing as a word boundary
+        if re.search(r"\b" + re.escape(syn.lower()) + r"\b", text):
+            return True
+    return False
+
+
+
     """Extract time constraints from a query.
 
     Supported (all video-relative seconds, consistent with stored
@@ -525,6 +679,7 @@ def _score_event(terms: list[str], ev: dict) -> float:
     query_insect = any(t in INSECT_HYPERNYMS for t in terms)
     query_animal = any(t in ANIMAL_HYPERNYMS for t in terms)
     query_object = any(t in OBJECT_SUBJECTS for t in terms)
+    query_furniture = any(t in FURNITURE_HYPERNYMS for t in terms)
     if query_person and not contains_word(descriptive, PERSON_SUBJECTS):
         return 0.0
     if query_vehicle and not contains_word(descriptive, VEHICLE_SUBJECTS):
@@ -536,6 +691,8 @@ def _score_event(terms: list[str], ev: dict) -> float:
     if query_animal and not contains_word(descriptive, ANIMAL_SUBJECTS):
         return 0.0
     if query_object and not contains_word(descriptive, OBJECT_SUBJECTS):
+        return 0.0
+    if query_furniture and not contains_word(descriptive, FURNITURE_SUBJECTS):
         return 0.0
 
     hits = 0
@@ -562,6 +719,15 @@ def _score_event(terms: list[str], ev: dict) -> float:
         elif t in OBJECT_SUBJECTS:
             # Covered by the gate above.
             hits += 1
+        elif t in FURNITURE_HYPERNYMS:
+            # Covered by the gate above: any furniture word satisfies it.
+            hits += 1
+        elif t in FURNITURE_SUBJECTS:
+            # Hyponym: require the specific furniture item (or its plural/singular)
+            # to appear in the description — a chair query must not match shelf events.
+            forms = frozenset({t, FURNITURE_LEMMA.get(t, t)})
+            if contains_word(descriptive, forms):
+                hits += 1
         elif term_matches(searchable, t):
             hits += 1
     # Require at least one keyword hit — confidence alone doesn't justify a result
@@ -639,6 +805,10 @@ def _subject_evidence_forms(term: str) -> Optional[frozenset]:
         return frozenset({term, ANIMAL_LEMMA.get(term, term)})
     if term in OBJECT_SUBJECTS:
         return OBJECT_SUBJECTS
+    if term in FURNITURE_HYPERNYMS:
+        return FURNITURE_SUBJECTS
+    if term in FURNITURE_SUBJECTS:
+        return frozenset({term, FURNITURE_LEMMA.get(term, term)})
     return None
 
 
@@ -725,6 +895,22 @@ async def _count_temporal_events(db_path: str, recording_id: str) -> int:
         return 0
 
 
+async def _has_temporal_refinement(db_path: str, recording_id: str) -> bool:
+    """True when any temporal detection run has completed for this recording.
+
+    A completed run can legitimately produce zero events; without this
+    check such recordings would be re-detected on every incident query.
+    """
+    try:
+        async with get_db(db_path) as db:
+            row = await (await db.execute(
+                "SELECT 1 FROM temporal_refine_log WHERE recording_id = ? LIMIT 1",
+                (recording_id,))).fetchone()
+            return row is not None
+    except Exception:
+        return False
+
+
 async def _maybe_auto_trigger_temporal(
     db_path: str,
     eligible_ids: list[str],
@@ -734,8 +920,12 @@ async def _maybe_auto_trigger_temporal(
     """Auto-trigger temporal detection for recordings with no prior refinement.
 
     Only fires when the query contains incident vocabulary. Idempotent:
-    recordings that already have temporal_events rows are skipped. Bounded
-    by temporal_auto_trigger_timeout_s per recording (0 = disabled).
+    recordings that already have temporal_events rows (or any completed
+    refinement run, even one that found zero events) are skipped. Runs
+    coarse-only (motion prefilter + already-indexed observations, zero new
+    vision calls) so it stays far under temporal_auto_trigger_timeout_s per
+    recording (0 = disabled). Dense vision refinement stays available via
+    the explicit Refine endpoint.
     Storage and meta_client are resolved from app state; if unavailable
     (e.g. in tests without a running server), the trigger silently no-ops.
     """
@@ -770,6 +960,11 @@ async def _maybe_auto_trigger_temporal(
                 "temporal auto-trigger: %s already has %d events, skipping",
                 recording_id, existing)
             continue
+        if await _has_temporal_refinement(db_path, recording_id):
+            logger.debug(
+                "temporal auto-trigger: %s already refined (0 events), skipping",
+                recording_id)
+            continue
         logger.info(
             "temporal auto-trigger: running for %s (query incident match)",
             recording_id)
@@ -780,7 +975,8 @@ async def _maybe_auto_trigger_temporal(
                     db_path=db_path,
                     storage=storage,
                     meta_client=meta_client,
-                    reason="auto_trigger_investigation",
+                    dense_budget_s=0,
+                    reason="auto_trigger_investigation (coarse only)",
                 ),
                 timeout=timeout_s,
             )
@@ -1135,3 +1331,461 @@ def _format_ts(secs: float) -> str:
     m, s = divmod(int(secs), 60)
     h, m = divmod(m, 60)
     return f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+
+def _query_match_score_for_event(query_terms: list[str], event: Event) -> float:
+    """Score how well an event's observations match the specific query.
+
+    This is distinct from the detection relevance score, which measures how
+    likely the event is a real incident. This score measures query specificity:
+    does the evidence actually describe what the investigator asked for?
+
+    For "chain snatch": an assault candidate with no mention of chain/necklace/
+    grabbing scores near 0. A query-specific term hit lifts it toward 1.0.
+
+    Returns 0.0–1.0. 0.0 means no query-specific evidence found.
+
+    Key invariant: if coverage (term-hit fraction) is zero, we return 0.0
+    regardless of confidence. Confidence leaking through when coverage=0 would
+    let high-confidence detections like Arrest019 (many Candidate lines, high
+    sub-confidences → composite conf 0.63) pass the query gate with no term
+    evidence at all — purely from 0.3 * confidence in the blended formula.
+    """
+    if not query_terms:
+        return 1.0
+
+    # Strip internal temporal-correlator bookkeeping lines from observed_facts
+    # before scoring. "Candidate <type> at Xs" and "Observed sequence span Xs–Ys"
+    # are detector labels, not scene descriptions — they carry no query signal.
+    clean_facts = [
+        f for f in event.observed_facts
+        if f
+        and not f.startswith("Candidate ")
+        and not f.startswith("Observed sequence span")
+        and not f.startswith("Confirmed: ")
+    ]
+
+    ev_dict = {
+        "action_description": event.action_description,
+        "scene_description": event.scene_description or "",
+        "event_type": event.event_type,
+        "object_descriptions": event.object_descriptions,
+        "observed_facts": clean_facts,
+        "confidence": event.confidence,
+    }
+
+    # Compute coverage independently so we can enforce the zero-coverage guard.
+    headline = " ".join([
+        ev_dict.get("action_description", ""),
+        ev_dict.get("event_type", "").replace("_", " "),
+    ])
+    blob = " ".join([
+        ev_dict.get("scene_description", "") or "",
+        " ".join(ev_dict.get("object_descriptions", [])),
+        " ".join(ev_dict.get("observed_facts", [])),
+    ])
+    descriptive = (headline + " " + blob).strip()
+
+    # Subject-presence gate: if the query targets a specific subject class
+    # (furniture, object, animal, etc.) but the event description doesn't
+    # mention that subject, return 0.0. A "chair" query must not match events
+    # about cattle or brooms just because they share generic action words
+    # like "taken" or "moved". This mirrors the gate in _score_event.
+    #
+    # Furniture hyponyms ("chair", "table") require the exact item to appear;
+    # hypernyms ("furniture") match any furniture item. This prevents a
+    # "chair" query from matching a "shelf" event (same furniture class, wrong item).
+    for t in query_terms:
+        if t in FURNITURE_HYPERNYMS:
+            if not contains_word(descriptive, FURNITURE_SUBJECTS):
+                return 0.0
+        elif t in FURNITURE_SUBJECTS:
+            forms = frozenset({t, FURNITURE_LEMMA.get(t, t)})
+            if not contains_word(descriptive, forms):
+                return 0.0
+    if any(t in OBJECT_SUBJECTS for t in query_terms):
+        if not contains_word(descriptive, OBJECT_SUBJECTS):
+            return 0.0
+    if any(t in ANIMAL_SUBJECTS for t in query_terms):
+        if not contains_word(descriptive, ANIMAL_SUBJECTS):
+            return 0.0
+    if any(t in ANIMAL_HYPERNYMS for t in query_terms):
+        if not contains_word(descriptive, ANIMAL_SUBJECTS):
+            return 0.0
+    if any(t in PERSON_SUBJECTS for t in query_terms):
+        if not contains_word(descriptive, PERSON_SUBJECTS):
+            return 0.0
+    if any(t in VEHICLE_SUBJECTS for t in query_terms):
+        if not contains_word(descriptive, VEHICLE_SUBJECTS):
+            return 0.0
+
+    weights = [_term_evidence_weight(t, headline, headline + " " + blob)
+               for t in query_terms]
+    coverage = sum(weights) / len(query_terms)
+
+    # Zero coverage = no query term matched anywhere in the evidence text.
+    # Do not let confidence alone push a score above zero.
+    if coverage == 0.0:
+        return 0.0
+
+    score, _, _ = score_relevance(query_terms, ev_dict)
+    return score
+
+
+# Incident candidate event types (temporal detection, observation-only)
+_INCIDENT_CANDIDATE_TYPES = frozenset({
+    "possible-theft", "possible-assault", "confrontation",
+    "sudden-fall", "suspicious-approach-departure", "other-anomaly",
+})
+
+# Query vocabulary that implies a theft/snatch action (used by the sequence gate)
+_THEFT_QUERY_TERMS = frozenset({
+    "theft", "thief", "thieves", "steal", "stealing", "stole", "stolen",
+    "snatch", "snatched", "snatching", "snatcher",
+    "rob", "robbed", "robber", "robbery", "robberies",
+    "burglar", "burglary", "loot", "looted", "pickpocket",
+    "shoplift", "shoplifting", "mugging", "mugged",
+})
+
+# Maximum candidate-stage count for a sequence to be considered "clean"
+# (approach+contact+departure with few extras). More than this → too noisy
+# to be a targeted single-event sequence.
+_THEFT_SEQ_MAX_CANDIDATES = 6
+
+
+def _has_clean_theft_sequence(event: Event) -> bool:
+    """Return True when the event's Candidate lines form a clean A→C→D sequence.
+
+    A *clean* approach→contact→departure sequence is a meaningful signal for
+    theft/snatch queries: it's the temporal pattern of someone walking up to a
+    victim, making contact (grab), and fleeing. An excessively noisy event with
+    many repeated approach/departure cycles (e.g. traffic, crowd footage) does
+    NOT qualify.
+
+    Conditions:
+    1. Exactly one appearance each of sudden_approach, contact_confrontation,
+       rapid_departure in the correct temporal order.
+    2. Total Candidate count ≤ _THEFT_SEQ_MAX_CANDIDATES (low noise floor).
+    """
+    import re as _re
+    candidates: list[tuple[str, float]] = []
+    for fact in event.observed_facts:
+        m = _re.match(r"Candidate (\w+) at ([\d.]+)s", fact)
+        if m:
+            candidates.append((m.group(1), float(m.group(2))))
+
+    if not candidates or len(candidates) > _THEFT_SEQ_MAX_CANDIDATES:
+        return False
+
+    # Require all three stages present
+    stage_types = {c[0] for c in candidates}
+    if not {"sudden_approach", "contact_confrontation", "rapid_departure"} <= stage_types:
+        return False
+
+    # Check temporal ordering: first approach before first contact before first departure
+    first: dict[str, float] = {}
+    for ctype, ts in candidates:
+        if ctype not in first:
+            first[ctype] = ts
+
+    return (
+        first["sudden_approach"] < first["contact_confrontation"] < first["rapid_departure"]
+    )
+
+# Minimum query-match score for an incident candidate to be POSSIBLE_MATCH.
+# Below this → NO_MATCH. The threshold is set deliberately low because
+# incident candidate text is sparse (vision model describes neutral postures,
+# not crimes), but a zero score means no query term appeared anywhere.
+_INCIDENT_QUERY_MATCH_THRESHOLD = 0.15
+
+
+def _classify_video(
+    events: list[Event],
+    query_terms: list[str] | None = None,
+) -> tuple[MatchClassification, float | None]:
+    """Determine match classification from this recording's events.
+
+    Two-gate classification:
+    1. Detection gate: did the temporal detector see something incident-shaped?
+    2. Query gate: does that detection actually match what was queried?
+
+    Gate 1 alone (the old behaviour) caused false positives: a possible-assault
+    on a video about a grocery delivery still classified as POSSIBLE_MATCH for
+    "chain snatch". Gate 2 re-scores the event's text against query terms so
+    that generic assault/activity descriptions don't masquerade as query-specific
+    matches.
+
+    For theft-type queries a third gate (sequence gate) lifts a clean
+    approach→contact→departure pattern to NEEDS_REVIEW when no query-specific
+    text is available, because that 3-stage temporal sequence is the canonical
+    theft action pattern even when the object name is not in the event text.
+    Noisy multi-candidate events (crowds, traffic) are excluded by a candidate
+    count ceiling (_THEFT_SEQ_MAX_CANDIDATES).
+
+    Rules (in priority order):
+    - No events → no_match
+    - Incident candidates that fail both the query gate AND the sequence gate:
+        → no_match
+    - Incident candidates with query text match (score ≥ threshold):
+        query_score ≥ 0.35 → possible_match
+        query_score ≥ 0.15 → needs_review
+    - Incident candidates with clean theft sequence (no query text, theft query):
+        → needs_review
+    - Non-incident events (direct vision matches):
+        relevance ≥ 0.75 → relevant_match
+        relevance ≥ 0.4  → possible_match
+        else → needs_review
+    """
+    if not events:
+        return MatchClassification.NO_MATCH, None
+
+    qt = query_terms or []
+    qt_set = set(qt)
+
+    max_relevance = max(
+        (e.relevance_score for e in events if e.relevance_score is not None),
+        default=None,
+    )
+    max_confidence = max(e.confidence for e in events)
+
+    # Check if all events are temporal incident candidates (observation-only)
+    all_incident_candidates = all(
+        e.event_type in _INCIDENT_CANDIDATE_TYPES for e in events
+    )
+    # Check for clip-analysis unavailable — means detection is coarse-grid only
+    all_unconfirmed = all(
+        any("not visually confirmed" in n or "clip analysis unavailable" in n
+            or "observation-only candidate" in n
+            for n in e.uncertainty_notes)
+        for e in events
+    )
+
+    effective_score = max_relevance if max_relevance is not None else max_confidence
+
+    if all_incident_candidates and all_unconfirmed:
+        # Temporal candidates are observation-only — never a confirmed verdict.
+        # Apply the query gate: score the event observations against the query.
+        # If nothing in the evidence matches the query, don't call it a match.
+        if qt:
+            best_query_score = max(
+                _query_match_score_for_event(qt, e) for e in events
+            )
+            if best_query_score >= _INCIDENT_QUERY_MATCH_THRESHOLD:
+                # Query text matched — use text-based score
+                if best_query_score >= 0.35:
+                    return MatchClassification.POSSIBLE_MATCH, round(best_query_score, 3)
+                return MatchClassification.NEEDS_REVIEW, round(best_query_score, 3)
+
+            # No query-text match. For theft-type queries, check for a clean
+            # approach→contact→departure sequence as an action-pattern signal.
+            # This rescues genuine theft candidates where the vision model
+            # described neutral motion (no object names) but the temporal
+            # pattern is strongly consistent with a targeted snatch.
+            if qt_set & _THEFT_QUERY_TERMS:
+                if any(_has_clean_theft_sequence(e) for e in events):
+                    return MatchClassification.NEEDS_REVIEW, round(effective_score, 3)
+
+            return MatchClassification.NO_MATCH, round(effective_score, 3)
+
+        # No query terms (e.g. empty query) — fall back to detection score
+        if effective_score >= 0.5:
+            return MatchClassification.POSSIBLE_MATCH, round(effective_score, 3)
+        return MatchClassification.NEEDS_REVIEW, round(effective_score, 3)
+
+    # Non-temporal events: apply a query-match gate when query has subject terms.
+    # Prevents generic motion matches (e.g. "taken"/"moved") from scoring as
+    # POSSIBLE_MATCH for a subject-specific query like "chair taken away" when
+    # the event only matches generic words and not the target object/action.
+    if qt:
+        # Use _query_match_score_for_event to check if evidence actually covers
+        # the query (not just generic motion words). Events that only hit generic
+        # tokens score near 0.0 when subject-term coverage is 0.
+        best_query_score = max(
+            (_query_match_score_for_event(qt, e) for e in events),
+            default=0.0,
+        )
+        # Hard block: if no query-specific evidence, don't show the video at all.
+        if best_query_score == 0.0:
+            return MatchClassification.NO_MATCH, round(effective_score, 3) if effective_score else None
+        # Scale the classification thresholds using the query-match score so
+        # that only events with actual subject evidence reach RELEVANT_MATCH.
+        effective_score = min(effective_score or 0.0, best_query_score * 1.2)
+
+        # Action-confirmation gate: when the query asks for a specific action
+        # (removal, entry, delivery, etc.), require that the event's
+        # action_description headline — not just background observation facts —
+        # confirms the action was observed. Without this, a video where chairs
+        # appear as background furniture (dining table, courtyard) but no
+        # removal occurred is incorrectly promoted to POSSIBLE_MATCH.
+        #
+        # Rule: if query has an action term AND a subject term, and the
+        # action_description of NONE of the events confirms the action via
+        # action synonyms, cap the best classification at NEEDS_REVIEW.
+        # (The object is genuinely present, but the action is unconfirmed —
+        # this warrants human review, not automatic promotion to possible_match.)
+        qt_set_check = set(qt)
+        is_action_query = bool(qt_set_check & _ACTION_QUERY_TERMS)
+        has_subject_terms = any(
+            t in FURNITURE_SUBJECTS or t in OBJECT_SUBJECTS
+            or t in ANIMAL_SUBJECTS or t in ANIMAL_HYPERNYMS
+            or t in PERSON_SUBJECTS or t in VEHICLE_SUBJECTS
+            for t in qt
+        )
+        if is_action_query and has_subject_terms:
+            action_synonyms = _action_synonyms_for_terms(qt)
+            action_confirmed = any(
+                _action_confirmed_in_headline(e.action_description, action_synonyms)
+                for e in events
+            )
+            if not action_confirmed:
+                # Cap at NEEDS_REVIEW: object present, action unconfirmed
+                if effective_score is not None and effective_score >= 0.4:
+                    return MatchClassification.NEEDS_REVIEW, round(
+                        min(effective_score, 0.39), 3
+                    )
+
+    if effective_score is not None and effective_score >= 0.75:
+        return MatchClassification.RELEVANT_MATCH, round(effective_score, 3)
+    if effective_score is not None and effective_score >= 0.4:
+        return MatchClassification.POSSIBLE_MATCH, round(effective_score, 3)
+    return MatchClassification.NEEDS_REVIEW, round(effective_score, 3) if effective_score else None
+
+
+def _observation_for_video(events: list[Event], filename: str) -> str:
+    """Concise factual observation for one recording, grounded in event data.
+
+    For recordings with events: describes what was observed (actions, facts)
+    without inferring criminal intent. For recordings with no events, says so.
+    Never fabricates content.
+    """
+    if not events:
+        return "No relevant activity identified in this recording."
+
+    # Use the highest-relevance event as the headline
+    primary = max(
+        events,
+        key=lambda e: e.relevance_score if e.relevance_score is not None else e.confidence,
+    )
+
+    # Build observation from action_description + first observed fact
+    parts: list[str] = []
+    action = primary.action_description.strip()
+    if action and not action.startswith("Observed activity in "):
+        parts.append(action)
+
+    # Add first supporting observed fact (not a Candidate line)
+    for fact in primary.observed_facts:
+        if (fact and not fact.startswith("Candidate ")
+                and not fact.startswith("Observed sequence span")
+                and not fact.startswith("Confirmed: ")):
+            parts.append(fact)
+            break
+
+    # If action was a generic template, use observed facts instead
+    if not parts or (len(parts) == 1 and primary.action_description.startswith("Observed activity in ")):
+        motion_facts = [
+            f for f in primary.observed_facts
+            if f and not f.startswith("Candidate ")
+            and not f.startswith("Observed sequence span")
+            and not f.startswith("Confirmed: ")
+        ]
+        if motion_facts:
+            parts = [motion_facts[0]]
+            if len(motion_facts) > 1:
+                parts.append(motion_facts[1])
+
+    if not parts:
+        # Last resort: use the event_type label with timestamp
+        ts = _format_ts(primary.timestamp_seconds)
+        type_label = primary.event_type.replace("-", " ").replace("_", " ")
+        parts.append(f"{type_label.capitalize()} activity detected at {ts}.")
+
+    # Add timestamp context
+    ts_str = _format_ts(primary.timestamp_seconds)
+    observation = ". ".join(p.rstrip(".") for p in parts if p)
+    if ts_str and f"{ts_str}" not in observation:
+        observation += f" (at {ts_str})"
+
+    # Add uncertainty note if clip analysis unavailable
+    is_unconfirmed = any(
+        "not visually confirmed" in n or "clip analysis unavailable" in n
+        for n in primary.uncertainty_notes
+    )
+    if is_unconfirmed:
+        observation += " — object transfer not visually confirmed; review video manually."
+
+    return observation
+
+
+def _build_video_summaries(
+    events: list[Event],
+    eligible_ids: list[str],
+    rec_meta: dict,
+    ineligible_meta: list[dict],
+    query_terms: list[str] | None = None,
+) -> list[VideoAnalysisSummary]:
+    """Build per-video analysis summaries for the investigation results list.
+
+    Every searched recording appears — whether it had matching events or not.
+    Ineligible (unindexed/failed) recordings are included as analysis_failed.
+    """
+    summaries: list[VideoAnalysisSummary] = []
+
+    # Group events by recording_id
+    events_by_rec: dict[str, list[Event]] = {}
+    for ev in events:
+        events_by_rec.setdefault(ev.recording_id, []).append(ev)
+
+    # Eligible recordings (searched)
+    for rid in eligible_ids:
+        meta = rec_meta.get(rid, {})
+        rec_events = events_by_rec.get(rid, [])
+        classification, confidence = _classify_video(rec_events, query_terms)
+        observation = _observation_for_video(rec_events, meta.get("original_filename", rid))
+        timestamps = sorted({
+            ev.timestamp_seconds for ev in rec_events
+        })
+        summaries.append(VideoAnalysisSummary(
+            recording_id=rid,
+            filename=meta.get("original_filename", rid),
+            duration_seconds=meta.get("video_duration_seconds"),
+            thumbnail_path=meta.get("thumbnail_path"),
+            camera_name=meta.get("camera_name"),
+            camera_location=meta.get("camera_location"),
+            processing_status=meta.get("processing_status", "INDEXED"),
+            match_classification=classification,
+            observation=observation,
+            relevant_timestamps=timestamps,
+            event_ids=[ev.event_id for ev in rec_events],
+            confidence=confidence,
+        ))
+
+    # Ineligible recordings (not searchable)
+    for meta in ineligible_meta:
+        status = meta.get("processing_status", "FAILED")
+        classification = (
+            MatchClassification.ANALYSIS_FAILED
+            if status == "FAILED"
+            else MatchClassification.NEEDS_REVIEW
+        )
+        observation = (
+            "Video processing failed — analysis unavailable."
+            if status == "FAILED"
+            else f"Video is not yet indexed (status: {status}) — analysis pending."
+        )
+        summaries.append(VideoAnalysisSummary(
+            recording_id=meta.get("recording_id", ""),
+            filename=meta.get("original_filename", ""),
+            duration_seconds=meta.get("video_duration_seconds"),
+            thumbnail_path=meta.get("thumbnail_path"),
+            camera_name=meta.get("camera_name"),
+            camera_location=meta.get("camera_location"),
+            processing_status=status,
+            match_classification=classification,
+            observation=observation,
+            relevant_timestamps=[],
+            event_ids=[],
+            confidence=None,
+        ))
+
+    return summaries

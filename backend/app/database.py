@@ -301,6 +301,8 @@ async def create_tables(db_path: str) -> None:
             # Phase 6: prompt-versioned cache keys (existing rows default to v1
             # and never hit under the current prompt version)
             "ALTER TABLE frame_cache ADD COLUMN prompt_version TEXT DEFAULT '1'",
+            # Phase 7: two-pass analysis — track which pass produced each observation
+            "ALTER TABLE observations ADD COLUMN analysis_pass TEXT DEFAULT 'general'",
         ):
             try:
                 await db.execute(_ddl)

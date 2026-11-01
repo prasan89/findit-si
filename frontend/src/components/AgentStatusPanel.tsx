@@ -1,25 +1,25 @@
 'use client'
-import type { AgentRunResult, FinalReport, MultiAgentInvestigationResult } from '@/types'
+import type { AgentRunResult, MultiAgentInvestigationResult } from '@/types'
 
-const STATUS_STYLES: Record<string, string> = {
-  completed: 'bg-green-100 text-green-800',
-  skipped: 'bg-yellow-100 text-yellow-700',
-  failed: 'bg-red-100 text-red-700',
-  running: 'bg-blue-100 text-blue-700',
-  pending: 'bg-gray-100 text-gray-500',
-  mocked: 'bg-purple-100 text-purple-700',
-  timed_out: 'bg-orange-100 text-orange-700',
+const STATUS_CONFIG: Record<string, { cls: string; label: string }> = {
+  completed: { cls: 'rt-badge-green',  label: 'Completed' },
+  failed:    { cls: 'rt-badge-red',    label: 'Failed'    },
+  skipped:   { cls: 'rt-badge-amber',  label: 'Skipped'   },
+  timed_out: { cls: 'rt-badge-amber',  label: 'Timed out' },
+  running:   { cls: 'rt-badge-blue',   label: 'Running'   },
+  pending:   { cls: 'rt-badge-gray',   label: 'Pending'   },
+  mocked:    { cls: 'rt-badge-gray',   label: 'Mocked'    },
 }
 
 const AGENT_DESCRIPTIONS: Record<string, string> = {
-  VideoIntelligenceAgent: 'Visual summary per event',
-  ObjectActionAnalystAgent: 'Objects & actions identification',
-  TemporalReasoningAgent: 'Timeline normalization & gap detection',
-  CrossCameraCorrelationAgent: 'Cross-camera candidate links',
-  QueryInvestigationAgent: 'Evidence retrieval & ranking',
-  ContradictionHunterAgent: 'Inconsistency & contradiction detection',
-  EvidenceAuditorAgent: 'Claim verification against source evidence',
-  ReportSynthesisAgent: 'Final narrative assembly',
+  VideoIntelligenceAgent:         'Visual summary per event',
+  ObjectActionAnalystAgent:       'Objects & actions identification',
+  TemporalReasoningAgent:         'Timeline normalization & gap detection',
+  CrossCameraCorrelationAgent:    'Cross-camera candidate links',
+  QueryInvestigationAgent:        'Evidence retrieval & ranking',
+  ContradictionHunterAgent:       'Inconsistency & contradiction detection',
+  EvidenceAuditorAgent:           'Claim verification against source evidence',
+  ReportSynthesisAgent:           'Final narrative assembly',
 }
 
 interface Props {
@@ -27,34 +27,31 @@ interface Props {
 }
 
 function AgentRow({ agent }: { agent: AgentRunResult }) {
-  const style = STATUS_STYLES[agent.status] ?? STATUS_STYLES.pending
+  const cfg = STATUS_CONFIG[agent.status] ?? STATUS_CONFIG.pending
   const ms = agent.duration_ms > 0 ? `${(agent.duration_ms / 1000).toFixed(2)}s` : '—'
   const cost = agent.cost_usd > 0 ? `$${agent.cost_usd.toFixed(5)}` : '—'
-  const outputReason = agent.output && typeof agent.output.skipped_reason === 'string'
-    ? agent.output.skipped_reason
-    : null
-  const reason = agent.error || outputReason
-  const reasonCls = agent.status === 'failed' || agent.status === 'timed_out'
-    ? 'text-red-600 bg-red-50'
-    : 'text-amber-700 bg-amber-50'
+  const reason = agent.error ?? (
+    agent.output && typeof agent.output.skipped_reason === 'string'
+      ? agent.output.skipped_reason : null
+  )
 
   return (
-    <div className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-0">
-      <span className={`mt-0.5 inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${style}`}>
-        {agent.status}
-      </span>
+    <div className="flex items-start gap-3 py-2.5 border-b border-[#E2E8F0] last:border-0">
+      <span className={cfg.cls}>{cfg.label}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-gray-800">{agent.agent_name}</div>
-        <div className="text-xs text-gray-500">
-          {AGENT_DESCRIPTIONS[agent.agent_name] ?? ''}
-        </div>
+        <div className="text-sm font-medium text-[#0F172A]">{agent.agent_name}</div>
+        <div className="text-xs text-[#94A3B8]">{AGENT_DESCRIPTIONS[agent.agent_name] ?? ''}</div>
         {reason && (
-          <div className={`mt-1 text-xs rounded px-2 py-1 ${reasonCls}`} title={reason}>
+          <div className={`mt-1 text-xs rounded px-2 py-1 ${
+            agent.status === 'failed' || agent.status === 'timed_out'
+              ? 'rt-banner-danger'
+              : 'rt-banner-warning'
+          }`} title={reason}>
             {reason}
           </div>
         )}
       </div>
-      <div className="text-xs text-gray-400 text-right whitespace-nowrap">
+      <div className="text-xs text-[#94A3B8] text-right shrink-0 tabular-nums space-y-0.5">
         <div>{ms}</div>
         <div>{cost}</div>
       </div>
@@ -64,50 +61,49 @@ function AgentRow({ agent }: { agent: AgentRunResult }) {
 
 export default function AgentStatusPanel({ result }: Props) {
   const completed = result.agents.filter(a => a.status === 'completed').length
-  const failed = result.agents.filter(a => a.status === 'failed').length
-  const skipped = result.agents.filter(a => a.status === 'skipped' || a.status === 'timed_out').length
-  const totalCost = result.total_cost_usd
+  const failed    = result.agents.filter(a => a.status === 'failed').length
+  const skipped   = result.agents.filter(a => ['skipped', 'timed_out'].includes(a.status)).length
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-800">Investigation Agents</h3>
-        <div className="flex items-center gap-3 text-xs text-gray-500">
+    <div className="rt-card p-5 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="rt-section-title">Investigation Agents</h3>
+        <div className="flex items-center gap-3 text-xs text-[#64748B]">
           <span>{completed}/{result.agents.length} completed</span>
-          {failed > 0 && <span className="text-red-500">{failed} failed</span>}
-          {skipped > 0 && <span className="text-amber-600">{skipped} skipped</span>}
-          <span>${totalCost.toFixed(5)}</span>
-          <span>{(result.total_duration_ms / 1000).toFixed(2)}s</span>
+          {failed > 0 && <span className="text-[#DC2626]">{failed} failed</span>}
+          {skipped > 0 && <span className="text-[#D97706]">{skipped} skipped</span>}
+          <span className="tabular-nums">${result.total_cost_usd.toFixed(5)}</span>
+          <span className="tabular-nums">{(result.total_duration_ms / 1000).toFixed(2)}s</span>
         </div>
       </div>
 
-      <div className="divide-y divide-gray-50">
-        {result.agents.map((agent, i) => (
-          <AgentRow key={i} agent={agent} />
-        ))}
+      {/* Agent rows */}
+      <div>
+        {result.agents.map((agent, i) => <AgentRow key={i} agent={agent} />)}
       </div>
 
+      {/* Key findings */}
       {result.final_report && (
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <div className="text-xs font-semibold text-gray-600 mb-2">Key Findings</div>
-          {result.final_report.key_findings.length > 0 ? (
-            <ul className="space-y-1">
-              {result.final_report.key_findings.map((f, i) => (
-                <li key={i} className="text-xs text-gray-700 flex gap-2">
-                  <span className="text-indigo-400 shrink-0">▸</span>
-                  <span>{f}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-xs text-gray-400">No key findings extracted.</p>
+        <div className="pt-2 border-t border-[#E2E8F0] space-y-3">
+          {result.final_report.key_findings.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2">Key Findings</p>
+              <ul className="space-y-1.5">
+                {result.final_report.key_findings.map((f, i) => (
+                  <li key={i} className="text-sm text-[#0F172A] flex gap-2">
+                    <span className="text-[#2563EB] shrink-0 mt-0.5">▸</span>
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
-
           {result.final_report.uncertainty_notes.length > 0 && (
-            <div className="mt-3">
-              <div className="text-xs font-semibold text-gray-600 mb-1">Uncertainty Notes</div>
+            <div>
+              <p className="text-xs font-semibold text-[#D97706] uppercase tracking-wide mb-2">Uncertainty Notes</p>
               {result.final_report.uncertainty_notes.map((n, i) => (
-                <p key={i} className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1">{n}</p>
+                <div key={i} className="rt-banner-warning text-xs mb-1.5">{n}</div>
               ))}
             </div>
           )}

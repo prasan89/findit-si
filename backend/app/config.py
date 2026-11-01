@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     base_backoff_seconds: float = 1.0
 
     # Phase 3: Multi-agent investigation
-    investigation_timeout_seconds: float = 120.0
-    agent_timeout_seconds: float = 30.0
+    investigation_timeout_seconds: float = 180.0
+    agent_timeout_seconds: float = 60.0
     investigation_budget_usd: float = 2.0
     investigation_model: str = "muse-spark-1.3"
 

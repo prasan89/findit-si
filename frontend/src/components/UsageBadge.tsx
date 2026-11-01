@@ -27,41 +27,49 @@ export default function UsageBadge() {
   if (!usage) return null
 
   const pct = Math.min((usage.total_spent_usd / usage.budget_limit_usd) * 100, 100)
-  const color = usage.is_near_limit ? 'text-orange-600' : 'text-gray-500'
+  const isNear = usage.is_near_limit
 
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className={`text-xs ${color} hover:text-gray-700 flex items-center gap-1`}
+        className="flex items-center gap-2 text-xs text-[#64748B] hover:text-[#0F172A] transition-colors"
         title="AI credit usage"
       >
-        <span className={`inline-block w-12 h-1.5 rounded-full bg-gray-200 overflow-hidden`}>
-          <span
-            className={`block h-full rounded-full ${usage.is_near_limit ? 'bg-orange-500' : 'bg-indigo-400'}`}
+        <div className="w-16 h-1.5 rounded-full bg-[#E2E8F0] overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${isNear ? 'bg-amber-500' : 'bg-[#2563EB]'}`}
             style={{ width: `${pct}%` }}
           />
+        </div>
+        <span className="font-medium tabular-nums">
+          ${usage.total_spent_usd.toFixed(4)}<span className="text-[#94A3B8]"> / ${usage.budget_limit_usd.toFixed(0)}</span>
         </span>
-        <span>${usage.total_spent_usd.toFixed(4)} / ${usage.budget_limit_usd.toFixed(0)}</span>
       </button>
+
       {open && (
-        <div className="absolute right-0 top-6 z-10 bg-white rounded-xl border border-gray-200 shadow-lg p-4 min-w-[240px] text-xs">
-          <div className="font-semibold text-gray-800 mb-2">AI Credit Usage</div>
-          <div className="flex justify-between text-gray-600 mb-1">
-            <span>Spent</span><span>${usage.total_spent_usd.toFixed(4)}</span>
-          </div>
-          <div className="flex justify-between text-gray-600 mb-2">
-            <span>Remaining</span>
-            <span className={usage.is_near_limit ? 'text-orange-600 font-medium' : ''}>
-              ${usage.remaining_usd.toFixed(4)}
-            </span>
-          </div>
-          {usage.by_model.map((m, i) => (
-            <div key={i} className="flex justify-between text-gray-500 border-t pt-1 mt-1">
-              <span>{m.model} ({m.calls} calls)</span>
-              <span>${m.cost_usd.toFixed(4)}</span>
+        <div className="absolute right-0 top-7 z-50 bg-white rounded-xl border border-[#E2E8F0] shadow-lg p-4 min-w-[240px]">
+          <div className="text-xs font-semibold text-[#0F172A] mb-3">AI Credit Usage</div>
+          <div className="space-y-1.5 text-xs">
+            <div className="flex justify-between text-[#64748B]">
+              <span>Spent</span>
+              <span className="font-medium text-[#0F172A] tabular-nums">${usage.total_spent_usd.toFixed(4)}</span>
             </div>
-          ))}
+            <div className="flex justify-between text-[#64748B]">
+              <span>Remaining</span>
+              <span className={`font-medium tabular-nums ${isNear ? 'text-amber-600' : 'text-[#16A34A]'}`}>
+                ${usage.remaining_usd.toFixed(4)}
+              </span>
+            </div>
+            <div className="pt-2 mt-2 border-t border-[#E2E8F0] space-y-1">
+              {usage.by_model.map((m, i) => (
+                <div key={i} className="flex justify-between text-[#94A3B8]">
+                  <span className="truncate max-w-[160px]">{m.model} ({m.calls} calls)</span>
+                  <span className="tabular-nums ml-2">${m.cost_usd.toFixed(4)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

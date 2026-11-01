@@ -38,12 +38,12 @@ async def run(ctx: InvestigationContext) -> AgentResult[ObjectActionAnalysis]:
             {
                 "event_id": ev.get("event_id", ""),
                 "action_description": ev.get("action_description", ""),
-                "observed_facts": ev.get("observed_facts", []),
+                "observed_facts": ev.get("observed_facts", [])[:5],
                 "object_descriptions": ev.get("object_descriptions", []),
                 "event_type": ev.get("event_type", ""),
                 "scene_description": ev.get("scene_description") or "",
             }
-            for ev in events[:10]
+            for ev in events[:5]
         ], indent=2)
 
         prompt = f"""You are a forensic video analyst. For each detected event, identify:
@@ -100,7 +100,7 @@ Return ONLY valid JSON:
                 pass
 
         if not reports:
-            for ev in events[:10]:
+            for ev in events[:5]:
                 reports.append(ObjectActionReport(
                     event_id=ev.get("event_id", ""),
                     objects_identified=ev.get("object_descriptions", []),
@@ -128,7 +128,7 @@ Return ONLY valid JSON:
             usage_measured=call.success and not call.mocked,
             model_used=spec.model,
             provider_used=call.provider,
-            event_ids=[ev.get("event_id", "") for ev in events[:10]],
+            event_ids=[ev.get("event_id", "") for ev in events[:5]],
             retries=max(0, call.attempts - 1),
             timeouts=call.timeouts,
         )

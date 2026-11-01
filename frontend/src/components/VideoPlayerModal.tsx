@@ -20,9 +20,7 @@ export default function VideoPlayerModal({ recording, initialTimestamp, onClose 
   const [videoError, setVideoError] = useState(false)
 
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [onClose])
@@ -35,33 +33,33 @@ export default function VideoPlayerModal({ recording, initialTimestamp, onClose 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-4 overflow-hidden border border-[#E2E8F0]">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="font-medium text-gray-900 truncate">{recording.original_filename}</span>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#E2E8F0]">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="font-semibold text-[#0F172A] truncate text-sm">{recording.original_filename}</span>
             {recording.camera_name && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-medium flex-shrink-0">
-                {recording.camera_name}
-              </span>
+              <span className="rt-badge-blue flex-shrink-0">{recording.camera_name}</span>
             )}
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-red-600 transition-colors flex-shrink-0 ml-4 px-2 py-1 text-sm"
+            className="rt-btn-ghost text-[#94A3B8] hover:text-[#DC2626] ml-4 p-1.5 rounded-lg"
             aria-label="Close"
           >
-            ✕
+            <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
           </button>
         </div>
 
-        {/* Video player */}
+        {/* Video */}
         <div className="bg-black">
           {videoError ? (
-            <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+            <div className="flex items-center justify-center h-64 text-[#94A3B8] text-sm">
               Video unavailable
             </div>
           ) : (
@@ -77,10 +75,10 @@ export default function VideoPlayerModal({ recording, initialTimestamp, onClose 
           )}
         </div>
 
-        {/* Metadata footer */}
-        <div className="px-4 py-3 border-t border-gray-100 text-sm text-gray-600 flex flex-wrap gap-4">
+        {/* Footer metadata */}
+        <div className="px-5 py-3 border-t border-[#E2E8F0] flex flex-wrap gap-4 text-xs text-[#64748B]">
           {recording.camera_location && (
-            <span className="text-indigo-600">{recording.camera_location}</span>
+            <span className="text-[#2563EB] font-medium">{recording.camera_location}</span>
           )}
           {recording.recording_datetime && (
             <span>{new Date(recording.recording_datetime).toLocaleString()}{recording.recording_timezone ? ` (${recording.recording_timezone})` : ''}</span>
@@ -89,7 +87,7 @@ export default function VideoPlayerModal({ recording, initialTimestamp, onClose 
             <span>Duration: {formatDuration(recording.video_duration_seconds)}</span>
           )}
           {initialTimestamp != null && (
-            <span className="text-indigo-600 font-medium">Seeking to {formatDuration(initialTimestamp)}</span>
+            <span className="text-[#2563EB] font-medium">Seeking to {formatDuration(initialTimestamp)}</span>
           )}
         </div>
       </div>

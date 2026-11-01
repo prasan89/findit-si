@@ -37,7 +37,7 @@ async def run(ctx: InvestigationContext) -> AgentResult[AuditReport]:
 
     try:
         claims_to_audit = []
-        for ev in events[:10]:
+        for ev in events[:5]:
             ev_id = ev.get("event_id", "")
             for claim in ev.get("inferred_claims", []):
                 claims_to_audit.append({
@@ -47,7 +47,7 @@ async def run(ctx: InvestigationContext) -> AgentResult[AuditReport]:
                 })
 
         if not claims_to_audit:
-            verified_events = [ev.get("event_id", "") for ev in events[:10]]
+            verified_events = [ev.get("event_id", "") for ev in events[:5]]
             return AgentResult(
                 agent_name=AGENT_NAME,
                 status=AgentStatus.COMPLETED,
@@ -134,7 +134,7 @@ Return ONLY valid JSON:
             verified_event_ids = {c["event_id"] for c in claims_to_audit}
 
         final_verified = verified_event_ids - rejected_event_ids
-        all_event_ids = {ev.get("event_id", "") for ev in events[:10]}
+        all_event_ids = {ev.get("event_id", "") for ev in events[:5]}
         events_no_claims = all_event_ids - {c["event_id"] for c in claims_to_audit}
         final_verified = final_verified | events_no_claims
 
@@ -160,7 +160,7 @@ Return ONLY valid JSON:
             usage_measured=call.success and not call.mocked,
             model_used=spec.model,
             provider_used=call.provider,
-            event_ids=[ev.get("event_id", "") for ev in events[:10]],
+            event_ids=[ev.get("event_id", "") for ev in events[:5]],
             retries=max(0, call.attempts - 1),
             timeouts=call.timeouts,
         )

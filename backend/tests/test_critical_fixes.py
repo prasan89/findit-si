@@ -78,6 +78,20 @@ async def _insert_temporal_event(db, recording_id: str, category: str,
     return eid
 
 
+async def _insert_refine_log(db, recording_id: str, reason: str = "manual",
+                             dense_s: float = 0.0,
+                             status: str = "COMPLETED") -> str:
+    rid = str(uuid.uuid4())
+    await db.execute(
+        """INSERT INTO temporal_refine_log(
+            refine_id, recording_id, start_seconds, end_seconds, reason,
+            dense_seconds, status, uncovered_spans, created_at
+        ) VALUES(?,?,?,?,?,?,?,?,?)""",
+        (rid, recording_id, 0.0, 10.0, reason, dense_s, status, "[]", now_iso()))
+    await db.commit()
+    return rid
+
+
 # ── P1: Incident vocabulary detection ─────────────────────────────────────
 
 class TestIncidentVocabulary:
@@ -133,7 +147,8 @@ class TestAutoTrigger:
 
         triggered = []
 
-        async def _fake_run(recording_id, db_path, storage, meta_client, reason=""):
+        async def _fake_run(recording_id, db_path, storage, meta_client, reason="",
+                            dense_budget_s=None):
             triggered.append(recording_id)
             return {"events": [], "status": "COMPLETED", "partial": False}
 
@@ -193,6 +208,59 @@ class TestAutoTrigger:
             await _maybe_auto_trigger_temporal(db_path, [RECORDING_ID_1], terms, rec_meta)
 
         assert triggered == [], "Recording with existing temporal_events must not be re-triggered"
+
+    async def test_auto_trigger_is_coarse_only(self, db_path, storage):
+        """Auto-trigger must not spend dense vision calls (request-critical path).
+
+        Regression: the auto-trigger planned a full dense run (~120 vision
+        calls) inside investigate() but was killed by its own 30s timeout on
+        every incident query — 30s of latency, burned calls, zero events.
+        """
+        async with get_db(db_path) as db:
+            await insert_recording(db, RECORDING_ID_1)
+
+        seen_kwargs: dict = {}
+
+        async def _fake_run(*a, **kw):
+            seen_kwargs.update(kw)
+            return {"events": [], "status": "COMPLETED", "partial": False}
+
+        mock_client = MagicMock()
+
+        with patch("app.temporal_pipeline.run_temporal_detection", new=_fake_run):
+            from app.deps import register_app_deps
+            register_app_deps(storage=storage, meta_client=mock_client)
+            terms = _tokenize("chain snatch")
+            rec_meta = {RECORDING_ID_1: {"original_filename": "test.mp4"}}
+            await _maybe_auto_trigger_temporal(db_path, [RECORDING_ID_1], terms, rec_meta)
+
+        assert seen_kwargs.get("dense_budget_s") == 0, (
+            "auto-trigger must run coarse-only (dense_budget_s=0); "
+            f"got {seen_kwargs.get('dense_budget_s')!r}")
+
+    async def test_auto_trigger_skips_when_refine_log_exists(self, db_path, storage):
+        """A completed refinement with 0 events must not re-trigger every query."""
+        async with get_db(db_path) as db:
+            await insert_recording(db, RECORDING_ID_1)
+            await _insert_refine_log(db, RECORDING_ID_1)
+
+        triggered = []
+
+        async def _fake_run(*a, **kw):
+            triggered.append(True)
+            return {"events": [], "status": "COMPLETED", "partial": False}
+
+        mock_client = MagicMock()
+
+        with patch("app.temporal_pipeline.run_temporal_detection", new=_fake_run):
+            from app.deps import register_app_deps
+            register_app_deps(storage=storage, meta_client=mock_client)
+            terms = _tokenize("chain snatch")
+            rec_meta = {RECORDING_ID_1: {"original_filename": "test.mp4"}}
+            await _maybe_auto_trigger_temporal(db_path, [RECORDING_ID_1], terms, rec_meta)
+
+        assert triggered == [], (
+            "Recording with a completed refine-log row must not be re-triggered")
 
     async def test_auto_trigger_skips_when_deps_not_registered(self, db_path):
         """If app deps are not registered, auto-trigger silently no-ops."""

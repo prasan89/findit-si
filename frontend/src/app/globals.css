@@ -1,3 +1,151 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Brand palette ──────────────────────────────── */
+    --color-primary:        #2563EB;
+    --color-primary-hover:  #1D4ED8;
+    --color-primary-subtle: #EFF6FF;
+    --color-primary-light:  #BFDBFE;
+
+    /* ── App surfaces ───────────────────────────────── */
+    --color-bg:             #F8FAFC;
+    --color-surface:        #FFFFFF;
+    --color-surface-alt:    #F1F5F9;
+    --color-border:         #E2E8F0;
+    --color-border-focus:   #93C5FD;
+
+    /* ── Text ───────────────────────────────────────── */
+    --color-text:           #0F172A;
+    --color-text-secondary: #64748B;
+    --color-text-muted:     #94A3B8;
+
+    /* ── Status ─────────────────────────────────────── */
+    --color-success:        #16A34A;
+    --color-success-bg:     #F0FDF4;
+    --color-success-border: #BBF7D0;
+    --color-warning:        #D97706;
+    --color-warning-bg:     #FFFBEB;
+    --color-warning-border: #FDE68A;
+    --color-danger:         #DC2626;
+    --color-danger-bg:      #FEF2F2;
+    --color-danger-border:  #FECACA;
+    --color-info:           #0284C7;
+    --color-info-bg:        #F0F9FF;
+    --color-info-border:    #BAE6FD;
+
+    /* ── Shadows ────────────────────────────────────── */
+    --shadow-sm:  0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md:  0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+    --shadow-lg:  0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+
+    /* ── Radius ─────────────────────────────────────── */
+    --radius-sm:  0.375rem;   /* 6px  */
+    --radius-md:  0.5rem;     /* 8px  */
+    --radius-lg:  0.75rem;    /* 12px */
+    --radius-xl:  1rem;       /* 16px */
+    --radius-2xl: 1.5rem;     /* 24px */
+  }
+}
+
+/* ── Utility layer: design-system helpers ────────────── */
+@layer components {
+
+  /* Surfaces */
+  .rt-card {
+    @apply bg-white rounded-xl border border-[#E2E8F0] shadow-sm;
+  }
+  .rt-card-alt {
+    @apply bg-[#F8FAFC] rounded-xl border border-[#E2E8F0];
+  }
+
+  /* Inputs */
+  .rt-input {
+    @apply w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm
+           text-[#0F172A] placeholder-[#94A3B8]
+           focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB]
+           disabled:bg-[#F1F5F9] disabled:cursor-not-allowed transition-colors;
+  }
+  .rt-label {
+    @apply block text-sm font-medium text-[#0F172A] mb-1;
+  }
+
+  /* Buttons */
+  .rt-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+           bg-[#2563EB] text-white text-sm font-semibold
+           hover:bg-[#1D4ED8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD]
+           disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+  }
+  .rt-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+           bg-white text-[#0F172A] text-sm font-medium border border-[#E2E8F0]
+           hover:bg-[#F1F5F9] focus:outline-none focus:ring-2 focus:ring-[#93C5FD]
+           disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+  }
+  .rt-btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5
+           text-[#64748B] text-sm font-medium
+           hover:bg-[#F1F5F9] hover:text-[#0F172A]
+           focus:outline-none focus:ring-2 focus:ring-[#93C5FD]
+           disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+  }
+  .rt-btn-danger {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5
+           text-[#DC2626] text-sm font-medium border border-transparent
+           hover:bg-[#FEF2F2] hover:border-[#FECACA]
+           focus:outline-none focus:ring-2 focus:ring-red-200
+           disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+  }
+
+  /* Status badges */
+  .rt-badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  .rt-badge-blue   { @apply rt-badge bg-[#EFF6FF] text-[#2563EB]; }
+  .rt-badge-green  { @apply rt-badge bg-[#F0FDF4] text-[#16A34A]; }
+  .rt-badge-amber  { @apply rt-badge bg-[#FFFBEB] text-[#D97706]; }
+  .rt-badge-red    { @apply rt-badge bg-[#FEF2F2] text-[#DC2626]; }
+  .rt-badge-gray   { @apply rt-badge bg-[#F1F5F9] text-[#64748B]; }
+  .rt-badge-purple { @apply rt-badge bg-purple-50 text-purple-700; }
+
+  /* Page scaffold */
+  .rt-page {
+    @apply min-h-screen bg-[#F8FAFC];
+  }
+  .rt-page-header {
+    @apply bg-white border-b border-[#E2E8F0] px-6 py-4;
+  }
+  .rt-page-content {
+    @apply max-w-6xl mx-auto px-6 py-6;
+  }
+
+  /* Section heading */
+  .rt-section-title {
+    @apply text-base font-semibold text-[#0F172A];
+  }
+  .rt-section-subtitle {
+    @apply text-sm text-[#64748B] mt-0.5;
+  }
+
+  /* Timeline/alert banners */
+  .rt-banner-success {
+    @apply rounded-lg px-4 py-3 text-sm bg-[#F0FDF4] text-[#16A34A] border border-[#BBF7D0];
+  }
+  .rt-banner-warning {
+    @apply rounded-lg px-4 py-3 text-sm bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A];
+  }
+  .rt-banner-danger {
+    @apply rounded-lg px-4 py-3 text-sm bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA];
+  }
+  .rt-banner-info {
+    @apply rounded-lg px-4 py-3 text-sm bg-[#F0F9FF] text-[#0284C7] border border-[#BAE6FD];
+  }
+
+  /* Empty state */
+  .rt-empty {
+    @apply flex flex-col items-center justify-center py-16 text-center text-[#94A3B8];
+  }
+}

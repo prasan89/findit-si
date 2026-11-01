@@ -290,6 +290,16 @@ class AccountedFrameAnalyzer:
         self.max_backoff = max_backoff
         self.retry_jitter = retry_jitter
         self.model_version = delegate.model_version
+        # Detect at construction time whether the delegate's analyze_frame
+        # accepts a `prompt` keyword argument. Delegates that pre-date the
+        # two-pass feature don't — forwarding `prompt=` to them would raise
+        # TypeError which the retry logic would treat as non-retryable.
+        import inspect
+        try:
+            sig = inspect.signature(delegate.analyze_frame)
+            self._delegate_accepts_prompt = "prompt" in sig.parameters
+        except (ValueError, TypeError):
+            self._delegate_accepts_prompt = False
 
     def with_recording_id(self, recording_id: str) -> "AccountedFrameAnalyzer":
         """Return a new wrapper bound to a specific recording_id."""
@@ -316,7 +326,17 @@ class AccountedFrameAnalyzer:
                 f"${available:.4f} remaining (reserve=${self.budget_reserve_usd:.2f})"
             )
 
-    async def analyze_frame(self, frame_data: bytes) -> dict:
+    async def analyze_frame(
+        self, frame_data: bytes, *, prompt: Optional[str] = None
+    ) -> dict:
+        # When a custom prompt is requested but the delegate's analyze_frame
+        # doesn't accept the `prompt` keyword, raise immediately. The hazard
+        # pass in processor.py catches this and skips the pass gracefully.
+        if prompt is not None and not self._delegate_accepts_prompt:
+            raise TypeError(
+                f"{type(self.delegate).__name__}.analyze_frame does not "
+                "accept a 'prompt' keyword argument"
+            )
         last_exc: Optional[Exception] = None
         for attempt in range(1, self.max_attempts + 1):
             # Budget is re-checked before every attempt so retries stop as
@@ -325,7 +345,12 @@ class AccountedFrameAnalyzer:
 
             t0 = time.monotonic()
             try:
-                result = await self.delegate.analyze_frame(frame_data)
+                if prompt is not None:
+                    result = await self.delegate.analyze_frame(
+                        frame_data, prompt=prompt
+                    )
+                else:
+                    result = await self.delegate.analyze_frame(frame_data)
                 latency_ms = (time.monotonic() - t0) * 1000.0
 
                 # Extract actual token counts if the delegate embedded them.

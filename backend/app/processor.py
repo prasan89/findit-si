@@ -155,8 +155,10 @@ async def get_video_duration(video_path: Path) -> Optional[float]:
 # Phase 6: cache keys are (content_hash, model_version, prompt_version) so
 # cached analyses can never be reused across incompatible prompts/models.
 # Bumped to "2" for the Phase 4 prompt rewrite; v1 rows simply never hit.
+# "h1" is the hazard/animal second-pass prompt version.
 PROMPT_VERSION = "2"
 LEGACY_PROMPT_VERSION = "1"
+HAZARD_PROMPT_VERSION = "h1"
 
 
 async def get_cached_analysis(
@@ -448,6 +450,7 @@ async def process_recording(
             content_hash = compute_content_hash(frame_data)
             model_version = meta_client.model_version
 
+            # ── General pass ──────────────────────────────────────────────
             # Check cache (content + model + prompt scoped)
             cached_analysis = None
             async with get_db(db_path) as db:
@@ -494,7 +497,7 @@ async def process_recording(
                 fd = await f.read()
             frame_rel_path = await storage.save_frame(recording_id, frame_id, fd)
 
-            # Parse observations from model response
+            # Parse observations from general model response
             observations = _parse_observations(
                 analysis=cached_analysis,
                 recording_id=recording_id,
@@ -505,7 +508,61 @@ async def process_recording(
                 source_frame_path=frame_rel_path,
                 content_hash=content_hash,
                 model_version=model_version,
+                analysis_pass="general",
             )
+
+            # ── Hazard/animal second pass ──────────────────────────────────
+            # Run a second analysis focused on animals, hazards, and unusual
+            # floor-level objects — items the general prompt omits. Uses a
+            # separate cache key (HAZARD_PROMPT_VERSION) so cached general
+            # results are never confused with hazard results.
+            hazard_analysis = None
+            if api_calls < max_api_calls:
+                async with get_db(db_path) as db:
+                    hazard_analysis = await get_cached_analysis(
+                        db, content_hash, model_version,
+                        prompt_version=HAZARD_PROMPT_VERSION)
+                if hazard_analysis is not None:
+                    cache_hits += 1
+                else:
+                    try:
+                        from .meta_client import HAZARD_ANALYSIS_PROMPT
+                        hazard_analysis = await meta_client.analyze_frame(
+                            frame_data, prompt=HAZARD_ANALYSIS_PROMPT)
+                        api_calls += 1
+                        async with get_db(db_path) as db:
+                            await store_cached_analysis(
+                                db, content_hash, model_version, hazard_analysis,
+                                prompt_version=HAZARD_PROMPT_VERSION)
+                            await db.commit()
+                    except BudgetExceededError:
+                        pass  # Hazard pass is best-effort; don't stop main loop
+                    except Exception as e:
+                        logger.warning(
+                            "Hazard pass failed for frame %.1fs of %s: %s",
+                            ts, recording_id, e)
+
+            if hazard_analysis:
+                hazard_obs = _parse_observations(
+                    analysis=hazard_analysis,
+                    recording_id=recording_id,
+                    frame_id=frame_id,
+                    video_timestamp_seconds=ts,
+                    recording_datetime=recording_datetime,
+                    recording_timezone=recording_timezone,
+                    source_frame_path=frame_rel_path,
+                    content_hash=content_hash,
+                    model_version=model_version,
+                    analysis_pass="hazard",
+                )
+                # Only keep hazard observations not already covered by general
+                # pass (deduplicate by normalized label to avoid "snake on floor"
+                # appearing twice if the general pass caught it in scene_summary).
+                general_labels_lower = {
+                    o["object_label"].lower() for o in observations}
+                for hobs in hazard_obs:
+                    if hobs["object_label"].lower() not in general_labels_lower:
+                        observations.append(hobs)
 
             # Store observations. Idempotent per frame: prior rows for this
             # frame are removed first, so reprocessing (manual or retry)
@@ -516,26 +573,51 @@ async def process_recording(
                     (recording_id, frame_id),
                 )
                 for obs in observations:
-                    await db.execute(
-                        """INSERT OR IGNORE INTO observations(
-                            observation_id, recording_id, frame_id,
-                            video_timestamp_seconds, frame_capture_timestamp,
-                            recording_datetime, recording_timezone,
-                            object_label, object_attributes, scene_description,
-                            source_frame_path, detection_score, model_version,
-                            index_version, content_hash, raw_model_response, created_at
-                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (
-                            obs['observation_id'], obs['recording_id'], obs['frame_id'],
-                            obs['video_timestamp_seconds'], obs.get('frame_capture_timestamp'),
-                            obs.get('recording_datetime'), obs.get('recording_timezone'),
-                            obs['object_label'], json.dumps(obs['object_attributes']),
-                            obs.get('scene_description'), obs['source_frame_path'],
-                            obs['detection_score'], obs.get('model_version'),
-                            obs.get('index_version', '1'), obs.get('content_hash'),
-                            json.dumps(cached_analysis), _now(),
+                    try:
+                        await db.execute(
+                            """INSERT OR IGNORE INTO observations(
+                                observation_id, recording_id, frame_id,
+                                video_timestamp_seconds, frame_capture_timestamp,
+                                recording_datetime, recording_timezone,
+                                object_label, object_attributes, scene_description,
+                                source_frame_path, detection_score, model_version,
+                                index_version, content_hash, raw_model_response,
+                                analysis_pass, created_at
+                            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (
+                                obs['observation_id'], obs['recording_id'], obs['frame_id'],
+                                obs['video_timestamp_seconds'], obs.get('frame_capture_timestamp'),
+                                obs.get('recording_datetime'), obs.get('recording_timezone'),
+                                obs['object_label'], json.dumps(obs['object_attributes']),
+                                obs.get('scene_description'), obs['source_frame_path'],
+                                obs['detection_score'], obs.get('model_version'),
+                                obs.get('index_version', '1'), obs.get('content_hash'),
+                                json.dumps(cached_analysis),
+                                obs.get('analysis_pass', 'general'), _now(),
+                            )
                         )
-                    )
+                    except Exception:
+                        # Fallback: insert without analysis_pass for older schemas
+                        await db.execute(
+                            """INSERT OR IGNORE INTO observations(
+                                observation_id, recording_id, frame_id,
+                                video_timestamp_seconds, frame_capture_timestamp,
+                                recording_datetime, recording_timezone,
+                                object_label, object_attributes, scene_description,
+                                source_frame_path, detection_score, model_version,
+                                index_version, content_hash, raw_model_response, created_at
+                            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (
+                                obs['observation_id'], obs['recording_id'], obs['frame_id'],
+                                obs['video_timestamp_seconds'], obs.get('frame_capture_timestamp'),
+                                obs.get('recording_datetime'), obs.get('recording_timezone'),
+                                obs['object_label'], json.dumps(obs['object_attributes']),
+                                obs.get('scene_description'), obs['source_frame_path'],
+                                obs['detection_score'], obs.get('model_version'),
+                                obs.get('index_version', '1'), obs.get('content_hash'),
+                                json.dumps(cached_analysis), _now(),
+                            )
+                        )
                 await db.commit()
 
             frame_count += 1
@@ -619,6 +701,7 @@ def _parse_observations(
     source_frame_path: str,
     content_hash: str,
     model_version: str,
+    analysis_pass: str = "general",
 ) -> list[dict]:
     """
     Parse AI model response into observation dicts.
@@ -673,6 +756,7 @@ def _parse_observations(
             'model_version': model_version,
             'index_version': '1',
             'content_hash': content_hash,
+            'analysis_pass': analysis_pass,
         })
     return result
 

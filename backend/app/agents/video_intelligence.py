@@ -38,16 +38,16 @@ async def run(ctx: InvestigationContext) -> AgentResult[VisualSummaryReport]:
             {
                 "event_id": ev.get("event_id", ""),
                 "action_description": ev.get("action_description", ""),
-                "observed_facts": ev.get("observed_facts", []),
+                "observed_facts": ev.get("observed_facts", [])[:5],
                 "object_descriptions": ev.get("object_descriptions", []),
                 "timestamp_seconds": ev.get("timestamp_seconds", 0),
                 "camera_name": ev.get("camera_name") or ev.get("cam_name", ""),
                 "evidence_frames": [
                     f.get("frame_path", "") if isinstance(f, dict) else str(f)
-                    for f in (ev.get("evidence_frames") or [])
+                    for f in (ev.get("evidence_frames") or [])[:2]
                 ],
             }
-            for ev in events[:10]
+            for ev in events[:5]
         ], indent=2)
 
         prompt = f"""You are a CCTV investigation analyst. Review these detected events and provide a concise visual intelligence summary for each.
@@ -104,7 +104,7 @@ Return ONLY valid JSON — no prose, no markdown:
                 pass
 
         if not summaries:
-            for ev in events[:10]:
+            for ev in events[:5]:
                 ev_id = ev.get("event_id", "")
                 summaries.append(VisualSummary(
                     event_id=ev_id,
@@ -132,7 +132,7 @@ Return ONLY valid JSON — no prose, no markdown:
             usage_measured=call.success and not call.mocked,
             model_used=spec.model,
             provider_used=call.provider,
-            event_ids=[ev.get("event_id", "") for ev in events[:10]],
+            event_ids=[ev.get("event_id", "") for ev in events[:5]],
             retries=max(0, call.attempts - 1),
             timeouts=call.timeouts,
         )

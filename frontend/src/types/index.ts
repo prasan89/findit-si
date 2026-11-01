@@ -126,6 +126,28 @@ export interface InvestigationRequest {
   time_end_seconds?: number
 }
 
+export type MatchClassification =
+  | 'relevant_match'
+  | 'possible_match'
+  | 'no_match'
+  | 'needs_review'
+  | 'analysis_failed'
+
+export interface VideoAnalysisSummary {
+  recording_id: string
+  filename: string
+  duration_seconds?: number | null
+  thumbnail_path?: string | null
+  camera_name?: string | null
+  camera_location?: string | null
+  processing_status: string
+  match_classification: MatchClassification
+  observation: string
+  relevant_timestamps: number[]
+  event_ids: string[]
+  confidence?: number | null
+}
+
 export interface InvestigationResult {
   investigation_id: string
   query: string
@@ -138,6 +160,7 @@ export interface InvestigationResult {
   total_events_found: number
   evidence_gaps: string[]
   uncertainty_summary: string
+  video_summaries?: VideoAnalysisSummary[]
 }
 
 // ── Temporal (incident timeline) types ───────────────────────────────────────

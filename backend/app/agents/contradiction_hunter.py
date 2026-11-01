@@ -45,13 +45,13 @@ async def run(ctx: InvestigationContext) -> AgentResult[ContradictionReport]:
             {
                 "event_id": ev.get("event_id", ""),
                 "action_description": ev.get("action_description", ""),
-                "observed_facts": ev.get("observed_facts", []),
-                "inferred_claims": ev.get("inferred_claims", []),
+                "observed_facts": ev.get("observed_facts", [])[:4],
+                "inferred_claims": ev.get("inferred_claims", [])[:2],
                 "timestamp_seconds": ev.get("timestamp_seconds", 0),
                 "camera_name": ev.get("camera_name") or ev.get("cam_name", ""),
                 "confidence": ev.get("confidence", 0.5),
             }
-            for ev in events[:10]
+            for ev in events[:5]
         ], indent=2)
 
         inconsistencies_text = json.dumps(inconsistencies) if inconsistencies else "[]"
@@ -148,7 +148,7 @@ Return ONLY valid JSON. If no contradictions found, return contradictions_found:
             usage_measured=call.success and not call.mocked,
             model_used=spec.model,
             provider_used=call.provider,
-            event_ids=[ev.get("event_id", "") for ev in events[:10]],
+            event_ids=[ev.get("event_id", "") for ev in events[:5]],
             retries=max(0, call.attempts - 1),
             timeouts=call.timeouts,
         )

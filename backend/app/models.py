@@ -243,6 +243,29 @@ class InvestigationRequest(BaseModel):
         return v
 
 
+class MatchClassification(str, Enum):
+    RELEVANT_MATCH  = "relevant_match"   # evidence clearly supports the query
+    POSSIBLE_MATCH  = "possible_match"   # behaviour may be relevant but ambiguous
+    NO_MATCH        = "no_match"         # no relevant activity found
+    NEEDS_REVIEW    = "needs_review"     # analysis uncertain or incomplete
+    ANALYSIS_FAILED = "analysis_failed"  # video could not be analysed
+
+
+class VideoAnalysisSummary(BaseModel):
+    recording_id: str
+    filename: str
+    duration_seconds: Optional[float] = None
+    thumbnail_path: Optional[str] = None
+    camera_name: Optional[str] = None
+    camera_location: Optional[str] = None
+    processing_status: str = "INDEXED"
+    match_classification: MatchClassification
+    observation: str
+    relevant_timestamps: list[float] = []
+    event_ids: list[str] = []
+    confidence: Optional[float] = None
+
+
 class InvestigationResult(BaseModel):
     investigation_id: str
     query: str
@@ -261,3 +284,5 @@ class InvestigationResult(BaseModel):
     # Concise one-line incident summary (primary finding first); the full
     # narrative stays in `narrative` for expandable detail.
     summary: str = ""
+    # Per-video analysis summaries for the investigation results list view.
+    video_summaries: list[VideoAnalysisSummary] = []

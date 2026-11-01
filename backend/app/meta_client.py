@@ -50,13 +50,46 @@ Return ONLY valid JSON — no prose, no markdown fences:
   "scene_summary": "one sentence: location type, who/what is present, and the primary observable activity"
 }"""
 
+HAZARD_ANALYSIS_PROMPT = """You are a second-pass hazard and object detection analyst reviewing a CCTV frame. The general scene analysis has already noted people, vehicles, and common objects. Your task is to find what it may have missed.
+
+Look specifically for:
+1. Animals — snakes, rodents, dogs, cats, birds, insects or any creature on the floor, countertop, or in an unusual location. Describe species (if identifiable), color, size, and exact position.
+2. Hazards — fire, smoke, flooding/water pooling, sparks, fallen objects blocking paths, spilled liquids, exposed wires, broken glass, structural damage visible in frame.
+3. Unusual floor-level objects — items on the ground that are out of place: dropped items, unknown packages, stains, debris.
+4. Concealed or partially hidden objects — items tucked behind furniture, partially occluded, or placed in atypical locations.
+
+Rules:
+- Report ONLY what is DIRECTLY VISIBLE in this frame. Do not guess if something is too small, occluded, or ambiguous — say so and lower confidence.
+- If nothing is found in a category, omit it from objects (do not list empty categories).
+- Return an empty objects list if nothing unusual is visible.
+
+Return ONLY valid JSON — no prose, no markdown fences:
+{
+  "objects": [
+    {
+      "label": "concise label (e.g. 'snake on floor', 'smoke near ceiling', 'wet floor hazard')",
+      "attributes": {
+        "color": "primary color(s)",
+        "shape": "body type or form factor",
+        "size": "approximate size relative to scene",
+        "distinctive_details": "any notable features: pattern, texture, position cues"
+      },
+      "scene_description": "exact location and context of this hazard/animal/object in the frame",
+      "confidence": 0.8
+    }
+  ],
+  "scene_summary": "one sentence: what hazards or animals were found, or 'No hazards or unusual objects detected'"
+}"""
+
 
 @runtime_checkable
 class FrameAnalyzer(Protocol):
     """Interface every provider must satisfy."""
     model_version: str
 
-    async def analyze_frame(self, frame_data: bytes) -> dict:
+    async def analyze_frame(
+        self, frame_data: bytes, *, prompt: Optional[str] = None
+    ) -> dict:
         """Return parsed analysis dict with 'objects' and 'scene_summary' keys."""
         ...
 
@@ -151,8 +184,11 @@ class MuseSparkClient:
             pool=self.connect_timeout_s,
         )
 
-    async def analyze_frame(self, frame_data: bytes) -> dict:
+    async def analyze_frame(
+        self, frame_data: bytes, *, prompt: Optional[str] = None
+    ) -> dict:
         b64 = base64.b64encode(frame_data).decode("utf-8")
+        active_prompt = prompt if prompt is not None else ANALYSIS_PROMPT
 
         payload = {
             "model": self.model,
@@ -167,7 +203,7 @@ class MuseSparkClient:
                                 "detail": "high",
                             },
                         },
-                        {"type": "text", "text": ANALYSIS_PROMPT},
+                        {"type": "text", "text": active_prompt},
                     ],
                 }
             ],
@@ -322,7 +358,9 @@ class MockMetaClient:
         self.scenario_map = scenario_map or {}
         self._call_count = 0
 
-    async def analyze_frame(self, frame_data: bytes) -> dict:
+    async def analyze_frame(
+        self, frame_data: bytes, *, prompt: Optional[str] = None
+    ) -> dict:
         self._call_count += 1
         h = hashlib.sha256(frame_data).hexdigest()
         if h in self.scenario_map:

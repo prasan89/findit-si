@@ -79,6 +79,42 @@ OBJECT_SUBJECTS = frozenset({
     "box", "boxes", "carton", "cartons", "crate", "crates",
     "parcel", "parcels",
 })
+# Furniture and fixture subjects for query relevance (chair, table, desk, etc.).
+# Retrieval-class only: events not mentioning furniture are gated out when the
+# query targets a specific furniture item. Hypernym ("furniture") matches any
+# furniture item; hyponyms ("chair", "table") require their own lemma.
+FURNITURE_HYPERNYMS = frozenset({"furniture"})
+FURNITURE_SUBJECTS = frozenset({
+    "furniture",
+    "chair", "chairs", "stool", "stools", "bench", "benches",
+    "table", "tables", "desk", "desks", "counter", "counters",
+    "cabinet", "cabinets", "shelf", "shelves", "bookcase", "bookcases",
+    "sofa", "sofas", "couch", "couches", "armchair", "armchairs",
+    "bed", "beds", "mattress", "mattresses",
+    "wardrobe", "wardrobes", "dresser", "dressers",
+    "trolley", "trolleys", "cart", "carts",
+})
+# Plural/singular pairs for furniture hyponyms (for exact-lemma matching).
+FURNITURE_LEMMA = {
+    "chair": "chairs", "chairs": "chair",
+    "stool": "stools", "stools": "stool",
+    "bench": "benches", "benches": "bench",
+    "table": "tables", "tables": "table",
+    "desk": "desks", "desks": "desk",
+    "counter": "counters", "counters": "counter",
+    "cabinet": "cabinets", "cabinets": "cabinet",
+    "shelf": "shelves", "shelves": "shelf",
+    "bookcase": "bookcases", "bookcases": "bookcase",
+    "sofa": "sofas", "sofas": "sofa",
+    "couch": "couches", "couches": "couch",
+    "armchair": "armchairs", "armchairs": "armchair",
+    "bed": "beds", "beds": "bed",
+    "mattress": "mattresses", "mattresses": "mattress",
+    "wardrobe": "wardrobes", "wardrobes": "wardrobe",
+    "dresser": "dressers", "dressers": "dresser",
+    "trolley": "trolleys", "trolleys": "trolley",
+    "cart": "carts", "carts": "cart",
+}
 # Animal subjects for query relevance. Hypernym ("animal") matches animal
 # evidence only — never bird or person evidence (broad words are not
 # auto-synonyms; see test_animal_does_not_match_people). Hyponyms ("dog")
