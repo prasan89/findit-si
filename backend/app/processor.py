@@ -159,6 +159,13 @@ async def get_video_duration(video_path: Path) -> Optional[float]:
 PROMPT_VERSION = "2"
 LEGACY_PROMPT_VERSION = "1"
 HAZARD_PROMPT_VERSION = "h1"
+# Upload understanding pass: segment understanding for action/event indexing.
+# Versioned separately so cached per-frame analyses are unaffected.
+UPLOAD_UNDERSTANDING_PROMPT_VERSION = "u1"
+# Frames per upload segment window (keeps prompt + images within token budget)
+UPLOAD_SEGMENT_FRAMES = 8
+# Stride between consecutive segment windows (half the window = 50% overlap)
+UPLOAD_SEGMENT_STRIDE = 4
 
 
 async def get_cached_analysis(
@@ -443,6 +450,8 @@ async def process_recording(
 
         api_calls = 0
         cache_hits = 0
+        # Indexed frame paths (timestamp, frame_rel_path) for upload understanding pass
+        indexed_frame_paths: list[tuple[float, str]] = []
         for (ts, frame_path) in frames:
             async with aiofiles.open(frame_path, 'rb') as f:
                 frame_data = await f.read()
@@ -496,6 +505,8 @@ async def process_recording(
             async with aiofiles.open(frame_path, 'rb') as f:
                 fd = await f.read()
             frame_rel_path = await storage.save_frame(recording_id, frame_id, fd)
+            # Track for upload understanding pass
+            indexed_frame_paths.append((ts, frame_rel_path))
 
             # Parse observations from general model response
             observations = _parse_observations(
@@ -622,6 +633,30 @@ async def process_recording(
 
             frame_count += 1
 
+        # ── Upload understanding pass ──────────────────────────────────────────
+        # After all per-frame observations are collected, run a segment-level
+        # understanding pass using the general UPLOAD_UNDERSTANDING_PROMPT.
+        # This produces: entities, actions, interactions, changes, and unusual
+        # observations — independent of any future user query.
+        #
+        # Strategy: split indexed frames into overlapping windows of
+        # UPLOAD_SEGMENT_FRAMES frames each, stride by half that size so
+        # transitions between segments are covered. Cap to max_api_calls.
+        if indexed_frame_paths and api_calls < max_api_calls:
+            upload_understanding_results = await _run_upload_understanding(
+                recording_id=recording_id,
+                db_path=db_path,
+                storage=storage,
+                meta_client=meta_client,
+                indexed_frame_paths=indexed_frame_paths,
+                api_calls=api_calls,
+                max_api_calls=max_api_calls,
+                errors=errors,
+            )
+            understanding_calls = upload_understanding_results["api_calls_used"]
+        else:
+            understanding_calls = 0
+
         # Cleanup tmp frames
         import shutil
         if tmp_dir.exists():
@@ -644,6 +679,7 @@ async def process_recording(
             f"Indexed {frame_count}/{len(frames)} frames, {api_calls} API calls, "
             f"{cache_hits} cache hits, {failed_frames} failed, "
             f"{skipped_frames} skipped"
+            + (f", {understanding_calls} understanding calls" if understanding_calls else "")
         )
         async with get_db(db_path) as db:
             await db.execute(
@@ -782,3 +818,173 @@ async def _generate_thumbnail(recording_id: str, storage: LocalStorageBackend, d
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+async def _run_upload_understanding(
+    recording_id: str,
+    db_path: str,
+    storage: LocalStorageBackend,
+    meta_client,
+    indexed_frame_paths: list[tuple[float, str]],
+    api_calls: int,
+    max_api_calls: int,
+    errors: list,
+) -> dict:
+    """Run the upload understanding pass on indexed frames.
+
+    Splits the video into overlapping windows of UPLOAD_SEGMENT_FRAMES frames,
+    calls analyze_upload_segment() on each, and stores the structured results
+    in the upload_understandings table for use by extract_events_for_recording.
+
+    Returns {"api_calls_used": int}.
+    """
+    if not indexed_frame_paths:
+        return {"api_calls_used": 0}
+
+    # Skip if client doesn't support analyze_upload_segment
+    if not hasattr(meta_client, "analyze_upload_segment"):
+        logger.debug("meta_client has no analyze_upload_segment; skipping upload pass")
+        return {"api_calls_used": 0}
+
+    frames_n = len(indexed_frame_paths)
+    calls_used = 0
+
+    # Build overlapping windows
+    windows: list[list[tuple[float, str]]] = []
+    i = 0
+    while i < frames_n:
+        window = indexed_frame_paths[i:i + UPLOAD_SEGMENT_FRAMES]
+        windows.append(window)
+        i += UPLOAD_SEGMENT_STRIDE
+
+    logger.info(
+        "Upload understanding: %d windows for recording %s (%d frames)",
+        len(windows), recording_id[:8], frames_n,
+    )
+
+    segments_stored = 0
+    for window in windows:
+        if api_calls + calls_used >= max_api_calls:
+            logger.info(
+                "Upload understanding: stopping at %d/%d windows (API limit)",
+                segments_stored, len(windows),
+            )
+            break
+
+        # Build a combined content hash for this window (sorted frame hashes)
+        # so the result can be cached independently per segment.
+        ts_list = [ts for ts, _ in window]
+        segment_key = ",".join(f"{ts:.3f}" for ts in ts_list)
+        segment_hash = hashlib.sha256(
+            f"{recording_id}:{segment_key}".encode()
+        ).hexdigest()
+
+        # Check if already stored for this recording+segment
+        async with get_db(db_path) as db:
+            try:
+                existing = await (await db.execute(
+                    """SELECT segment_hash FROM upload_understandings
+                       WHERE recording_id = ? AND segment_hash = ?""",
+                    (recording_id, segment_hash),
+                )).fetchone()
+            except Exception:
+                existing = None  # table may not exist yet
+
+        if existing:
+            logger.debug("Upload understanding cached for segment %s", segment_key[:20])
+            continue
+
+        # Read frame bytes
+        frame_bytes: list[bytes] = []
+        frame_timestamps: list[float] = []
+        for ts, frame_rel_path in window:
+            try:
+                frame_abs = storage.data_dir / frame_rel_path
+                async with aiofiles.open(frame_abs, "rb") as f:
+                    frame_bytes.append(await f.read())
+                frame_timestamps.append(ts)
+            except Exception as exc:
+                logger.warning(
+                    "Upload understanding: could not read frame %.1fs: %s", ts, exc)
+
+        if not frame_bytes:
+            continue
+
+        # Call the understanding API
+        try:
+            result = await meta_client.analyze_upload_segment(
+                frame_bytes, frame_timestamps
+            )
+            calls_used += 1
+        except BudgetExceededError as exc:
+            errors.append(f"Budget exceeded during upload understanding: {str(exc)[:200]}")
+            logger.warning("Budget exceeded in upload understanding for %s", recording_id)
+            break
+        except Exception as exc:
+            logger.warning(
+                "Upload understanding failed for segment [%.1f-%.1f] of %s: %s",
+                ts_list[0], ts_list[-1], recording_id[:8], exc,
+            )
+            continue
+
+        # Store the result
+        try:
+            await _store_upload_understanding(
+                db_path=db_path,
+                recording_id=recording_id,
+                segment_hash=segment_hash,
+                start_seconds=ts_list[0],
+                end_seconds=ts_list[-1],
+                result=result,
+            )
+            segments_stored += 1
+        except Exception as exc:
+            logger.warning(
+                "Failed to store upload understanding for %s: %s",
+                recording_id[:8], exc,
+            )
+
+    logger.info(
+        "Upload understanding: stored %d segments for recording %s (%d API calls)",
+        segments_stored, recording_id[:8], calls_used,
+    )
+    return {"api_calls_used": calls_used}
+
+
+async def _store_upload_understanding(
+    db_path: str,
+    recording_id: str,
+    segment_hash: str,
+    start_seconds: float,
+    end_seconds: float,
+    result: dict,
+) -> None:
+    """Persist one upload understanding segment result."""
+    async with get_db(db_path) as db:
+        await db.execute(
+            """INSERT OR REPLACE INTO upload_understandings(
+                segment_id, recording_id, segment_hash,
+                start_seconds, end_seconds,
+                scene_context, entities_json, actions_json,
+                interactions_json, changes_json,
+                unusual_observations_json, uncertain_observations_json,
+                static_scene, created_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                str(uuid.uuid4()),
+                recording_id,
+                segment_hash,
+                start_seconds,
+                end_seconds,
+                result.get("scene_context", ""),
+                json.dumps(result.get("entities", [])),
+                json.dumps(result.get("actions", [])),
+                json.dumps(result.get("interactions", [])),
+                json.dumps(result.get("changes", [])),
+                json.dumps(result.get("unusual_observations", [])),
+                json.dumps(result.get("uncertain_observations", [])),
+                1 if result.get("static_scene") else 0,
+                _now(),
+            ),
+        )
+        await db.commit()

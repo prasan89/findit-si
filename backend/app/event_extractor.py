@@ -377,6 +377,12 @@ async def extract_events_for_recording(recording_id: str, db_path: str) -> int:
     """
     Extract and persist events for a recording. Returns the number of events stored.
     Idempotent: deletes existing events for the recording before re-extracting.
+
+    Two-path strategy:
+    - If upload_understandings data exists for this recording, generate rich
+      action-level events from entities/actions/changes (understanding path).
+    - Always run the observation-grouping path as a fallback/supplement.
+    - Deduplicate by timestamp proximity when both paths produce events.
     """
     async with get_db(db_path) as db:
         # Load recording metadata
@@ -408,12 +414,27 @@ async def extract_events_for_recording(recording_id: str, db_path: str) -> int:
 
         observations = [dict(r) for r in obs_rows]
 
+        # Load upload understanding segments if available
+        understanding_rows: list[dict] = []
+        try:
+            u_rows = await (await db.execute(
+                """SELECT segment_id, start_seconds, end_seconds,
+                          scene_context, entities_json, actions_json,
+                          interactions_json, changes_json,
+                          unusual_observations_json, uncertain_observations_json,
+                          static_scene
+                   FROM upload_understandings
+                   WHERE recording_id = ?
+                   ORDER BY start_seconds""",
+                (recording_id,),
+            )).fetchall()
+            understanding_rows = [dict(r) for r in u_rows]
+        except Exception:
+            pass  # Table may not exist yet on older databases
+
         # Delete stale events for this recording
         await db.execute("DELETE FROM events WHERE recording_id = ?", (recording_id,))
         await db.commit()
-
-    # Group observations into temporal windows
-    groups = _group_observations_into_windows(observations)
 
     # Build all frame paths for context lookup
     all_frame_paths_by_ts: dict[float, str] = {
@@ -422,7 +443,33 @@ async def extract_events_for_recording(recording_id: str, db_path: str) -> int:
     }
     sorted_timestamps = sorted(all_frame_paths_by_ts.keys())
 
-    events = []
+    events: list[dict] = []
+
+    # ── Path A: Understanding-based events (rich, action-level) ──────────────
+    if understanding_rows:
+        understanding_events = _events_from_understanding(
+            understanding_rows=understanding_rows,
+            recording_id=recording_id,
+            recording_filename=rec_row["original_filename"],
+            recording_datetime=rec_row["recording_datetime"],
+            recording_timezone=rec_row["recording_timezone"],
+            camera_name=rec_row["camera_name"],
+            camera_location=rec_row["camera_location"],
+            all_frame_paths_by_ts=all_frame_paths_by_ts,
+            sorted_timestamps=sorted_timestamps,
+        )
+        events.extend(understanding_events)
+        logger.info(
+            "Understanding path produced %d events for recording %s",
+            len(understanding_events), recording_id,
+        )
+
+    # ── Path B: Observation-grouping events (fallback / scene coverage) ───────
+    # Always run so static scenes and non-action periods are covered.
+    # Observation-based events are deduplicated against understanding events
+    # by timestamp proximity to avoid duplicate indexing of the same moment.
+    groups = _group_observations_into_windows(observations)
+    understanding_timestamps = {e["timestamp_seconds"] for e in events}
     for group in groups:
         event = _build_event(
             group=group,
@@ -435,8 +482,14 @@ async def extract_events_for_recording(recording_id: str, db_path: str) -> int:
             all_frame_paths_by_ts=all_frame_paths_by_ts,
             sorted_timestamps=sorted_timestamps,
         )
-        if event:
-            events.append(event)
+        if event is None:
+            continue
+        # Skip if an understanding event covers this timestamp window
+        # (within 6 seconds — generous to avoid duplicating same moment)
+        group_ts = event["timestamp_seconds"]
+        if any(abs(group_ts - ut) < 6.0 for ut in understanding_timestamps):
+            continue
+        events.append(event)
 
     # Persist events (span/entity/sequence columns added by migrations;
     # fall back through legacy column sets on older databases).
@@ -788,3 +841,394 @@ def _select_evidence_frames(
         })
 
     return frames
+
+
+def _events_from_understanding(
+    understanding_rows: list[dict],
+    recording_id: str,
+    recording_filename: str,
+    recording_datetime: Optional[str],
+    recording_timezone: Optional[str],
+    camera_name: Optional[str],
+    camera_location: Optional[str],
+    all_frame_paths_by_ts: dict[float, str],
+    sorted_timestamps: list[float],
+) -> list[dict]:
+    """Convert upload understanding segments into structured events.
+
+    Each meaningful action or change in an understanding segment becomes a
+    separate event. Static scenes produce one minimal scene-presence event.
+    This replaces the observation-window aggregation for recordings that have
+    upload understanding data.
+    """
+    events: list[dict] = []
+
+    for seg in understanding_rows:
+        start_s = seg.get("start_seconds", 0.0)
+        end_s = seg.get("end_seconds", start_s)
+        scene_context = seg.get("scene_context", "") or ""
+
+        try:
+            actions = json.loads(seg.get("actions_json", "[]") or "[]")
+        except Exception:
+            actions = []
+        try:
+            changes = json.loads(seg.get("changes_json", "[]") or "[]")
+        except Exception:
+            changes = []
+        try:
+            entities = json.loads(seg.get("entities_json", "[]") or "[]")
+        except Exception:
+            entities = []
+        try:
+            interactions = json.loads(seg.get("interactions_json", "[]") or "[]")
+        except Exception:
+            interactions = []
+        try:
+            unusual = json.loads(seg.get("unusual_observations_json", "[]") or "[]")
+        except Exception:
+            unusual = []
+        try:
+            uncertain = json.loads(seg.get("uncertain_observations_json", "[]") or "[]")
+        except Exception:
+            uncertain = []
+        static = bool(seg.get("static_scene", 0))
+
+        # Build an entity lookup: entity_id → entity dict
+        entity_map = {e.get("entity_id", ""): e for e in entities if isinstance(e, dict)}
+
+        # ── One event per action ──────────────────────────────────────────
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            action_text = action.get("action", "")
+            if not action_text:
+                continue
+            act_start = action.get("start_seconds", start_s)
+            act_end = action.get("end_seconds", act_start)
+            act_ts = (act_start + act_end) / 2.0
+            confidence = float(action.get("confidence", 0.7))
+            eid = action.get("entity_id", "")
+            entity = entity_map.get(eid, {})
+            entity_desc = entity.get("description", "") or eid
+
+            # Build action description — human-readable headline
+            if entity_desc:
+                action_description = f"{entity_desc}: {action_text}"
+            else:
+                action_description = action_text
+
+            # Collect objects from entities visible at this timestamp
+            object_descriptions = []
+            for e in entities:
+                if not isinstance(e, dict):
+                    continue
+                e_first = e.get("first_seen_seconds", start_s)
+                e_last = e.get("last_seen_seconds", end_s)
+                if e_first <= act_ts <= e_last + 2.0:
+                    desc = e.get("description", "")
+                    if desc and desc not in object_descriptions:
+                        object_descriptions.append(desc)
+
+            observed_facts = [f"Action observed: {action_text}"]
+            if entity_desc and entity_desc != action_text:
+                observed_facts.append(f"Entity: {entity_desc}")
+            if scene_context:
+                observed_facts.append(f"Scene: {scene_context}")
+
+            # Infer event_type from entity type and action text
+            ent_type = (entity.get("type", "") or "").lower()
+            ev_type = _infer_event_type_from_action(
+                action_text=action_description,
+                entity_type=ent_type,
+                object_labels=object_descriptions,
+            )
+
+            evidence_frames = _select_evidence_frames_at(
+                timestamp=act_ts,
+                all_frame_paths_by_ts=all_frame_paths_by_ts,
+                sorted_timestamps=sorted_timestamps,
+            )
+
+            timestamp_absolute, has_reliable_ts = _compute_timestamp_absolute(
+                recording_datetime, act_ts)
+
+            events.append({
+                "event_id": str(uuid.uuid4()),
+                "recording_id": recording_id,
+                "recording_filename": recording_filename,
+                "camera_name": camera_name,
+                "camera_location": camera_location,
+                "timestamp_seconds": act_ts,
+                "start_seconds": act_start,
+                "end_seconds": act_end,
+                "n_confirming_frames": 1,
+                "timestamp_absolute": timestamp_absolute,
+                "has_reliable_timestamp": has_reliable_ts,
+                "event_type": ev_type,
+                "actor_description": entity_desc or None,
+                "object_descriptions": object_descriptions[:20],
+                "action_description": action_description[:300],
+                "scene_description": scene_context[:300] if scene_context else None,
+                "evidence_frames": evidence_frames,
+                "confidence": round(min(1.0, max(0.1, confidence)), 3),
+                "observed_facts": observed_facts,
+                "inferred_claims": [],
+                "uncertainty_notes": uncertain[:3],
+                "source_observation_ids": [],
+                "entities": [entity] if entity else [],
+                "action_sequence": [f"at {act_start:.1f}s: {action_text}"],
+            })
+
+        # ── One event per notable change (appears/disappears/enters/exits) ──
+        for change in changes:
+            if not isinstance(change, dict):
+                continue
+            change_type = change.get("type", "")
+            change_desc = change.get("description", "")
+            if not change_desc:
+                continue
+            change_ts = float(change.get("timestamp_seconds", start_s))
+            eid = change.get("entity_id", "")
+            entity = entity_map.get(eid, {})
+
+            action_description = change_desc
+            ev_type = _change_type_to_event_type(change_type)
+
+            observed_facts = [f"Change detected: {change_desc}"]
+            if scene_context:
+                observed_facts.append(f"Scene: {scene_context}")
+
+            evidence_frames = _select_evidence_frames_at(
+                timestamp=change_ts,
+                all_frame_paths_by_ts=all_frame_paths_by_ts,
+                sorted_timestamps=sorted_timestamps,
+            )
+            timestamp_absolute, has_reliable_ts = _compute_timestamp_absolute(
+                recording_datetime, change_ts)
+
+            object_descriptions = []
+            if entity.get("description"):
+                object_descriptions.append(entity["description"])
+
+            events.append({
+                "event_id": str(uuid.uuid4()),
+                "recording_id": recording_id,
+                "recording_filename": recording_filename,
+                "camera_name": camera_name,
+                "camera_location": camera_location,
+                "timestamp_seconds": change_ts,
+                "start_seconds": change_ts,
+                "end_seconds": change_ts,
+                "n_confirming_frames": 1,
+                "timestamp_absolute": timestamp_absolute,
+                "has_reliable_timestamp": has_reliable_ts,
+                "event_type": ev_type,
+                "actor_description": entity.get("description") or None,
+                "object_descriptions": object_descriptions,
+                "action_description": action_description[:300],
+                "scene_description": scene_context[:300] if scene_context else None,
+                "evidence_frames": evidence_frames,
+                "confidence": 0.65,
+                "observed_facts": observed_facts,
+                "inferred_claims": [],
+                "uncertainty_notes": uncertain[:2],
+                "source_observation_ids": [],
+                "entities": [entity] if entity else [],
+                "action_sequence": [f"at {change_ts:.1f}s: {change_desc}"],
+            })
+
+        # ── Unusual observations as low-confidence events ─────────────────
+        for obs_text in unusual:
+            if not isinstance(obs_text, str) or not obs_text:
+                continue
+            mid_ts = (start_s + end_s) / 2.0
+            ev_type = _infer_event_type_from_action(obs_text, "", [])
+            evidence_frames = _select_evidence_frames_at(
+                timestamp=mid_ts,
+                all_frame_paths_by_ts=all_frame_paths_by_ts,
+                sorted_timestamps=sorted_timestamps,
+            )
+            timestamp_absolute, has_reliable_ts = _compute_timestamp_absolute(
+                recording_datetime, mid_ts)
+
+            events.append({
+                "event_id": str(uuid.uuid4()),
+                "recording_id": recording_id,
+                "recording_filename": recording_filename,
+                "camera_name": camera_name,
+                "camera_location": camera_location,
+                "timestamp_seconds": mid_ts,
+                "start_seconds": start_s,
+                "end_seconds": end_s,
+                "n_confirming_frames": 1,
+                "timestamp_absolute": timestamp_absolute,
+                "has_reliable_timestamp": has_reliable_ts,
+                "event_type": ev_type,
+                "actor_description": None,
+                "object_descriptions": [],
+                "action_description": obs_text[:300],
+                "scene_description": scene_context[:300] if scene_context else None,
+                "evidence_frames": evidence_frames,
+                "confidence": 0.5,
+                "observed_facts": [f"Unusual observation: {obs_text}"],
+                "inferred_claims": [],
+                "uncertainty_notes": ["flagged as unusual by upload analysis"],
+                "source_observation_ids": [],
+                "entities": [],
+                "action_sequence": [obs_text],
+            })
+
+        # ── Static scene — one coverage event if no actions or changes ────
+        if static and not actions and not changes and not unusual:
+            mid_ts = (start_s + end_s) / 2.0
+            entity_descs = [
+                e.get("description", "") for e in entities
+                if isinstance(e, dict) and e.get("description")
+            ][:5]
+            action_description = (
+                f"Static scene: {scene_context}" if scene_context
+                else "Static scene — no motion or activity detected"
+            )
+            evidence_frames = _select_evidence_frames_at(
+                timestamp=mid_ts,
+                all_frame_paths_by_ts=all_frame_paths_by_ts,
+                sorted_timestamps=sorted_timestamps,
+            )
+            timestamp_absolute, has_reliable_ts = _compute_timestamp_absolute(
+                recording_datetime, mid_ts)
+            ev_type = _infer_event_type(entity_descs, [scene_context or ""])
+
+            events.append({
+                "event_id": str(uuid.uuid4()),
+                "recording_id": recording_id,
+                "recording_filename": recording_filename,
+                "camera_name": camera_name,
+                "camera_location": camera_location,
+                "timestamp_seconds": mid_ts,
+                "start_seconds": start_s,
+                "end_seconds": end_s,
+                "n_confirming_frames": 1,
+                "timestamp_absolute": timestamp_absolute,
+                "has_reliable_timestamp": has_reliable_ts,
+                "event_type": ev_type,
+                "actor_description": None,
+                "object_descriptions": entity_descs,
+                "action_description": action_description[:300],
+                "scene_description": scene_context[:300] if scene_context else None,
+                "evidence_frames": evidence_frames,
+                "confidence": 0.6,
+                "observed_facts": [f"Scene: {scene_context}"] if scene_context else [],
+                "inferred_claims": [],
+                "uncertainty_notes": ["static scene — no motion detected"],
+                "source_observation_ids": [],
+                "entities": entities[:10],
+                "action_sequence": [],
+            })
+
+    return events
+
+
+def _infer_event_type_from_action(
+    action_text: str, entity_type: str, object_labels: list[str]
+) -> str:
+    """Infer event_type from action text, entity type, and object labels."""
+    combined = f"{action_text} {entity_type} {' '.join(object_labels)}".lower()
+
+    if contains_word(combined, PERSON_SUBJECTS):
+        return "person_detected"
+    if entity_type in ("person", "human"):
+        return "person_detected"
+    if contains_word(combined, VEHICLE_SUBJECTS):
+        return "vehicle_detected"
+    if entity_type == "vehicle":
+        return "vehicle_detected"
+    if contains_word(combined, ANIMAL_SUBJECTS):
+        return "scene_change"  # animal events stay scene_change for retrieval flexibility
+    if entity_type == "animal":
+        return "scene_change"
+    if contains_word(combined, BIRD_SUBJECTS):
+        return "bird_detected"
+
+    # Action vocabulary inference
+    entry_words = frozenset({"enter", "entered", "enters", "entering", "arrived",
+                              "came", "came in", "walked in", "crossed"})
+    exit_words = frozenset({"exit", "exited", "exits", "exiting", "left", "leaving",
+                             "departed", "walked out", "went out"})
+    if any(w in combined for w in entry_words) or any(w in combined for w in exit_words):
+        return "entry_exit_detected"
+
+    return "scene_change"
+
+
+def _change_type_to_event_type(change_type: str) -> str:
+    """Map a change type string to event_type."""
+    ct = (change_type or "").lower()
+    if ct in ("entered", "appeared"):
+        return "entry_exit_detected"
+    if ct in ("exited",):
+        return "entry_exit_detected"
+    if ct == "disappeared":
+        return "scene_change"
+    if ct == "moved":
+        return "scene_change"
+    return "scene_change"
+
+
+def _select_evidence_frames_at(
+    timestamp: float,
+    all_frame_paths_by_ts: dict[float, str],
+    sorted_timestamps: list[float],
+) -> list[dict]:
+    """Select up to 3 evidence frames (before/during/after) near a timestamp."""
+    if not sorted_timestamps:
+        return []
+    frames = []
+
+    # "During": nearest frame to the timestamp
+    best_ts = min(sorted_timestamps, key=lambda t: abs(t - timestamp))
+    if best_ts in all_frame_paths_by_ts:
+        frames.append({
+            "frame_path": all_frame_paths_by_ts[best_ts],
+            "timestamp_seconds": best_ts,
+            "role": "during",
+        })
+
+    # "Before": nearest frame at least 2s before
+    before = [t for t in sorted_timestamps if t < timestamp - 2.0]
+    if before:
+        bt = max(before)
+        frames.append({
+            "frame_path": all_frame_paths_by_ts[bt],
+            "timestamp_seconds": bt,
+            "role": "before",
+        })
+
+    # "After": nearest frame at least 2s after
+    after = [t for t in sorted_timestamps if t > timestamp + 2.0]
+    if after:
+        at_ = min(after)
+        frames.append({
+            "frame_path": all_frame_paths_by_ts[at_],
+            "timestamp_seconds": at_,
+            "role": "after",
+        })
+
+    return frames
+
+
+def _compute_timestamp_absolute(
+    recording_datetime: Optional[str],
+    offset_seconds: float,
+) -> tuple[Optional[str], bool]:
+    """Compute absolute timestamp from recording_datetime + offset. Returns (iso_str, reliable)."""
+    if not recording_datetime:
+        return None, False
+    try:
+        dt = datetime.fromisoformat(recording_datetime)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        abs_dt = datetime.fromtimestamp(dt.timestamp() + offset_seconds, tz=timezone.utc)
+        return abs_dt.isoformat(), True
+    except Exception:
+        return None, False

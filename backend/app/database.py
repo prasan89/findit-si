@@ -303,10 +303,44 @@ async def create_tables(db_path: str) -> None:
             "ALTER TABLE frame_cache ADD COLUMN prompt_version TEXT DEFAULT '1'",
             # Phase 7: two-pass analysis — track which pass produced each observation
             "ALTER TABLE observations ADD COLUMN analysis_pass TEXT DEFAULT 'general'",
+            # Phase 8: upload understanding — per-recording column for UI
+            "ALTER TABLE recordings ADD COLUMN upload_understanding_status TEXT DEFAULT 'pending'",
         ):
             try:
                 await db.execute(_ddl)
             except Exception:
                 pass
+
+        # Upload understanding results: structured entities/actions/changes per
+        # video segment from the general-purpose UPLOAD_UNDERSTANDING_PROMPT.
+        # Created with CREATE TABLE IF NOT EXISTS for idempotency.
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS upload_understandings (
+                segment_id TEXT PRIMARY KEY,
+                recording_id TEXT NOT NULL REFERENCES recordings(recording_id) ON DELETE CASCADE,
+                segment_hash TEXT NOT NULL,
+                start_seconds REAL NOT NULL,
+                end_seconds REAL NOT NULL,
+                scene_context TEXT,
+                entities_json TEXT NOT NULL DEFAULT '[]',
+                actions_json TEXT NOT NULL DEFAULT '[]',
+                interactions_json TEXT NOT NULL DEFAULT '[]',
+                changes_json TEXT NOT NULL DEFAULT '[]',
+                unusual_observations_json TEXT NOT NULL DEFAULT '[]',
+                uncertain_observations_json TEXT NOT NULL DEFAULT '[]',
+                static_scene INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_upload_understandings_recording
+            ON upload_understandings(recording_id)
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_upload_understandings_span
+            ON upload_understandings(recording_id, start_seconds, end_seconds)
+        """)
 
         await db.commit()

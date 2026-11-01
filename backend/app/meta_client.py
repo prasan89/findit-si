@@ -121,6 +121,69 @@ Return ONLY valid JSON — no prose, no markdown fences:
 }"""
 
 
+UPLOAD_UNDERSTANDING_PROMPT = """You are analyzing a CCTV video segment for general-purpose security indexing. The frames below are evenly-sampled from one continuous segment, each labeled with its video timestamp in seconds.
+
+Your goal is to produce a complete, query-independent understanding of what happened. A user may later ask ANY question about this video — what objects were present, what people did, what changed, whether anything was removed, whether anyone entered or left, whether any unusual behavior occurred. Your analysis must be broad enough to answer all these questions.
+
+Analyze:
+1. ENTITIES — identify every distinct entity (person, vehicle, animal, object) visible across frames. Assign entity IDs (entity_1, entity_2...) and describe each: type, appearance, first/last seen timestamps.
+2. ACTIONS — for each entity, describe its observable actions in sequence: entering, exiting, standing, walking, running, sitting, picking up, placing down, carrying, interacting with another entity. Use timestamps.
+3. INTERACTIONS — describe any observable interactions between entities: one person approaches another, a person picks up an object, a person places something down, two people make contact.
+4. CHANGES — identify what changed between the first and last frames: objects that appeared, objects that disappeared, positions that changed, people who entered or left.
+5. UNUSUAL — identify anything that stands out as potentially significant: objects in unusual locations, unexpected presence of animals, sudden movements, interactions that seem physically intense, objects being moved or removed.
+
+Rules:
+- Only describe what is DIRECTLY VISIBLE. If something is ambiguous or occluded, include it in uncertain_observations with a note.
+- Never accuse anyone of a crime. Use neutral observable-behavior language: "person reaches toward bag" not "person steals bag".
+- If the scene appears completely static (no motion, no people, nothing changes), say so explicitly.
+- If there is an animal present, describe its species (if visible), location, and behavior.
+- An object present in early frames but absent in later frames should be noted under changes.
+
+Return ONLY valid JSON — no prose, no markdown fences:
+{
+  "scene_context": "one sentence: location type, camera angle, general lighting",
+  "entities": [
+    {
+      "entity_id": "entity_1",
+      "type": "person|vehicle|animal|object",
+      "description": "appearance (color, size, distinctive features)",
+      "first_seen_seconds": 0.0,
+      "last_seen_seconds": 10.0,
+      "confidence": 0.9
+    }
+  ],
+  "actions": [
+    {
+      "entity_id": "entity_1",
+      "action": "walking toward gate",
+      "start_seconds": 2.0,
+      "end_seconds": 5.0,
+      "confidence": 0.85
+    }
+  ],
+  "interactions": [
+    {
+      "entities": ["entity_1", "entity_2"],
+      "description": "entity_1 picks up bag held by entity_2",
+      "start_seconds": 4.0,
+      "end_seconds": 6.0,
+      "confidence": 0.7
+    }
+  ],
+  "changes": [
+    {
+      "type": "appeared|disappeared|moved|entered|exited",
+      "entity_id": "entity_1",
+      "description": "person entered from left side",
+      "timestamp_seconds": 2.0
+    }
+  ],
+  "unusual_observations": ["person moves rapidly toward another person at 8.0s"],
+  "uncertain_observations": ["possible second person partially visible at right edge, frames 3-5"],
+  "static_scene": false
+}"""
+
+
 @runtime_checkable
 class TemporalClipAnalyzer(Protocol):
     """Interface for multi-frame clip analysis (temporal pipeline)."""
@@ -344,6 +407,87 @@ class MuseSparkClient:
         parsed["_images"] = len(frames)
         return parsed
 
+    async def analyze_upload_segment(
+        self, frames: list[bytes], timestamps: list[float]
+    ) -> dict:
+        """Analyze a video segment during upload for general-purpose event indexing.
+
+        Uses UPLOAD_UNDERSTANDING_PROMPT which produces:
+        - entities (people, animals, objects) with first/last seen times
+        - actions per entity with timestamps
+        - interactions between entities
+        - changes between first and last frame (appeared/disappeared/moved)
+        - unusual observations
+
+        Called once per video segment (or once per video for short clips).
+        The result is used by event_extractor to create rich, action-level events.
+        """
+        if not frames:
+            raise ValueError("analyze_upload_segment requires at least one frame")
+        if len(timestamps) != len(frames):
+            raise ValueError("frames and timestamps must have equal length")
+        content: list[dict] = []
+        for frame_data, ts in zip(frames, timestamps):
+            b64 = base64.b64encode(frame_data).decode("utf-8")
+            content.append(
+                {"type": "text",
+                 "text": f"[frame at video timestamp {float(ts):.3f}s]"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}",
+                              "detail": "high"},
+            })
+        content.append({"type": "text", "text": UPLOAD_UNDERSTANDING_PROMPT})
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": content}],
+            "max_completion_tokens": self.max_output_tokens,
+            "temperature": 0.1,
+            "response_format": {"type": "json_object"},
+        }
+        from .guards import bounded_llm_call
+        max_tokens = self.max_output_tokens
+        data = None
+        parsed: dict = {}
+        async with bounded_llm_call():
+            for attempt in (1, 2):
+                payload["max_completion_tokens"] = max_tokens
+                async with httpx.AsyncClient(timeout=self._httpx_timeout()) as client:
+                    resp = await client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                content_text, finish_reason = extract_message_content(data)
+                try:
+                    parsed = parse_model_json(
+                        content_text, finish_reason=finish_reason)
+                except ModelResponseError as exc:
+                    if exc.raw_response is None and isinstance(content_text, str):
+                        exc.raw_response = content_text[:MAX_RAW_FAILURE_CHARS]
+                    if (exc.code != "truncated" or attempt > 1
+                            or max_tokens >= TRUNCATED_RETRY_MAX_TOKENS):
+                        raise
+                    max_tokens = min(max_tokens * 2, TRUNCATED_RETRY_MAX_TOKENS)
+                    logger.warning(
+                        "upload segment response truncated; retrying once with "
+                        "max_completion_tokens=%d", max_tokens)
+                    continue
+                break
+        validate_upload_understanding(parsed)
+        usage = data.get("usage") or {}
+        parsed["_usage"] = {
+            "tokens_in": usage.get("prompt_tokens", 0),
+            "tokens_out": usage.get("completion_tokens", 0),
+        }
+        parsed["_images"] = len(frames)
+        return parsed
+
 
 class MockMetaClient:
     """
@@ -412,6 +556,46 @@ class MockMetaClient:
             "action_sequence": action_sequence,
             "confirmed": confirmed,
             "uncertain": uncertain,
+        }
+
+    async def analyze_upload_segment(
+        self, frames: list[bytes], timestamps: list[float]
+    ) -> dict:
+        """Deterministic mock for upload segment analysis."""
+        if not frames:
+            raise ValueError("analyze_upload_segment requires at least one frame")
+        if len(timestamps) != len(frames):
+            raise ValueError("frames and timestamps must have equal length")
+        self._call_count += 1
+        per_frame = []
+        for frame_data in frames:
+            h = hashlib.sha256(frame_data).hexdigest()
+            per_frame.append(self.scenario_map.get(
+                h, {"objects": [], "scene_summary": "No identifiable objects"}))
+        entities = []
+        for i, entry in enumerate(per_frame):
+            for obj in entry.get("objects", []):
+                label = obj.get("label", "unknown")
+                eid = f"entity_{len(entities) + 1}"
+                entities.append({
+                    "entity_id": eid,
+                    "type": "object",
+                    "description": label,
+                    "first_seen_seconds": float(timestamps[i]),
+                    "last_seen_seconds": float(timestamps[i]),
+                    "confidence": obj.get("confidence", 0.7),
+                })
+        first_summary = per_frame[0].get("scene_summary", "") if per_frame else ""
+        last_summary = per_frame[-1].get("scene_summary", "") if per_frame else ""
+        return {
+            "scene_context": first_summary or "mock scene",
+            "entities": entities,
+            "actions": [],
+            "interactions": [],
+            "changes": [],
+            "unusual_observations": [],
+            "uncertain_observations": [],
+            "static_scene": len(entities) == 0,
         }
 
 
@@ -685,6 +869,26 @@ def validate_clip_analysis(parsed) -> dict:
 def _parse_json_response(content: str) -> dict:
     """Backwards-compatible wrapper around parse_model_json (no finish reason)."""
     return parse_model_json(content)
+
+
+def validate_upload_understanding(parsed) -> dict:
+    """Validate a parsed upload understanding response (lenient — all fields optional except top-level dict).
+
+    The UPLOAD_UNDERSTANDING_PROMPT asks for entities/actions/changes/interactions
+    but partial responses are valid — a static scene may have no actions.
+    Raises ModelResponseError(schema_violation) only for hard failures.
+    """
+    if not isinstance(parsed, dict):
+        raise ModelResponseError(
+            "schema_violation", "Upload understanding response is not a JSON object"
+        )
+    for key in ("entities", "actions", "changes"):
+        if key in parsed and not isinstance(parsed[key], list):
+            raise ModelResponseError(
+                "schema_violation",
+                f"Upload understanding '{key}' must be a list if present"
+            )
+    return parsed
 
 
 def get_meta_client(

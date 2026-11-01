@@ -317,7 +317,7 @@ async def test_one_failed_frame_does_not_block_others(db_path, storage, monkeypa
     row = await _recording_row(db_path, recording_id)
     assert row["status"] == ProcessingStatus.PARTIAL.value
     assert row["frame_count"] == 2
-    assert row["detail"] == (
+    assert row["detail"].startswith(
         "Indexed 2/3 frames, 2 API calls, 0 cache hits, 1 failed, 0 skipped")
     assert len(row["errors"]) == 1
     assert "[malformed_json]" in row["errors"][0]
@@ -335,7 +335,7 @@ async def test_all_frames_indexed_status_and_counters(db_path, storage, monkeypa
 
     row = await _recording_row(db_path, recording_id)
     assert row["status"] == ProcessingStatus.INDEXED.value
-    assert row["detail"] == (
+    assert row["detail"].startswith(
         "Indexed 3/3 frames, 3 API calls, 0 cache hits, 0 failed, 0 skipped")
     assert row["errors"] == []
 
@@ -350,7 +350,7 @@ async def test_all_frames_failed_is_failed_not_partial(db_path, storage, monkeyp
     row = await _recording_row(db_path, recording_id)
     assert row["status"] == ProcessingStatus.FAILED.value
     assert row["frame_count"] == 0
-    assert row["detail"] == (
+    assert row["detail"].startswith(
         "Indexed 0/3 frames, 0 API calls, 0 cache hits, 3 failed, 0 skipped")
     assert len(row["errors"]) == 3
     assert await _observation_count(db_path, recording_id) == 0
@@ -365,7 +365,7 @@ async def test_api_limit_skips_counted_separately(db_path, storage, monkeypatch)
 
     row = await _recording_row(db_path, recording_id)
     assert row["status"] == ProcessingStatus.PARTIAL.value
-    assert row["detail"] == (
+    assert row["detail"].startswith(
         "Indexed 1/3 frames, 1 API calls, 0 cache hits, 0 failed, 2 skipped")
 
 
@@ -383,7 +383,7 @@ async def test_reprocessing_is_idempotent(db_path, storage, monkeypatch):
     assert await _observation_count(db_path, recording_id) == first
     row = await _recording_row(db_path, recording_id)
     assert row["status"] == ProcessingStatus.INDEXED.value
-    assert row["detail"] == (
+    assert row["detail"].startswith(
         "Indexed 3/3 frames, 0 API calls, 3 cache hits, 0 failed, 0 skipped")
 
 
@@ -453,7 +453,7 @@ async def test_ten_second_video_end_to_end(db_path, storage, tmp_path):
     row = await _recording_row(db_path, recording_id)
     assert row["status"] == ProcessingStatus.INDEXED.value
     assert row["frame_count"] == 10, row
-    assert row["detail"] == (
+    assert row["detail"].startswith(
         "Indexed 10/10 frames, 10 API calls, 0 cache hits, 0 failed, 0 skipped")
 
     # Per-frame results verified: timestamps 0..9 each persisted exactly once.
