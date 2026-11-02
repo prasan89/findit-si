@@ -710,6 +710,24 @@ async def process_recording(
         except Exception as e:
             logger.warning("Correlation failed after processing %s: %s", recording_id, e)
 
+        # Guardian: upload-time hazard detection (best-effort, non-blocking)
+        try:
+            from .guardian import run_guardian_detection
+            n_alerts = await run_guardian_detection(
+                recording_id=recording_id,
+                db_path=db_path,
+                storage=storage,
+                meta_client=meta_client,
+                errors=errors,
+            )
+            if n_alerts:
+                logger.info(
+                    "Guardian: %d alert(s) created for recording %s",
+                    n_alerts, recording_id[:8],
+                )
+        except Exception as e:
+            logger.warning("Guardian detection failed for %s: %s", recording_id, e)
+
     except Exception as e:
         errors.append(f"Fatal processing error: {str(e)[:500]}")
         logger.exception(f"Processing failed for recording {recording_id}")

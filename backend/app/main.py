@@ -21,6 +21,7 @@ from .routes import recordings, search as search_router, investigations as inves
 from .routes import multi_agent_investigations as multi_agent_router
 from .routes import video_streaming as video_streaming_router
 from .routes import temporal_events as temporal_events_router
+from .routes import guardian as guardian_router_module
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +202,8 @@ def create_app() -> FastAPI:
     app.include_router(recordings.router, prefix="/api/recordings", tags=["recordings"])
     app.include_router(video_streaming_router.router, prefix="/api/recordings", tags=["recordings"])
     app.include_router(temporal_events_router.router, prefix="/api/recordings", tags=["recordings"])
+    app.include_router(guardian_router_module.recording_router, prefix="/api/recordings", tags=["guardian"])
+    app.include_router(guardian_router_module.global_router, prefix="/api", tags=["guardian"])
     app.include_router(search_router.router, prefix="/api/search", tags=["search"])
     app.include_router(investigations_router.router, prefix="/api/investigations", tags=["investigations"])
     app.include_router(multi_agent_router.router, prefix="/api/investigations", tags=["investigations"])

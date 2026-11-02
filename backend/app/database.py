@@ -343,4 +343,41 @@ async def create_tables(db_path: str) -> None:
             ON upload_understandings(recording_id, start_seconds, end_seconds)
         """)
 
+        # Guardian: upload-time hazard alerts
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS guardian_alerts (
+                alert_id                    TEXT PRIMARY KEY,
+                recording_id                TEXT NOT NULL REFERENCES recordings(recording_id) ON DELETE CASCADE,
+                hazard_category             TEXT NOT NULL,
+                severity                    TEXT NOT NULL,
+                confidence                  REAL NOT NULL DEFAULT 0.5,
+                timestamp_seconds           REAL NOT NULL,
+                time_range_start            REAL NOT NULL,
+                time_range_end              REAL NOT NULL,
+                description                 TEXT NOT NULL,
+                evidence_frames_json        TEXT NOT NULL DEFAULT '[]',
+                supporting_segment_ids_json TEXT NOT NULL DEFAULT '[]',
+                review_status               TEXT NOT NULL DEFAULT 'new',
+                is_mocked                   INTEGER NOT NULL DEFAULT 0,
+                dedup_key                   TEXT NOT NULL,
+                created_at                  TEXT NOT NULL,
+                updated_at                  TEXT NOT NULL
+            )
+        """)
+
+        await db.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_guardian_alerts_dedup
+            ON guardian_alerts(recording_id, dedup_key)
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guardian_alerts_recording
+            ON guardian_alerts(recording_id)
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_guardian_alerts_review_status
+            ON guardian_alerts(review_status)
+        """)
+
         await db.commit()

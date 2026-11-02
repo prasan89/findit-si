@@ -1,0 +1,409 @@
+"""
+Guardian: upload-time hazard detection and alert management.
+
+Reads stored upload_understandings segments, calls detect_hazards_for_segment()
+on the vision client, deduplicates overlapping same-category detections, and
+persists results to guardian_alerts. Fully idempotent via UNIQUE(recording_id, dedup_key).
+"""
+import json
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Optional
+
+from .database import get_db
+
+logger = logging.getLogger(__name__)
+
+VALID_HAZARD_CATEGORIES = frozenset({
+    "fire_smoke",
+    "person_fall_injury",
+    "vehicle_collision",
+    "dangerous_animal",
+    "weapon_visible",
+    "restricted_area_entry",
+    "other_hazard",
+})
+
+VALID_SEVERITY_LEVELS = frozenset({"critical", "high", "medium", "low"})
+VALID_REVIEW_STATUSES = frozenset({"new", "acknowledged", "dismissed"})
+
+HAZARD_CATEGORY_LABELS = {
+    "fire_smoke": "Fire / Smoke",
+    "person_fall_injury": "Person Fall / Injury",
+    "vehicle_collision": "Vehicle Collision",
+    "dangerous_animal": "Dangerous Animal",
+    "weapon_visible": "Weapon Visible",
+    "restricted_area_entry": "Restricted Area Entry",
+    "other_hazard": "Other Hazard",
+}
+
+# Keywords that trigger a guardian analysis call even when unusual_observations is empty
+HAZARD_KEYWORDS = frozenset({
+    "fire", "flame", "smoke", "burning",
+    "fall", "fell", "fallen", "lying", "collapsed", "unconscious",
+    "collision", "crash", "impact",
+    "snake", "weapon", "gun", "knife", "firearm",
+    "flood", "flooding", "exposed wire", "structural",
+})
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def compute_dedup_key(hazard_category: str, time_range_start: float) -> str:
+    """Bucket key: same category within the same 30s window deduplicates."""
+    return f"{hazard_category}:{int(time_range_start // 30)}"
+
+
+def _has_hazard_keyword(text: str) -> bool:
+    t = text.lower()
+    return any(kw in t for kw in HAZARD_KEYWORDS)
+
+
+def _normalize_category(cat: str) -> str:
+    return cat if cat in VALID_HAZARD_CATEGORIES else "other_hazard"
+
+
+def _normalize_severity(sev: str) -> str:
+    return sev if sev in VALID_SEVERITY_LEVELS else "medium"
+
+
+def merge_overlapping_hazards(raw: list[dict]) -> list[dict]:
+    """Merge same-category hazard detections whose time windows overlap or are adjacent.
+
+    Input items must have: hazard_category, severity, confidence, timestamp_seconds,
+    time_range_start, time_range_end, description, evidence_frames, segment_id.
+    Returns a deduplicated list with merged time ranges and max confidence.
+    """
+    if not raw:
+        return []
+
+    by_category: dict[str, list[dict]] = {}
+    for item in raw:
+        cat = item["hazard_category"]
+        by_category.setdefault(cat, []).append(item)
+
+    merged = []
+    for cat, items in by_category.items():
+        items_sorted = sorted(items, key=lambda x: x["time_range_start"])
+        groups: list[list[dict]] = []
+        for item in items_sorted:
+            if groups and item["time_range_start"] <= groups[-1][-1]["time_range_end"] + 0.5:
+                groups[-1].append(item)
+            else:
+                groups.append([item])
+        for group in groups:
+            best = max(group, key=lambda x: x["confidence"])
+            all_frames: list[dict] = []
+            seen_paths = set()
+            for g in group:
+                for f in g.get("evidence_frames", []):
+                    fp = f.get("frame_path", "")
+                    if fp not in seen_paths:
+                        all_frames.append(f)
+                        seen_paths.add(fp)
+            seg_ids = list({g["segment_id"] for g in group if g.get("segment_id")})
+            merged.append({
+                "hazard_category": cat,
+                "severity": best["severity"],
+                "confidence": max(g["confidence"] for g in group),
+                "timestamp_seconds": group[0]["timestamp_seconds"],
+                "time_range_start": group[0]["time_range_start"],
+                "time_range_end": group[-1]["time_range_end"],
+                "description": best["description"],
+                "evidence_frames": all_frames,
+                "supporting_segment_ids": seg_ids,
+                "is_mocked": group[0].get("is_mocked", False),
+            })
+    return merged
+
+
+async def upsert_guardian_alert(
+    db_path: str,
+    recording_id: str,
+    alert: dict,
+) -> bool:
+    """INSERT OR IGNORE alert by (recording_id, dedup_key). Returns True if newly inserted."""
+    dedup_key = compute_dedup_key(alert["hazard_category"], alert["time_range_start"])
+    alert_id = str(uuid.uuid4())
+    now = _now()
+    async with get_db(db_path) as db:
+        cur = await db.execute(
+            """INSERT OR IGNORE INTO guardian_alerts(
+                alert_id, recording_id, hazard_category, severity, confidence,
+                timestamp_seconds, time_range_start, time_range_end, description,
+                evidence_frames_json, supporting_segment_ids_json,
+                review_status, is_mocked, dedup_key, created_at, updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                alert_id,
+                recording_id,
+                alert["hazard_category"],
+                alert["severity"],
+                float(alert["confidence"]),
+                float(alert["timestamp_seconds"]),
+                float(alert["time_range_start"]),
+                float(alert["time_range_end"]),
+                alert["description"],
+                json.dumps(alert.get("evidence_frames", [])),
+                json.dumps(alert.get("supporting_segment_ids", [])),
+                "new",
+                1 if alert.get("is_mocked") else 0,
+                dedup_key,
+                now,
+                now,
+            ),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def get_alerts_for_recording(
+    db_path: str,
+    recording_id: str,
+    review_status: Optional[str] = None,
+    severity: Optional[str] = None,
+    min_confidence: Optional[float] = None,
+) -> list[dict]:
+    async with get_db(db_path) as db:
+        db.row_factory = __import__("aiosqlite").Row
+        conditions = ["recording_id = ?"]
+        params: list = [recording_id]
+        if review_status:
+            conditions.append("review_status = ?")
+            params.append(review_status)
+        if severity:
+            conditions.append("severity = ?")
+            params.append(severity)
+        if min_confidence is not None:
+            conditions.append("confidence >= ?")
+            params.append(min_confidence)
+        where = " AND ".join(conditions)
+        rows = await (await db.execute(
+            f"SELECT * FROM guardian_alerts WHERE {where} ORDER BY time_range_start ASC",
+            params,
+        )).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+async def get_all_alerts(
+    db_path: str,
+    limit: int = 200,
+    offset: int = 0,
+    review_status: Optional[str] = None,
+    severity: Optional[str] = None,
+    hazard_category: Optional[str] = None,
+) -> tuple[list[dict], int]:
+    """Returns (alerts_with_recording_info, total_count)."""
+    import aiosqlite
+    async with get_db(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        conditions = []
+        params: list = []
+        if review_status:
+            conditions.append("ga.review_status = ?")
+            params.append(review_status)
+        if severity:
+            conditions.append("ga.severity = ?")
+            params.append(severity)
+        if hazard_category:
+            conditions.append("ga.hazard_category = ?")
+            params.append(hazard_category)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        total_row = await (await db.execute(
+            f"SELECT COUNT(*) FROM guardian_alerts ga {where}", params
+        )).fetchone()
+        total = total_row[0] if total_row else 0
+        rows = await (await db.execute(
+            f"""SELECT ga.*,
+                       r.original_filename, r.camera_name, r.camera_location
+                FROM guardian_alerts ga
+                LEFT JOIN recordings r ON r.recording_id = ga.recording_id
+                {where}
+                ORDER BY ga.time_range_start ASC
+                LIMIT ? OFFSET ?""",
+            [*params, limit, offset],
+        )).fetchall()
+    alerts = []
+    for r in rows:
+        d = _row_to_dict(r)
+        d["original_filename"] = r["original_filename"]
+        d["camera_name"] = r["camera_name"]
+        d["camera_location"] = r["camera_location"]
+        alerts.append(d)
+    return alerts, total
+
+
+async def update_alert_review_status(
+    db_path: str,
+    recording_id: str,
+    alert_id: str,
+    review_status: str,
+) -> bool:
+    """Returns True if the alert was found and updated."""
+    now = _now()
+    async with get_db(db_path) as db:
+        cur = await db.execute(
+            "UPDATE guardian_alerts SET review_status=?, updated_at=? WHERE alert_id=? AND recording_id=?",
+            (review_status, now, alert_id, recording_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+def _row_to_dict(row) -> dict:
+    d = dict(row)
+    d["evidence_frames"] = json.loads(d.pop("evidence_frames_json", "[]"))
+    d["supporting_segment_ids"] = json.loads(d.pop("supporting_segment_ids_json", "[]"))
+    d["is_mocked"] = bool(d.get("is_mocked", 0))
+    return d
+
+
+async def run_guardian_detection(
+    recording_id: str,
+    db_path: str,
+    storage,
+    meta_client,
+    errors: list,
+) -> int:
+    """Run Guardian hazard detection after upload_understandings are stored.
+
+    Loads stored segments, calls detect_hazards_for_segment() per segment (if
+    the segment has unusual_observations or the client always supports it),
+    merges overlapping same-category detections, and upserts alerts.
+
+    Returns count of newly created alerts.
+    """
+    if not hasattr(meta_client, "detect_hazards_for_segment"):
+        logger.debug(
+            "Guardian skipped for %s — meta_client has no detect_hazards_for_segment",
+            recording_id[:8],
+        )
+        return 0
+
+    # Detect mock mode
+    from .meta_client import MockMetaClient
+    is_mocked = isinstance(meta_client, MockMetaClient) or getattr(meta_client, "_is_mock", False)
+
+    # Load upload understanding rows
+    import aiosqlite
+    async with get_db(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        rows = await (await db.execute(
+            """SELECT segment_id, start_seconds, end_seconds,
+                      unusual_observations_json, entities_json, actions_json,
+                      scene_context
+               FROM upload_understandings WHERE recording_id = ? ORDER BY start_seconds""",
+            (recording_id,),
+        )).fetchall()
+
+    if not rows:
+        return 0
+
+    # Load frame paths for this recording
+    async with get_db(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        obs_rows = await (await db.execute(
+            """SELECT video_timestamp_seconds, source_frame_path
+               FROM observations WHERE recording_id = ?
+               ORDER BY video_timestamp_seconds""",
+            (recording_id,),
+        )).fetchall()
+
+    frame_by_ts = {r["video_timestamp_seconds"]: r["source_frame_path"] for r in obs_rows}
+    sorted_ts = sorted(frame_by_ts.keys())
+
+    raw_detections: list[dict] = []
+
+    for row in rows:
+        segment_id = row["segment_id"]
+        seg_start = row["start_seconds"]
+        seg_end = row["end_seconds"]
+        unusual = json.loads(row["unusual_observations_json"] or "[]")
+
+        # Only call the model if this segment has unusual content or keyword match
+        has_unusual = bool(unusual)
+        has_keyword = any(_has_hazard_keyword(obs) for obs in unusual)
+        # Also call if scene_context mentions hazard keywords
+        if not has_unusual:
+            ctx = row["scene_context"] or ""
+            has_keyword = _has_hazard_keyword(ctx)
+
+        if not has_unusual and not has_keyword:
+            continue
+
+        # Collect frames in this segment's time window
+        seg_ts = [ts for ts in sorted_ts if seg_start <= ts <= seg_end]
+        if not seg_ts:
+            continue
+
+        frame_bytes = []
+        valid_ts = []
+        for ts in seg_ts:
+            fp = frame_by_ts.get(ts)
+            if not fp:
+                continue
+            abs_path = storage.data_dir / fp
+            try:
+                frame_bytes.append(abs_path.read_bytes())
+                valid_ts.append(ts)
+            except Exception:
+                pass
+
+        if not frame_bytes:
+            continue
+
+        try:
+            result = await meta_client.detect_hazards_for_segment(frame_bytes, valid_ts)
+        except Exception as e:
+            logger.warning("Guardian segment analysis failed for %s@%.1f: %s",
+                           recording_id[:8], seg_start, e)
+            errors.append(f"Guardian analysis failed at {seg_start:.1f}s: {str(e)[:200]}")
+            continue
+
+        for hazard in result.get("hazards", []):
+            cat = _normalize_category(hazard.get("hazard_category", "other_hazard"))
+            sev = _normalize_severity(hazard.get("severity", "medium"))
+            conf = float(hazard.get("confidence", 0.5))
+            if conf < 0.3:
+                continue
+            ts_sec = float(hazard.get("timestamp_seconds", seg_start))
+            desc = str(hazard.get("description", "Hazard detected"))
+
+            # Pick evidence frames: frame nearest to reported timestamp
+            nearest = min(valid_ts, key=lambda t: abs(t - ts_sec))
+            evidence_frames = [{
+                "frame_path": frame_by_ts[nearest],
+                "timestamp_seconds": nearest,
+                "role": "during",
+            }]
+
+            raw_detections.append({
+                "hazard_category": cat,
+                "severity": sev,
+                "confidence": conf,
+                "timestamp_seconds": ts_sec,
+                "time_range_start": seg_start,
+                "time_range_end": seg_end,
+                "description": desc,
+                "evidence_frames": evidence_frames,
+                "segment_id": segment_id,
+                "is_mocked": is_mocked,
+            })
+
+    if not raw_detections:
+        return 0
+
+    merged = merge_overlapping_hazards(raw_detections)
+
+    created = 0
+    for alert in merged:
+        try:
+            if await upsert_guardian_alert(db_path, recording_id, alert):
+                created += 1
+        except Exception as e:
+            logger.warning("Guardian alert upsert failed: %s", e)
+
+    return created

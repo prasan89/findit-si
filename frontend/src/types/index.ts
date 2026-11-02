@@ -252,3 +252,42 @@ export interface MultiAgentInvestigationResult {
   total_duration_ms: number
   status: string
 }
+
+export type HazardCategory =
+  | 'fire_smoke'
+  | 'person_fall_injury'
+  | 'vehicle_collision'
+  | 'dangerous_animal'
+  | 'weapon_visible'
+  | 'restricted_area_entry'
+  | 'other_hazard'
+
+export type AlertSeverity = 'critical' | 'high' | 'medium' | 'low'
+export type AlertReviewStatus = 'new' | 'acknowledged' | 'dismissed'
+
+export interface GuardianAlert {
+  alert_id: string
+  recording_id: string
+  hazard_category: HazardCategory
+  severity: AlertSeverity
+  confidence: number
+  timestamp_seconds: number
+  time_range_start: number
+  time_range_end: number
+  description: string
+  evidence_frames: EvidenceFrame[]
+  supporting_segment_ids: string[]
+  review_status: AlertReviewStatus
+  is_mocked: boolean
+  created_at: string
+  updated_at: string
+  original_filename?: string
+  camera_name?: string
+  camera_location?: string
+}
+
+export interface GuardianAlertsResponse {
+  recording_id: string
+  alerts: GuardianAlert[]
+  count: number
+}

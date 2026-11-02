@@ -598,6 +598,27 @@ class MockMetaClient:
             "static_scene": len(entities) == 0,
         }
 
+    async def detect_hazards_for_segment(
+        self, frames: list[bytes], timestamps: list[float]
+    ) -> dict:
+        """Deterministic mock for Guardian hazard detection.
+
+        Checks each frame's SHA-256 against scenario_map using the sentinel key
+        pattern "guardian:{sha256}" to allow tests to inject specific hazard
+        scenarios. Falls back to {"hazards": [], "scene_clear": True}.
+        """
+        if not frames:
+            raise ValueError("detect_hazards_for_segment requires at least one frame")
+        if len(timestamps) != len(frames):
+            raise ValueError("frames and timestamps must have equal length")
+        self._call_count += 1
+        for frame_data in frames:
+            h = hashlib.sha256(frame_data).hexdigest()
+            sentinel_key = f"guardian:{h}"
+            if sentinel_key in self.scenario_map:
+                return self.scenario_map[sentinel_key]
+        return {"hazards": [], "scene_clear": True}
+
 
 class ModelResponseError(ValueError):
     """Structured, actionable model-response failure.
@@ -887,6 +908,87 @@ def validate_upload_understanding(parsed) -> dict:
             raise ModelResponseError(
                 "schema_violation",
                 f"Upload understanding '{key}' must be a list if present"
+            )
+    return parsed
+
+
+GUARDIAN_HAZARD_PROMPT = """You are a hazard detection specialist reviewing a CCTV video segment. The frames below are evenly-sampled from one continuous segment, each labeled with its video timestamp in seconds.
+
+Your ONLY task is to identify LIFE-SAFETY and SECURITY HAZARDS visible in this segment. Focus exclusively on:
+
+1. FIRE / SMOKE (fire_smoke) — visible flames, smoke, smoldering, or heat distortion indicating fire. Even small or beginning fires must be reported.
+2. PERSON FALL / INJURY (person_fall_injury) — a person visibly falling, collapsed on the ground, or in a posture indicating injury (not sitting normally). Exclude people who lie down intentionally.
+3. VEHICLE COLLISION (vehicle_collision) — vehicles making contact, a vehicle striking a person or structure, or immediate pre-collision.
+4. DANGEROUS ANIMAL (dangerous_animal) — a wild or aggressive animal visibly present in a non-containment area (not a leashed pet in an expected location).
+5. WEAPON VISIBLE (weapon_visible) — a firearm, knife, or other weapon visible in a person's hand or conspicuously displayed (not secured in a holster or display case).
+6. RESTRICTED AREA ENTRY (restricted_area_entry) — a person crossing a clearly marked restricted boundary (fence with warning signs, secured door forced open, barrier bypassed).
+7. OTHER HAZARD (other_hazard) — any other directly visible life-safety hazard not in the above categories (e.g., flooding near electrical equipment, structural collapse, exposed high-voltage wiring).
+
+Rules:
+- Report ONLY what is DIRECTLY VISIBLE in these frames. Do not infer; describe observed evidence.
+- If a category has no evidence in these frames, omit it from hazards entirely.
+- If confidence is below 0.3, omit the hazard entirely.
+- SEVERITY: critical = immediate life-threatening, high = serious risk requiring immediate attention, medium = potential hazard needing investigation, low = possible/borderline.
+- timestamp_seconds: the earliest frame timestamp in seconds where the hazard is first clearly visible.
+- If the scene is normal with no hazards visible, return an empty hazards list.
+
+Return ONLY valid JSON — no prose, no markdown fences:
+{
+  "hazards": [
+    {
+      "hazard_category": "fire_smoke|person_fall_injury|vehicle_collision|dangerous_animal|weapon_visible|restricted_area_entry|other_hazard",
+      "severity": "critical|high|medium|low",
+      "confidence": 0.85,
+      "timestamp_seconds": 3.0,
+      "description": "Visible flames on the right side of the corridor at 3.0s, smoke accumulating near ceiling",
+      "needs_review": false
+    }
+  ],
+  "scene_clear": true
+}"""
+
+GUARDIAN_PROMPT_VERSION = "g1"
+
+VALID_HAZARD_CATEGORIES = frozenset({
+    "fire_smoke", "person_fall_injury", "vehicle_collision",
+    "dangerous_animal", "weapon_visible", "restricted_area_entry", "other_hazard",
+})
+VALID_SEVERITY_LEVELS = frozenset({"critical", "high", "medium", "low"})
+
+
+def validate_guardian_hazard_response(parsed) -> dict:
+    """Validate a parsed Guardian hazard detection response.
+
+    Raises ModelResponseError(schema_violation) on hard failures.
+    Returns parsed unchanged on success.
+    """
+    if not isinstance(parsed, dict):
+        raise ModelResponseError(
+            "schema_violation", "Guardian hazard response is not a JSON object"
+        )
+    hazards = parsed.get("hazards")
+    if hazards is not None and not isinstance(hazards, list):
+        raise ModelResponseError(
+            "schema_violation", "Guardian hazard response 'hazards' must be a list"
+        )
+    for h in (hazards or []):
+        if not isinstance(h, dict):
+            raise ModelResponseError(
+                "schema_violation", "Each hazard item must be a JSON object"
+            )
+        if "hazard_category" not in h:
+            raise ModelResponseError(
+                "schema_violation", "Hazard item missing required 'hazard_category'"
+            )
+        if "description" not in h:
+            raise ModelResponseError(
+                "schema_violation", "Hazard item missing required 'description'"
+            )
+        conf = h.get("confidence")
+        if conf is not None and not (isinstance(conf, (int, float)) and 0.0 <= float(conf) <= 1.0):
+            raise ModelResponseError(
+                "schema_violation",
+                f"Hazard confidence must be a float in [0, 1], got {conf!r}"
             )
     return parsed
 
