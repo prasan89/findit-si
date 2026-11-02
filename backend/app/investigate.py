@@ -174,6 +174,17 @@ async def investigate(
             eligible_ids,
         )).fetchall()
 
+        # Load whole-recording narratives for eligible recordings
+        narrative_rows = await (await db.execute(
+            f"""SELECT recording_id, original_filename, recording_narrative,
+                       recording_datetime, recording_timezone,
+                       camera_name, camera_location
+                FROM recordings
+                WHERE recording_id IN ({placeholders})
+                  AND recording_narrative IS NOT NULL""",
+            eligible_ids,
+        )).fetchall()
+
     # Incident-term queries also surface stored temporal incident
     # candidates (neutral vision text never matches "snatch"/"attack").
     # Loaded before the empty check so incident-only videos still match.
@@ -193,7 +204,14 @@ async def investigate(
             db_path, eligible_ids, incident_categories, rec_meta,
             inc_start, inc_end)
 
-    if not event_rows and not incident_dicts:
+    # Convert whole-recording narrative steps into scored event candidates.
+    # These supplement segment events but never replace them — scored × 0.85.
+    narrative_event_pairs = _narrative_rows_to_event_dicts(
+        narrative_rows, query_terms, temporal_filter,
+        time_start_seconds, time_end_seconds,
+    )
+
+    if not event_rows and not incident_dicts and not narrative_event_pairs:
         gaps = [
             f"Recording '{rec_meta[rid]['original_filename']}' has been processed but "
             f"no events were extracted — the video may contain no identifiable objects."
@@ -254,6 +272,30 @@ async def investigate(
     for incident_dict in incident_dicts:
         scored_events.append(
             (incident_dict["_incident_relevance"], incident_dict))
+
+    # Inject narrative-derived events. They supplement direct detections and
+    # are scored × 0.85 so segment evidence always wins ties.
+    # Deduplicate: drop a narrative step if a segment/incident event for the
+    # same recording overlaps its time window — direct vision evidence wins.
+    if narrative_event_pairs:
+        segment_windows: list[tuple[str, float, float]] = []
+        for _sc, ev in scored_events:
+            if ev.get("_source_type", "segment_event") != "recording_narrative":
+                rid = ev["recording_id"]
+                ts = ev["timestamp_seconds"]
+                seg_start = float(ev.get("start_seconds") or max(0, ts - 5))
+                seg_end = float(ev.get("end_seconds") or ts + 5)
+                segment_windows.append((rid, seg_start, seg_end))
+        for nscore, nev in narrative_event_pairs:
+            rid = nev["recording_id"]
+            n_start = float(nev.get("start_seconds", nev["timestamp_seconds"]))
+            n_end = float(nev.get("end_seconds", nev["timestamp_seconds"]))
+            overlaps = any(
+                w_rid == rid and n_start < w_end and n_end > w_start
+                for w_rid, w_start, w_end in segment_windows
+            )
+            if not overlaps:
+                scored_events.append((nscore, nev))
 
     if not scored_events:
         gaps = [f"No events matched the query '{query}'."]
@@ -397,6 +439,7 @@ async def investigate(
             relevance_score=relevance,
             matched_excerpts=excerpts,
             primary_match=primary_match,
+            source_type=ev_dict.get("_source_type", "segment_event"),
         )
         events.append(event)
         all_uncertainty_notes.extend(ev_dict["uncertainty_notes"])
@@ -607,39 +650,6 @@ def _action_confirmed_in_headline(
         if re.search(r"\b" + re.escape(syn.lower()) + r"\b", text):
             return True
     return False
-
-
-
-    """Extract time constraints from a query.
-
-    Supported (all video-relative seconds, consistent with stored
-    timestamp_seconds):
-    - 'between MM:SS and MM:SS' -> {"start", "end"}
-    - 'before MM:SS'             -> {"end"}
-    - 'after MM:SS'              -> {"start"}
-    - 'first ...' / '... last'   -> {"select": "first"/"last"}
-
-    Returns {} when no temporal operator is present. Clock-time (absolute)
-    queries are NOT supported — MM:SS always means video-relative.
-    """
-    result: dict = {}
-    q = query.lower()
-    m = re.search(r"between\s+(\d{1,2}):(\d{2})\s+and\s+(\d{1,2}):(\d{2})", q)
-    if m:
-        result["start"] = int(m.group(1)) * 60 + int(m.group(2))
-        result["end"] = int(m.group(3)) * 60 + int(m.group(4))
-    else:
-        m_before = re.search(r"before\s+(\d{1,2}):(\d{2})", q)
-        if m_before:
-            result["end"] = int(m_before.group(1)) * 60 + int(m_before.group(2))
-        m_after = re.search(r"after\s+(\d{1,2}):(\d{2})", q)
-        if m_after:
-            result["start"] = int(m_after.group(1)) * 60 + int(m_after.group(2))
-    if re.search(r"\bfirst\b", q):
-        result["select"] = "first"
-    elif re.search(r"\blast\b", q):
-        result["select"] = "last"
-    return result
 
 
 def _score_event(terms: list[str], ev: dict) -> float:
@@ -1174,6 +1184,89 @@ def _temporal_row_to_event_dict(row: dict, rec_meta: dict) -> Optional[dict]:
         "matched_excerpts": (observed + confirmed)[:3],
         "primary_match": incident_primary,
     }
+
+
+def _narrative_rows_to_event_dicts(
+    narrative_rows: list,
+    query_terms: list[str],
+    temporal_filter: dict,
+    time_start_seconds: Optional[float],
+    time_end_seconds: Optional[float],
+    min_score: float = MIN_EVENT_SCORE,
+) -> list[tuple[float, dict]]:
+    """Convert whole-recording narrative steps to scored event dicts.
+
+    Each narrative step becomes an event dict with source_type="recording_narrative".
+    Steps that don't meet the relevance threshold or time filter are dropped.
+    Narrative-derived events are scored slightly lower (× 0.85) than segment
+    events when they tie, so direct vision evidence takes precedence.
+    """
+    results: list[tuple[float, dict]] = []
+    for row in narrative_rows:
+        rid = row["recording_id"]
+        narrative_json = row["recording_narrative"]
+        try:
+            narrative = json.loads(narrative_json) if isinstance(narrative_json, str) else narrative_json
+        except Exception:
+            continue
+        if not isinstance(narrative, dict):
+            continue
+        steps = narrative.get("narrative_steps") or []
+        key_obs = narrative.get("key_observations") or []
+        scene = narrative.get("scene") or ""
+        rec_dt = row["recording_datetime"]
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            start = float(step.get("start_seconds", 0.0) or 0.0)
+            end = float(step.get("end_seconds", start) or start)
+            mid = (start + end) / 2.0
+            description = step.get("description") or ""
+            time_range = step.get("time_range") or f"{_format_ts(start)}-{_format_ts(end)}"
+
+            # Apply time filter
+            eff_start = time_start_seconds if time_start_seconds is not None else temporal_filter.get("start")
+            eff_end = time_end_seconds if time_end_seconds is not None else temporal_filter.get("end")
+            if eff_start is not None and mid < eff_start:
+                continue
+            if eff_end is not None and mid > eff_end:
+                continue
+
+            ev_dict = {
+                "event_id": f"narrative:{rid}:step:{step.get('step', 0)}",
+                "recording_id": rid,
+                "timestamp_seconds": mid,
+                "start_seconds": start,
+                "end_seconds": end,
+                "event_type": "narrative_step",
+                "action_description": description,
+                "scene_description": scene,
+                "object_descriptions": [],
+                "observed_facts": [description] + key_obs,
+                "inferred_claims": [],
+                "uncertainty_notes": [
+                    "Derived from whole-recording narrative — not a direct vision detection"
+                ],
+                "evidence_frames": [],
+                "confidence": 0.7,
+                "entities": [],
+                "action_sequence": [],
+                "original_filename": row["original_filename"],
+                "rec_dt": rec_dt,
+                "rec_tz": row["recording_timezone"],
+                "cam_name": row["camera_name"],
+                "cam_loc": row["camera_location"],
+                "has_reliable_timestamp": bool(rec_dt),
+                "_source_type": "recording_narrative",
+                "_narrative_time_range": time_range,
+            }
+
+            score = _score_event(query_terms, ev_dict) if query_terms else 1.0
+            if score < min_score:
+                continue
+            # Slightly discount narrative steps vs direct vision events
+            results.append((round(score * 0.85, 3), ev_dict))
+    return results
 
 
 def _build_summary(query: str, events: list) -> str:

@@ -141,6 +141,7 @@ export interface Event {
   matched_excerpts?: string[]
   primary_match?: string | null
   is_primary_finding?: boolean
+  source_type?: 'segment_event' | 'recording_narrative'
 }
 
 export interface InvestigationRequest {

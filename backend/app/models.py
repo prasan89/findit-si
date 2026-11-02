@@ -127,6 +127,9 @@ class Event(BaseModel):
     matched_excerpts: list[str] = []
     primary_match: Optional[str] = None
     is_primary_finding: bool = False
+    # "segment_event" (from events/temporal_events tables) or
+    # "recording_narrative" (derived from whole-recording narrative step).
+    source_type: str = "segment_event"
 
     @field_validator("confidence")
     @classmethod
