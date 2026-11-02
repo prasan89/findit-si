@@ -657,6 +657,21 @@ async def process_recording(
         else:
             understanding_calls = 0
 
+        # Whole-recording narrative pass: one model call, up to 20 sampled frames
+        if indexed_frame_paths:
+            try:
+                await _run_whole_recording_narrative(
+                    recording_id=recording_id,
+                    db_path=db_path,
+                    storage=storage,
+                    meta_client=meta_client,
+                    indexed_frame_paths=indexed_frame_paths,
+                    errors=errors,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Narrative pass failed for %s: %s", recording_id[:8], exc)
+
         # Cleanup tmp frames
         import shutil
         if tmp_dir.exists():
@@ -1006,3 +1021,76 @@ async def _store_upload_understanding(
             ),
         )
         await db.commit()
+
+
+async def _run_whole_recording_narrative(
+    recording_id: str,
+    db_path: str,
+    storage: LocalStorageBackend,
+    meta_client,
+    indexed_frame_paths: list[tuple[float, str]],
+    errors: list,
+) -> bool:
+    """Run a single whole-recording narrative pass using up to 20 evenly-spaced frames.
+
+    Sends a representative sample of frames from the entire recording in one
+    model call, producing a temporal narrative with numbered steps. Stores the
+    result JSON in recordings.recording_narrative.
+
+    Returns True if narrative was stored, False otherwise.
+    """
+    if not indexed_frame_paths:
+        return False
+    if not hasattr(meta_client, "analyze_whole_recording"):
+        return False
+
+    # Sample up to 20 evenly-spaced frames across the recording
+    n = len(indexed_frame_paths)
+    step = max(1, n // 20)
+    sampled = indexed_frame_paths[::step][:20]
+
+    frame_bytes: list[bytes] = []
+    frame_timestamps: list[float] = []
+    for ts, frame_rel_path in sampled:
+        try:
+            frame_abs = storage.data_dir / frame_rel_path
+            async with aiofiles.open(frame_abs, "rb") as f:
+                frame_bytes.append(await f.read())
+            frame_timestamps.append(ts)
+        except Exception as exc:
+            logger.warning(
+                "Narrative pass: could not read frame %.1fs for %s: %s",
+                ts, recording_id[:8], exc,
+            )
+
+    if not frame_bytes:
+        return False
+
+    try:
+        result = await meta_client.analyze_whole_recording(frame_bytes, frame_timestamps)
+    except Exception as exc:
+        logger.warning(
+            "Whole-recording narrative failed for %s: %s", recording_id[:8], exc
+        )
+        errors.append(f"Narrative analysis failed: {str(exc)[:200]}")
+        return False
+
+    narrative_json = json.dumps(result)
+    try:
+        async with get_db(db_path) as db:
+            await db.execute(
+                "UPDATE recordings SET recording_narrative=?, updated_at=? WHERE recording_id=?",
+                (narrative_json, _now(), recording_id),
+            )
+            await db.commit()
+    except Exception as exc:
+        logger.warning(
+            "Failed to store narrative for %s: %s", recording_id[:8], exc
+        )
+        return False
+
+    logger.info(
+        "Narrative: stored %d steps for recording %s",
+        len(result.get("narrative_steps", [])), recording_id[:8],
+    )
+    return True

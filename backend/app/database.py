@@ -380,4 +380,13 @@ async def create_tables(db_path: str) -> None:
             ON guardian_alerts(review_status)
         """)
 
+        # Phase 10: whole-recording narrative — idempotent migration
+        try:
+            await db.execute(
+                "ALTER TABLE recordings ADD COLUMN recording_narrative TEXT"
+            )
+            await db.commit()
+        except Exception:
+            pass  # column already exists
+
         await db.commit()

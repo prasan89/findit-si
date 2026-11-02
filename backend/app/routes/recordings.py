@@ -208,13 +208,20 @@ async def list_recordings():
                       recording_datetime, recording_timezone,
                       camera_name, camera_location,
                       processing_status, frame_count, video_duration_seconds,
-                      video_path, thumbnail_path, processing_errors, indexing_status_detail
+                      video_path, thumbnail_path, processing_errors, indexing_status_detail,
+                      recording_narrative
                FROM recordings ORDER BY upload_timestamp DESC"""
         )).fetchall()
 
     result = []
     for r in rows:
         errors = json.loads(r['processing_errors']) if r['processing_errors'] else None
+        narrative = None
+        if r['recording_narrative']:
+            try:
+                narrative = json.loads(r['recording_narrative'])
+            except Exception:
+                pass
         result.append(RecordingStatus(
             recording_id=r['recording_id'],
             original_filename=r['original_filename'],
@@ -230,6 +237,7 @@ async def list_recordings():
             thumbnail_path=r['thumbnail_path'],
             processing_errors=errors,
             indexing_status_detail=r['indexing_status_detail'],
+            recording_narrative=narrative,
         ))
     return result
 
@@ -247,7 +255,8 @@ async def get_recording(recording_id: str):
                       recording_datetime, recording_timezone,
                       camera_name, camera_location,
                       processing_status, frame_count, video_duration_seconds,
-                      video_path, thumbnail_path, processing_errors, indexing_status_detail
+                      video_path, thumbnail_path, processing_errors, indexing_status_detail,
+                      recording_narrative
                FROM recordings WHERE recording_id = ?""",
             (recording_id,)
         )).fetchone()
@@ -256,6 +265,12 @@ async def get_recording(recording_id: str):
         raise HTTPException(status_code=404, detail="Recording not found.")
 
     errors = json.loads(row['processing_errors']) if row['processing_errors'] else None
+    narrative = None
+    if row['recording_narrative']:
+        try:
+            narrative = json.loads(row['recording_narrative'])
+        except Exception:
+            pass
     return RecordingStatus(
         recording_id=row['recording_id'],
         original_filename=row['original_filename'],
@@ -271,6 +286,7 @@ async def get_recording(recording_id: str):
         thumbnail_path=row['thumbnail_path'],
         processing_errors=errors,
         indexing_status_detail=row['indexing_status_detail'],
+        recording_narrative=narrative,
     )
 
 

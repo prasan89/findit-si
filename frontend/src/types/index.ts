@@ -1,5 +1,28 @@
 export type ProcessingStatus = 'UPLOADED' | 'PROCESSING' | 'INDEXED' | 'PARTIAL' | 'FAILED' | 'PENDING'
 
+export interface NarrativeStep {
+  step: number
+  time_range: string
+  start_seconds: number
+  end_seconds: number
+  description: string
+}
+
+export interface NarrativeEntity {
+  entity_id: string
+  description: string
+  first_seen_seconds: number
+  last_seen_seconds: number
+}
+
+export interface RecordingNarrative {
+  scene: string
+  narrative_steps: NarrativeStep[]
+  key_observations: string[]
+  open_questions: string[]
+  entities: NarrativeEntity[]
+}
+
 export interface ObjectAttributes {
   color?: string
   shape?: string
@@ -24,6 +47,7 @@ export interface Recording {
   video_path?: string
   thumbnail_path?: string
   file_size_bytes?: number
+  recording_narrative?: RecordingNarrative
 }
 
 export interface Sighting {

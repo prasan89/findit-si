@@ -47,6 +47,7 @@ class RecordingStatus(BaseModel):
     thumbnail_path: Optional[str] = None
     processing_errors: Optional[list] = None
     indexing_status_detail: Optional[str] = None
+    recording_narrative: Optional[dict] = None
 
 
 class Sighting(BaseModel):

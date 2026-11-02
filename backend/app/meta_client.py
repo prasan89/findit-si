@@ -184,6 +184,51 @@ Return ONLY valid JSON — no prose, no markdown fences:
 }"""
 
 
+WHOLE_RECORDING_NARRATIVE_PROMPT = """You are analyzing a CCTV recording for a security investigation. The frames below are evenly-sampled across the ENTIRE recording, each labeled with its video timestamp in seconds. Your task is to produce a complete temporal narrative of what happened — exactly as a skilled analyst would write it after watching the full video.
+
+Write:
+1. THE SCENE — one sentence: location type, camera angle, approximate time of day
+2. THE SEQUENCE — numbered steps describing what actually happened in order. Each step must be tied to a timestamp range. Describe who is present, what they do, how they move, and what changes. Use neutral observable language (no crime verdicts).
+3. KEY OBSERVATIONS — 3-5 bullet points summarizing the most significant observable facts: unusual behaviors, entity appearances/disappearances, notable interactions, anything that stands out
+4. OPEN QUESTIONS — what cannot be determined from this footage (obstructions, cuts, unclear motion)
+
+Rules:
+- Ground every claim in what is DIRECTLY VISIBLE across the frames. Do not fabricate details.
+- Describe motion direction, speed, and posture when visible (running vs walking, approaching vs leaving).
+- If an entity appears in one frame but not the next, note both the appearance and the disappearance with timestamps.
+- Never accuse anyone of a crime. Use: "person reaches toward another person's neck area" not "person steals chain".
+
+Return ONLY valid JSON — no prose, no markdown fences:
+{
+  "scene": "location, camera angle, lighting",
+  "narrative_steps": [
+    {
+      "step": 1,
+      "time_range": "0:00-0:18",
+      "start_seconds": 0.0,
+      "end_seconds": 18.0,
+      "description": "A woman in a pink saree stands alone near a maroon car in a basement parking area. A man in dark clothing enters from the far right background and walks slowly toward her."
+    }
+  ],
+  "key_observations": [
+    "Man in dark clothing spends ~30 seconds loitering before approaching the woman"
+  ],
+  "open_questions": [
+    "Camera cut at 0:28 — unclear if the same person reappears outside"
+  ],
+  "entities": [
+    {
+      "entity_id": "entity_1",
+      "description": "woman in pink saree",
+      "first_seen_seconds": 0.0,
+      "last_seen_seconds": 35.0
+    }
+  ]
+}"""
+
+WHOLE_RECORDING_PROMPT_VERSION = "n1"
+
+
 @runtime_checkable
 class TemporalClipAnalyzer(Protocol):
     """Interface for multi-frame clip analysis (temporal pipeline)."""
@@ -488,6 +533,83 @@ class MuseSparkClient:
         parsed["_images"] = len(frames)
         return parsed
 
+    async def analyze_whole_recording(
+        self, frames: list[bytes], timestamps: list[float]
+    ) -> dict:
+        """Analyze a representative sample of frames from the entire recording.
+
+        Produces a temporal narrative with numbered steps, key observations,
+        and open questions — a story-level understanding of what happened.
+        Called once per recording (not per segment). Max 20 frames recommended.
+        """
+        if not frames:
+            raise ValueError("analyze_whole_recording requires at least one frame")
+        if len(timestamps) != len(frames):
+            raise ValueError("frames and timestamps must have equal length")
+        content: list[dict] = []
+        for frame_data, ts in zip(frames, timestamps):
+            b64 = base64.b64encode(frame_data).decode("utf-8")
+            content.append(
+                {"type": "text",
+                 "text": f"[frame at video timestamp {float(ts):.3f}s]"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}",
+                              "detail": "high"},
+            })
+        content.append({"type": "text", "text": WHOLE_RECORDING_NARRATIVE_PROMPT})
+        # Narrative needs more tokens than per-segment analysis
+        narrative_max_tokens = max(self.max_output_tokens, 4000)
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": content}],
+            "max_completion_tokens": narrative_max_tokens,
+            "temperature": 0.1,
+            "response_format": {"type": "json_object"},
+        }
+        from .guards import bounded_llm_call
+        max_tokens = narrative_max_tokens
+        data = None
+        parsed: dict = {}
+        async with bounded_llm_call():
+            for attempt in (1, 2):
+                payload["max_completion_tokens"] = max_tokens
+                async with httpx.AsyncClient(timeout=self._httpx_timeout()) as client:
+                    resp = await client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                content_text, finish_reason = extract_message_content(data)
+                try:
+                    parsed = parse_model_json(
+                        content_text, finish_reason=finish_reason)
+                except ModelResponseError as exc:
+                    if exc.raw_response is None and isinstance(content_text, str):
+                        exc.raw_response = content_text[:MAX_RAW_FAILURE_CHARS]
+                    if (exc.code != "truncated" or attempt > 1
+                            or max_tokens >= TRUNCATED_RETRY_MAX_TOKENS):
+                        raise
+                    max_tokens = min(max_tokens * 2, TRUNCATED_RETRY_MAX_TOKENS)
+                    logger.warning(
+                        "whole-recording narrative truncated; retrying with "
+                        "max_completion_tokens=%d", max_tokens)
+                    continue
+                break
+        validate_whole_recording_narrative(parsed)
+        usage = data.get("usage") or {}
+        parsed["_usage"] = {
+            "tokens_in": usage.get("prompt_tokens", 0),
+            "tokens_out": usage.get("completion_tokens", 0),
+        }
+        parsed["_images"] = len(frames)
+        return parsed
+
 
 class MockMetaClient:
     """
@@ -618,6 +740,42 @@ class MockMetaClient:
             if sentinel_key in self.scenario_map:
                 return self.scenario_map[sentinel_key]
         return {"hazards": [], "scene_clear": True}
+
+    async def analyze_whole_recording(
+        self, frames: list[bytes], timestamps: list[float]
+    ) -> dict:
+        """Deterministic mock for whole-recording narrative.
+
+        Checks first frame's SHA-256 against scenario_map using sentinel key
+        "narrative:{sha256}" for test injection. Returns a minimal default
+        narrative otherwise.
+        """
+        if not frames:
+            raise ValueError("analyze_whole_recording requires at least one frame")
+        if len(timestamps) != len(frames):
+            raise ValueError("frames and timestamps must have equal length")
+        self._call_count += 1
+        h = hashlib.sha256(frames[0]).hexdigest()
+        sentinel_key = f"narrative:{h}"
+        if sentinel_key in self.scenario_map:
+            return self.scenario_map[sentinel_key]
+        t_start = float(timestamps[0])
+        t_end = float(timestamps[-1])
+        return {
+            "scene": "mock scene — location unknown",
+            "narrative_steps": [
+                {
+                    "step": 1,
+                    "time_range": f"{t_start:.1f}s-{t_end:.1f}s",
+                    "start_seconds": t_start,
+                    "end_seconds": t_end,
+                    "description": "Mock narrative: scene observed across recording.",
+                }
+            ],
+            "key_observations": ["Mock analysis — no real model was called"],
+            "open_questions": [],
+            "entities": [],
+        }
 
 
 class ModelResponseError(ValueError):
@@ -909,6 +1067,33 @@ def validate_upload_understanding(parsed) -> dict:
                 "schema_violation",
                 f"Upload understanding '{key}' must be a list if present"
             )
+    return parsed
+
+
+def validate_whole_recording_narrative(parsed) -> dict:
+    """Validate a parsed whole-recording narrative response.
+
+    Requires narrative_steps (list) and scene (str). key_observations is
+    optional but must be a list if present. Raises ModelResponseError on failure.
+    """
+    if not isinstance(parsed, dict):
+        raise ModelResponseError(
+            "schema_violation", "Narrative response is not a JSON object"
+        )
+    if "scene" not in parsed or not isinstance(parsed.get("scene"), str):
+        raise ModelResponseError(
+            "schema_violation", "Narrative response missing 'scene' string"
+        )
+    steps = parsed.get("narrative_steps")
+    if steps is None or not isinstance(steps, list):
+        raise ModelResponseError(
+            "schema_violation", "Narrative response missing 'narrative_steps' list"
+        )
+    obs = parsed.get("key_observations")
+    if obs is not None and not isinstance(obs, list):
+        raise ModelResponseError(
+            "schema_violation", "Narrative 'key_observations' must be a list if present"
+        )
     return parsed
 
 
