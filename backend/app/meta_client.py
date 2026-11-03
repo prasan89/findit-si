@@ -1,5 +1,5 @@
 """
-Meta Model API client — Muse Spark 1.3 for frame analysis, SAM 3.1 optional.
+Meta Model API client — Muse Wonder 1.0 for frame analysis, SAM 3.1 optional.
 
 Auth: Bearer $MODEL_API_KEY  (backwards-compatible alias: $META_API_KEY)
 Base: https://api.meta.ai/v1
@@ -17,7 +17,23 @@ import httpx
 logger = logging.getLogger(__name__)
 
 API_BASE_URL = "https://api.meta.ai/v1"
-MUSE_SPARK_MODEL = "muse-spark-1.3"
+MUSE_SPARK_MODEL = "muse-wonder-1.0"
+
+_RAW_LOG_PATH = "/tmp/meta_raw_responses.log"
+
+
+def _log_raw_response(method: str, finish_reason: str, content: str) -> None:
+    """Append raw Meta API response text to a dedicated log file for inspection."""
+    import datetime
+    try:
+        ts = datetime.datetime.now().isoformat(timespec="seconds")
+        with open(_RAW_LOG_PATH, "a") as f:
+            f.write(f"\n--- [{ts}] {method} finish={finish_reason} ---\n")
+            f.write(content if isinstance(content, str) else repr(content))
+            f.write("\n")
+    except Exception:
+        pass
+
 
 ANALYSIS_PROMPT = """You are analyzing a CCTV video frame for a security investigation. Describe what is OBSERVED — not inferred. This frame may be one of several analyzed from the same clip; describe only this frame.
 
@@ -228,6 +244,77 @@ Return ONLY valid JSON — no prose, no markdown fences:
 
 WHOLE_RECORDING_PROMPT_VERSION = "n1"
 
+VIDEO_ANALYSIS_PROMPT = """You are analyzing a security camera recording. Watch the entire video carefully and return a complete analysis. Return ONLY valid JSON — no markdown, no prose outside the JSON:
+{
+  "scene_context": "one sentence: location type, camera angle, lighting",
+  "entities": [
+    {
+      "entity_id": "entity_1",
+      "type": "person|vehicle|animal|object",
+      "description": "appearance (color, size, distinctive features)",
+      "first_seen_seconds": 0.0,
+      "last_seen_seconds": 30.0,
+      "confidence": 0.9
+    }
+  ],
+  "actions": [
+    {
+      "entity_id": "entity_1",
+      "action": "walks toward the door",
+      "start_seconds": 5.0,
+      "end_seconds": 8.0,
+      "confidence": 0.9
+    }
+  ],
+  "interactions": [
+    {
+      "entities": ["entity_1", "entity_2"],
+      "description": "entity_1 approaches entity_2 from behind",
+      "start_seconds": 10.0,
+      "end_seconds": 12.0,
+      "confidence": 0.8
+    }
+  ],
+  "changes": [
+    {
+      "type": "appeared|disappeared|moved|entered|exited",
+      "entity_id": "entity_1",
+      "description": "person entered from left side",
+      "timestamp_seconds": 5.0
+    }
+  ],
+  "unusual_observations": [
+    "person loiters for 30 seconds before approaching another person"
+  ],
+  "uncertain_observations": [
+    "face not visible due to angle"
+  ],
+  "static_scene": false,
+  "narrative_steps": [
+    {
+      "step": 1,
+      "time_range": "0:00-0:18",
+      "start_seconds": 0.0,
+      "end_seconds": 18.0,
+      "description": "Detailed temporal description of what happens in this time range"
+    }
+  ],
+  "key_observations": [
+    "most significant observable facts summarized as bullet points"
+  ],
+  "open_questions": [
+    "what cannot be determined from this footage"
+  ]
+}
+
+Rules:
+- Ground every claim in what is DIRECTLY VISIBLE. Do not fabricate.
+- Describe motion direction, speed, and posture when visible.
+- Never accuse anyone of a crime. Use neutral observable language.
+- If the scene is static, set static_scene to true and entities/actions may be empty."""
+
+VIDEO_ANALYSIS_PROMPT_VERSION = "v1"
+
 
 @runtime_checkable
 class TemporalClipAnalyzer(Protocol):
@@ -243,7 +330,7 @@ class TemporalClipAnalyzer(Protocol):
 
 class MuseSparkClient:
     """
-    Muse Spark 1.3 via Meta Model API chat completions.
+    Muse Wonder 1.0 via Meta Model API chat completions.
     OpenAI-compatible endpoint: POST /v1/chat/completions
     Images: image_url content part with base64 data URI.
     """
@@ -345,6 +432,8 @@ class MuseSparkClient:
                     data = resp.json()
 
                 content, finish_reason = extract_message_content(data)
+                logger.debug("META_RAW_RESPONSE finish=%s content=%s", finish_reason, content)
+                _log_raw_response("analyze_frame", finish_reason, content)
                 try:
                     parsed = parse_model_json(content, finish_reason=finish_reason)
                 except ModelResponseError as exc:
@@ -428,6 +517,7 @@ class MuseSparkClient:
                     resp.raise_for_status()
                     data = resp.json()
                 content_text, finish_reason = extract_message_content(data)
+                _log_raw_response("analyze_clip", finish_reason, content_text)
                 try:
                     parsed = parse_model_json(
                         content_text, finish_reason=finish_reason)
@@ -509,6 +599,7 @@ class MuseSparkClient:
                     resp.raise_for_status()
                     data = resp.json()
                 content_text, finish_reason = extract_message_content(data)
+                _log_raw_response("analyze_upload_segment", finish_reason, content_text)
                 try:
                     parsed = parse_model_json(
                         content_text, finish_reason=finish_reason)
@@ -586,6 +677,7 @@ class MuseSparkClient:
                     resp.raise_for_status()
                     data = resp.json()
                 content_text, finish_reason = extract_message_content(data)
+                _log_raw_response("analyze_whole_recording", finish_reason, content_text)
                 try:
                     parsed = parse_model_json(
                         content_text, finish_reason=finish_reason)
@@ -609,6 +701,201 @@ class MuseSparkClient:
         }
         parsed["_images"] = len(frames)
         return parsed
+
+    async def upload_video_file(self, video_path: str) -> str:
+        """Upload a video file to /v1/files and return the file_id.
+
+        Uses multipart form-data upload. Same Bearer auth as other methods.
+        Retries up to max_api_attempts times with exponential backoff.
+        """
+        from pathlib import Path as _Path
+        import asyncio as _asyncio
+
+        video_file = _Path(video_path)
+        if not video_file.exists():
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+
+        try:
+            from .config import get_settings
+            _settings = get_settings()
+            max_attempts = _settings.max_api_attempts
+            base_backoff = _settings.base_backoff_seconds
+        except Exception:
+            max_attempts, base_backoff = 3, 1.0
+
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        last_exc: Exception = RuntimeError("no attempts made")
+        for attempt in range(max_attempts):
+            if attempt > 0:
+                await _asyncio.sleep(base_backoff * (2 ** (attempt - 1)))
+            try:
+                with open(video_path, "rb") as fh:
+                    files = {
+                        "file": (video_file.name, fh, "video/mp4"),
+                        "purpose": (None, "user_data"),
+                    }
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(connect=self.connect_timeout_s,
+                                              read=300.0, write=300.0,
+                                              pool=self.connect_timeout_s)
+                    ) as client:
+                        resp = await client.post(
+                            f"{self.base_url}/files",
+                            headers=headers,
+                            files=files,
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
+                file_id = data.get("id") or data.get("file_id")
+                if not file_id:
+                    raise ModelResponseError(
+                        "missing_file_id",
+                        f"Files API response missing 'id': {str(data)[:200]}"
+                    )
+                logger.info("Uploaded video %s → file_id=%s", video_file.name, file_id)
+                return file_id
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                body = exc.response.text[:500] if exc.response is not None else ""
+                logger.warning("upload_video_file attempt %d failed: %s — body: %s",
+                               attempt + 1, exc, body)
+            except (httpx.RequestError, ModelResponseError) as exc:
+                last_exc = exc
+                logger.warning("upload_video_file attempt %d failed: %s", attempt + 1, exc)
+        raise last_exc
+
+    async def analyze_video_file(self, file_id: str) -> dict:
+        """Analyze a previously-uploaded video via the Responses API (/v1/responses).
+
+        Returns a dict matching the VIDEO_ANALYSIS_PROMPT schema with
+        entities, actions, changes, narrative_steps, etc. Logs raw response
+        to /tmp/meta_raw_responses.log.
+        """
+        import asyncio as _asyncio
+
+        try:
+            from .config import get_settings
+            _settings = get_settings()
+            max_attempts = _settings.max_api_attempts
+            base_backoff = _settings.base_backoff_seconds
+            responses_max_tokens = getattr(_settings, "responses_api_max_output_tokens",
+                                           self.max_output_tokens)
+        except Exception:
+            max_attempts, base_backoff = 3, 1.0
+            responses_max_tokens = self.max_output_tokens
+
+        payload = {
+            "model": self.model,
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": VIDEO_ANALYSIS_PROMPT},
+                        {"type": "input_file", "file_id": file_id},
+                    ],
+                }
+            ],
+            "max_output_tokens": responses_max_tokens,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        last_exc: Exception = RuntimeError("no attempts made")
+        from .guards import bounded_llm_call
+        async with bounded_llm_call():
+            for attempt in range(max_attempts):
+                if attempt > 0:
+                    await _asyncio.sleep(base_backoff * (2 ** (attempt - 1)))
+                try:
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(connect=self.connect_timeout_s,
+                                              read=300.0, write=60.0,
+                                              pool=self.connect_timeout_s)
+                    ) as client:
+                        resp = await client.post(
+                            f"{self.base_url}/responses",
+                            headers=headers,
+                            json=payload,
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
+
+                    content_text = _extract_responses_api_content(data)
+                    finish_reason = _extract_responses_api_finish_reason(data)
+                    _log_raw_response("analyze_video_file", finish_reason or "unknown",
+                                      content_text or "")
+
+                    if not content_text:
+                        raise ModelResponseError(
+                            "empty_content",
+                            "Responses API returned empty content",
+                            finish_reason=finish_reason,
+                        )
+
+                    parsed = parse_model_json(content_text, finish_reason=finish_reason)
+                    validate_video_analysis(parsed)
+
+                    usage = data.get("usage") or {}
+                    parsed["_usage"] = {
+                        "tokens_in": usage.get("input_tokens", 0),
+                        "tokens_out": usage.get("output_tokens", 0),
+                    }
+                    return parsed
+                except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                    last_exc = exc
+                    logger.warning("analyze_video_file attempt %d failed: %s",
+                                   attempt + 1, exc)
+                except ModelResponseError as exc:
+                    if exc.raw_response is None and isinstance(content_text, str):
+                        exc.raw_response = content_text[:MAX_RAW_FAILURE_CHARS]
+                    raise
+        raise last_exc
+
+
+def _extract_responses_api_content(data: dict) -> Optional[str]:
+    """Extract text content from a Responses API response envelope.
+
+    The Responses API returns output as a list; the assistant message is
+    typically output[1] (output[0] is a reasoning item) with content[0].text.
+    Falls back to scanning all output items for text content.
+    """
+    output = data.get("output") or []
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "message":
+            for part in (item.get("content") or []):
+                if isinstance(part, dict) and part.get("type") == "output_text":
+                    text = part.get("text")
+                    if isinstance(text, str) and text.strip():
+                        return text
+    # Fallback: any text in any content block
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        for part in (item.get("content") or []):
+            if isinstance(part, dict):
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text
+    return None
+
+
+def _extract_responses_api_finish_reason(data: dict) -> Optional[str]:
+    """Extract finish reason from a Responses API response."""
+    # Top-level status field
+    status = data.get("status")
+    if isinstance(status, str):
+        return status
+    # From output message items
+    output = data.get("output") or []
+    for item in output:
+        if isinstance(item, dict) and item.get("type") == "message":
+            return item.get("stop_reason") or item.get("finish_reason")
+    return None
 
 
 class MockMetaClient:
@@ -775,6 +1062,69 @@ class MockMetaClient:
             "key_observations": ["Mock analysis — no real model was called"],
             "open_questions": [],
             "entities": [],
+        }
+
+
+class MockVideoClient(MockMetaClient):
+    """MockMetaClient extended with direct-video API stubs (Files + Responses APIs).
+
+    Use this in tests that exercise the direct-video pipeline path. The base
+    MockMetaClient intentionally does NOT have these methods so that legacy
+    frame-extraction tests continue to use the old pipeline.
+    """
+
+    async def upload_video_file(self, video_path: str) -> str:
+        """Mock Files API upload — returns a deterministic mock file_id."""
+        self._call_count += 1
+        h = hashlib.sha256(video_path.encode()).hexdigest()[:16]
+        return f"file-mock-{h}"
+
+    async def analyze_video_file(self, file_id: str) -> dict:
+        """Mock Responses API analysis — checks scenario_map for sentinel key 'video:{file_id}'.
+
+        Returns a default minimal analysis if no sentinel key is found.
+        """
+        self._call_count += 1
+        sentinel_key = f"video:{file_id}"
+        if sentinel_key in self.scenario_map:
+            return self.scenario_map[sentinel_key]
+        return {
+            "scene_context": "mock scene — direct video analysis",
+            "entities": [
+                {
+                    "entity_id": "entity_1",
+                    "type": "person",
+                    "description": "mock entity",
+                    "first_seen_seconds": 0.0,
+                    "last_seen_seconds": 5.0,
+                    "confidence": 0.8,
+                }
+            ],
+            "actions": [
+                {
+                    "entity_id": "entity_1",
+                    "action": "present in scene",
+                    "start_seconds": 0.0,
+                    "end_seconds": 5.0,
+                    "confidence": 0.7,
+                }
+            ],
+            "interactions": [],
+            "changes": [],
+            "unusual_observations": [],
+            "uncertain_observations": [],
+            "static_scene": False,
+            "narrative_steps": [
+                {
+                    "step": 1,
+                    "time_range": "0:00-0:05",
+                    "start_seconds": 0.0,
+                    "end_seconds": 5.0,
+                    "description": "Mock narrative: direct video analysis performed.",
+                }
+            ],
+            "key_observations": ["Mock analysis — direct video API (no real model called)"],
+            "open_questions": [],
         }
 
 
@@ -1094,6 +1444,26 @@ def validate_whole_recording_narrative(parsed) -> dict:
         raise ModelResponseError(
             "schema_violation", "Narrative 'key_observations' must be a list if present"
         )
+    return parsed
+
+
+def validate_video_analysis(parsed) -> dict:
+    """Validate a parsed direct video analysis response (lenient).
+
+    Requires a top-level dict. entities/actions/changes/narrative_steps must be
+    lists if present. Raises ModelResponseError(schema_violation) on hard failures.
+    """
+    if not isinstance(parsed, dict):
+        raise ModelResponseError(
+            "schema_violation", "Video analysis response is not a JSON object"
+        )
+    for key in ("entities", "actions", "changes", "narrative_steps",
+                "interactions", "unusual_observations", "uncertain_observations"):
+        if key in parsed and not isinstance(parsed[key], list):
+            raise ModelResponseError(
+                "schema_violation",
+                f"Video analysis '{key}' must be a list if present"
+            )
     return parsed
 
 

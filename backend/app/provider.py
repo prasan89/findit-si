@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Contributor mode: input $0.10/1M = $0.0001/1K, output $0.20/1M = $0.0002/1K
 # Using standard mode rates; switch to contributor IDs if access granted.
 _COST_PER_1K_TOKENS_IN: dict[str, float] = {
+    "muse-wonder-1.0": 0.00125,
     "muse-spark-1.3": 0.00125,
     "muse-spark-1.2": 0.00125,
     "muse-spark-1.3-contributor": 0.0001,
@@ -40,6 +41,7 @@ _COST_PER_1K_TOKENS_IN: dict[str, float] = {
     "mock-v1": 0.0,
 }
 _COST_PER_1K_TOKENS_OUT: dict[str, float] = {
+    "muse-wonder-1.0": 0.00425,
     "muse-spark-1.3": 0.00425,
     "muse-spark-1.2": 0.00425,
     "muse-spark-1.3-contributor": 0.0002,
@@ -51,6 +53,7 @@ _COST_PER_1K_TOKENS_OUT: dict[str, float] = {
 }
 # Vision: images billed as tokens; no separate flat per-image fee published.
 _COST_PER_IMAGE: dict[str, float] = {
+    "muse-wonder-1.0": 0.0,
     "muse-spark-1.3": 0.0,
     "muse-spark-1.2": 0.0,
     "muse-spark-1.3-contributor": 0.0,

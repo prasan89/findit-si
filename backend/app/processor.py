@@ -444,118 +444,101 @@ async def process_recording(
             )
             await db.commit()
 
-        # Extract frames to tmp dir
-        tmp_dir = storage.tmp_dir / recording_id
-        frames = await extract_frames(video_path, tmp_dir, fps=fps, max_frames=max_frames)
-
-        api_calls = 0
-        cache_hits = 0
-        # Indexed frame paths (timestamp, frame_rel_path) for upload understanding pass
-        indexed_frame_paths: list[tuple[float, str]] = []
-        for (ts, frame_path) in frames:
-            async with aiofiles.open(frame_path, 'rb') as f:
-                frame_data = await f.read()
-
-            content_hash = compute_content_hash(frame_data)
-            model_version = meta_client.model_version
-
-            # ── General pass ──────────────────────────────────────────────
-            # Check cache (content + model + prompt scoped)
-            cached_analysis = None
-            async with get_db(db_path) as db:
-                cached_analysis = await get_cached_analysis(
-                    db, content_hash, model_version)
-            if cached_analysis is not None:
-                cache_hits += 1
-
-            if cached_analysis is None and api_calls < max_api_calls:
-                try:
-                    cached_analysis = await meta_client.analyze_frame(frame_data)
-                    api_calls += 1
-                    # Store in cache
-                    async with get_db(db_path) as db:
-                        await store_cached_analysis(
-                            db, content_hash, model_version, cached_analysis)
-                        await db.commit()
-                except BudgetExceededError as e:
-                    errors.append(f"Budget limit reached at frame {ts:.1f}s: {str(e)[:200]}")
-                    logger.warning("Budget exceeded during processing of %s: %s", recording_id, e)
-                    break
-                except Exception as e:
-                    # One failed frame never aborts the rest. Structured
-                    # failures carry a machine-readable [code] for triage.
-                    failed_frames += 1
-                    code = getattr(e, "code", None)
-                    tag = f"[{code}] " if code else ""
-                    errors.append(f"Frame {ts:.1f}s: model error {tag}{str(e)[:200]}")
-                    await record_frame_failure(
-                        db_path, recording_id, ts, e, model_version)
-                    logger.warning(
-                        "Frame %.1fs of %s failed (%s); continuing with next frame",
-                        ts, recording_id, type(e).__name__,
-                    )
-                    continue
-            elif cached_analysis is None:
-                skipped_frames += 1
-                errors.append(f"Frame {ts:.1f}s: skipped (API call limit reached)")
-                continue
-
-            # Save frame to storage
-            frame_id = f"{recording_id}_{ts:.3f}"
-            async with aiofiles.open(frame_path, 'rb') as f:
-                fd = await f.read()
-            frame_rel_path = await storage.save_frame(recording_id, frame_id, fd)
-            # Track for upload understanding pass
-            indexed_frame_paths.append((ts, frame_rel_path))
-
-            # Parse observations from general model response
-            observations = _parse_observations(
-                analysis=cached_analysis,
+        # Direct video API path: upload MP4 then analyze via Responses API.
+        # Takes priority when the client supports upload_video_file.
+        if hasattr(meta_client, "upload_video_file") and hasattr(meta_client, "analyze_video_file"):
+            logger.info(
+                "Using direct video API for recording %s (skipping frame extraction)",
+                recording_id[:8],
+            )
+            success = await _upload_and_analyze_video(
                 recording_id=recording_id,
-                frame_id=frame_id,
-                video_timestamp_seconds=ts,
-                recording_datetime=recording_datetime,
-                recording_timezone=recording_timezone,
-                source_frame_path=frame_rel_path,
-                content_hash=content_hash,
-                model_version=model_version,
-                analysis_pass="general",
+                video_abs_path=str(video_path),
+                db_path=db_path,
+                meta_client=meta_client,
+                duration_seconds=duration,
+                errors=errors,
             )
 
-            # ── Hazard/animal second pass ──────────────────────────────────
-            # Run a second analysis focused on animals, hazards, and unusual
-            # floor-level objects — items the general prompt omits. Uses a
-            # separate cache key (HAZARD_PROMPT_VERSION) so cached general
-            # results are never confused with hazard results.
-            hazard_analysis = None
-            if api_calls < max_api_calls:
+            if success:
+                status = ProcessingStatus.INDEXED
+            elif errors:
+                status = ProcessingStatus.PARTIAL
+            else:
+                status = ProcessingStatus.FAILED
+
+            dur_str = f"{duration:.1f}s video" if duration else "unknown duration"
+            detail = f"Direct video analysis: 1 API call, {dur_str}"
+
+        else:
+            # Legacy frame-extraction path (fallback)
+            # Extract frames to tmp dir
+            tmp_dir = storage.tmp_dir / recording_id
+            frames = await extract_frames(video_path, tmp_dir, fps=fps, max_frames=max_frames)
+
+            api_calls = 0
+            cache_hits = 0
+            # Indexed frame paths (timestamp, frame_rel_path) for upload understanding pass
+            indexed_frame_paths: list[tuple[float, str]] = []
+            for (ts, frame_path) in frames:
+                async with aiofiles.open(frame_path, 'rb') as f:
+                    frame_data = await f.read()
+
+                content_hash = compute_content_hash(frame_data)
+                model_version = meta_client.model_version
+
+                # ── General pass ──────────────────────────────────────────────
+                # Check cache (content + model + prompt scoped)
+                cached_analysis = None
                 async with get_db(db_path) as db:
-                    hazard_analysis = await get_cached_analysis(
-                        db, content_hash, model_version,
-                        prompt_version=HAZARD_PROMPT_VERSION)
-                if hazard_analysis is not None:
+                    cached_analysis = await get_cached_analysis(
+                        db, content_hash, model_version)
+                if cached_analysis is not None:
                     cache_hits += 1
-                else:
+
+                if cached_analysis is None and api_calls < max_api_calls:
                     try:
-                        from .meta_client import HAZARD_ANALYSIS_PROMPT
-                        hazard_analysis = await meta_client.analyze_frame(
-                            frame_data, prompt=HAZARD_ANALYSIS_PROMPT)
+                        cached_analysis = await meta_client.analyze_frame(frame_data)
                         api_calls += 1
+                        # Store in cache
                         async with get_db(db_path) as db:
                             await store_cached_analysis(
-                                db, content_hash, model_version, hazard_analysis,
-                                prompt_version=HAZARD_PROMPT_VERSION)
+                                db, content_hash, model_version, cached_analysis)
                             await db.commit()
-                    except BudgetExceededError:
-                        pass  # Hazard pass is best-effort; don't stop main loop
+                    except BudgetExceededError as e:
+                        errors.append(f"Budget limit reached at frame {ts:.1f}s: {str(e)[:200]}")
+                        logger.warning("Budget exceeded during processing of %s: %s", recording_id, e)
+                        break
                     except Exception as e:
+                        # One failed frame never aborts the rest. Structured
+                        # failures carry a machine-readable [code] for triage.
+                        failed_frames += 1
+                        code = getattr(e, "code", None)
+                        tag = f"[{code}] " if code else ""
+                        errors.append(f"Frame {ts:.1f}s: model error {tag}{str(e)[:200]}")
+                        await record_frame_failure(
+                            db_path, recording_id, ts, e, model_version)
                         logger.warning(
-                            "Hazard pass failed for frame %.1fs of %s: %s",
-                            ts, recording_id, e)
+                            "Frame %.1fs of %s failed (%s); continuing with next frame",
+                            ts, recording_id, type(e).__name__,
+                        )
+                        continue
+                elif cached_analysis is None:
+                    skipped_frames += 1
+                    errors.append(f"Frame {ts:.1f}s: skipped (API call limit reached)")
+                    continue
 
-            if hazard_analysis:
-                hazard_obs = _parse_observations(
-                    analysis=hazard_analysis,
+                # Save frame to storage
+                frame_id = f"{recording_id}_{ts:.3f}"
+                async with aiofiles.open(frame_path, 'rb') as f:
+                    fd = await f.read()
+                frame_rel_path = await storage.save_frame(recording_id, frame_id, fd)
+                # Track for upload understanding pass
+                indexed_frame_paths.append((ts, frame_rel_path))
+
+                # Parse observations from general model response
+                observations = _parse_observations(
+                    analysis=cached_analysis,
                     recording_id=recording_id,
                     frame_id=frame_id,
                     video_timestamp_seconds=ts,
@@ -564,138 +547,183 @@ async def process_recording(
                     source_frame_path=frame_rel_path,
                     content_hash=content_hash,
                     model_version=model_version,
-                    analysis_pass="hazard",
+                    analysis_pass="general",
                 )
-                # Only keep hazard observations not already covered by general
-                # pass (deduplicate by normalized label to avoid "snake on floor"
-                # appearing twice if the general pass caught it in scene_summary).
-                general_labels_lower = {
-                    o["object_label"].lower() for o in observations}
-                for hobs in hazard_obs:
-                    if hobs["object_label"].lower() not in general_labels_lower:
-                        observations.append(hobs)
 
-            # Store observations. Idempotent per frame: prior rows for this
-            # frame are removed first, so reprocessing (manual or retry)
-            # cannot duplicate index records.
-            async with get_db(db_path) as db:
-                await db.execute(
-                    "DELETE FROM observations WHERE recording_id=? AND frame_id=?",
-                    (recording_id, frame_id),
-                )
-                for obs in observations:
-                    try:
-                        await db.execute(
-                            """INSERT OR IGNORE INTO observations(
-                                observation_id, recording_id, frame_id,
-                                video_timestamp_seconds, frame_capture_timestamp,
-                                recording_datetime, recording_timezone,
-                                object_label, object_attributes, scene_description,
-                                source_frame_path, detection_score, model_version,
-                                index_version, content_hash, raw_model_response,
-                                analysis_pass, created_at
-                            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                            (
-                                obs['observation_id'], obs['recording_id'], obs['frame_id'],
-                                obs['video_timestamp_seconds'], obs.get('frame_capture_timestamp'),
-                                obs.get('recording_datetime'), obs.get('recording_timezone'),
-                                obs['object_label'], json.dumps(obs['object_attributes']),
-                                obs.get('scene_description'), obs['source_frame_path'],
-                                obs['detection_score'], obs.get('model_version'),
-                                obs.get('index_version', '1'), obs.get('content_hash'),
-                                json.dumps(cached_analysis),
-                                obs.get('analysis_pass', 'general'), _now(),
+                # ── Hazard/animal second pass ──────────────────────────────────
+                # Run a second analysis focused on animals, hazards, and unusual
+                # floor-level objects — items the general prompt omits. Uses a
+                # separate cache key (HAZARD_PROMPT_VERSION) so cached general
+                # results are never confused with hazard results.
+                hazard_analysis = None
+                if api_calls < max_api_calls:
+                    async with get_db(db_path) as db:
+                        hazard_analysis = await get_cached_analysis(
+                            db, content_hash, model_version,
+                            prompt_version=HAZARD_PROMPT_VERSION)
+                    if hazard_analysis is not None:
+                        cache_hits += 1
+                    else:
+                        try:
+                            from .meta_client import HAZARD_ANALYSIS_PROMPT
+                            hazard_analysis = await meta_client.analyze_frame(
+                                frame_data, prompt=HAZARD_ANALYSIS_PROMPT)
+                            api_calls += 1
+                            async with get_db(db_path) as db:
+                                await store_cached_analysis(
+                                    db, content_hash, model_version, hazard_analysis,
+                                    prompt_version=HAZARD_PROMPT_VERSION)
+                                await db.commit()
+                        except BudgetExceededError:
+                            pass  # Hazard pass is best-effort; don't stop main loop
+                        except Exception as e:
+                            logger.warning(
+                                "Hazard pass failed for frame %.1fs of %s: %s",
+                                ts, recording_id, e)
+
+                if hazard_analysis:
+                    hazard_obs = _parse_observations(
+                        analysis=hazard_analysis,
+                        recording_id=recording_id,
+                        frame_id=frame_id,
+                        video_timestamp_seconds=ts,
+                        recording_datetime=recording_datetime,
+                        recording_timezone=recording_timezone,
+                        source_frame_path=frame_rel_path,
+                        content_hash=content_hash,
+                        model_version=model_version,
+                        analysis_pass="hazard",
+                    )
+                    # Only keep hazard observations not already covered by general
+                    # pass (deduplicate by normalized label to avoid "snake on floor"
+                    # appearing twice if the general pass caught it in scene_summary).
+                    general_labels_lower = {
+                        o["object_label"].lower() for o in observations}
+                    for hobs in hazard_obs:
+                        if hobs["object_label"].lower() not in general_labels_lower:
+                            observations.append(hobs)
+
+                # Store observations. Idempotent per frame: prior rows for this
+                # frame are removed first, so reprocessing (manual or retry)
+                # cannot duplicate index records.
+                async with get_db(db_path) as db:
+                    await db.execute(
+                        "DELETE FROM observations WHERE recording_id=? AND frame_id=?",
+                        (recording_id, frame_id),
+                    )
+                    for obs in observations:
+                        try:
+                            await db.execute(
+                                """INSERT OR IGNORE INTO observations(
+                                    observation_id, recording_id, frame_id,
+                                    video_timestamp_seconds, frame_capture_timestamp,
+                                    recording_datetime, recording_timezone,
+                                    object_label, object_attributes, scene_description,
+                                    source_frame_path, detection_score, model_version,
+                                    index_version, content_hash, raw_model_response,
+                                    analysis_pass, created_at
+                                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                (
+                                    obs['observation_id'], obs['recording_id'], obs['frame_id'],
+                                    obs['video_timestamp_seconds'], obs.get('frame_capture_timestamp'),
+                                    obs.get('recording_datetime'), obs.get('recording_timezone'),
+                                    obs['object_label'], json.dumps(obs['object_attributes']),
+                                    obs.get('scene_description'), obs['source_frame_path'],
+                                    obs['detection_score'], obs.get('model_version'),
+                                    obs.get('index_version', '1'), obs.get('content_hash'),
+                                    json.dumps(cached_analysis),
+                                    obs.get('analysis_pass', 'general'), _now(),
+                                )
                             )
-                        )
-                    except Exception:
-                        # Fallback: insert without analysis_pass for older schemas
-                        await db.execute(
-                            """INSERT OR IGNORE INTO observations(
-                                observation_id, recording_id, frame_id,
-                                video_timestamp_seconds, frame_capture_timestamp,
-                                recording_datetime, recording_timezone,
-                                object_label, object_attributes, scene_description,
-                                source_frame_path, detection_score, model_version,
-                                index_version, content_hash, raw_model_response, created_at
-                            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                            (
-                                obs['observation_id'], obs['recording_id'], obs['frame_id'],
-                                obs['video_timestamp_seconds'], obs.get('frame_capture_timestamp'),
-                                obs.get('recording_datetime'), obs.get('recording_timezone'),
-                                obs['object_label'], json.dumps(obs['object_attributes']),
-                                obs.get('scene_description'), obs['source_frame_path'],
-                                obs['detection_score'], obs.get('model_version'),
-                                obs.get('index_version', '1'), obs.get('content_hash'),
-                                json.dumps(cached_analysis), _now(),
+                        except Exception:
+                            # Fallback: insert without analysis_pass for older schemas
+                            await db.execute(
+                                """INSERT OR IGNORE INTO observations(
+                                    observation_id, recording_id, frame_id,
+                                    video_timestamp_seconds, frame_capture_timestamp,
+                                    recording_datetime, recording_timezone,
+                                    object_label, object_attributes, scene_description,
+                                    source_frame_path, detection_score, model_version,
+                                    index_version, content_hash, raw_model_response, created_at
+                                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                (
+                                    obs['observation_id'], obs['recording_id'], obs['frame_id'],
+                                    obs['video_timestamp_seconds'], obs.get('frame_capture_timestamp'),
+                                    obs.get('recording_datetime'), obs.get('recording_timezone'),
+                                    obs['object_label'], json.dumps(obs['object_attributes']),
+                                    obs.get('scene_description'), obs['source_frame_path'],
+                                    obs['detection_score'], obs.get('model_version'),
+                                    obs.get('index_version', '1'), obs.get('content_hash'),
+                                    json.dumps(cached_analysis), _now(),
+                                )
                             )
-                        )
-                await db.commit()
+                    await db.commit()
 
-            frame_count += 1
+                frame_count += 1
 
-        # ── Upload understanding pass ──────────────────────────────────────────
-        # After all per-frame observations are collected, run a segment-level
-        # understanding pass using the general UPLOAD_UNDERSTANDING_PROMPT.
-        # This produces: entities, actions, interactions, changes, and unusual
-        # observations — independent of any future user query.
-        #
-        # Strategy: split indexed frames into overlapping windows of
-        # UPLOAD_SEGMENT_FRAMES frames each, stride by half that size so
-        # transitions between segments are covered. Cap to max_api_calls.
-        if indexed_frame_paths and api_calls < max_api_calls:
-            upload_understanding_results = await _run_upload_understanding(
-                recording_id=recording_id,
-                db_path=db_path,
-                storage=storage,
-                meta_client=meta_client,
-                indexed_frame_paths=indexed_frame_paths,
-                api_calls=api_calls,
-                max_api_calls=max_api_calls,
-                errors=errors,
-            )
-            understanding_calls = upload_understanding_results["api_calls_used"]
-        else:
-            understanding_calls = 0
-
-        # Whole-recording narrative pass: one model call, up to 20 sampled frames
-        if indexed_frame_paths:
-            try:
-                await _run_whole_recording_narrative(
+            # ── Upload understanding pass ──────────────────────────────────────────
+            # After all per-frame observations are collected, run a segment-level
+            # understanding pass using the general UPLOAD_UNDERSTANDING_PROMPT.
+            # This produces: entities, actions, interactions, changes, and unusual
+            # observations — independent of any future user query.
+            #
+            # Strategy: split indexed frames into overlapping windows of
+            # UPLOAD_SEGMENT_FRAMES frames each, stride by half that size so
+            # transitions between segments are covered. Cap to max_api_calls.
+            if indexed_frame_paths and api_calls < max_api_calls:
+                upload_understanding_results = await _run_upload_understanding(
                     recording_id=recording_id,
                     db_path=db_path,
                     storage=storage,
                     meta_client=meta_client,
                     indexed_frame_paths=indexed_frame_paths,
+                    api_calls=api_calls,
+                    max_api_calls=max_api_calls,
                     errors=errors,
                 )
-            except Exception as exc:
-                logger.warning(
-                    "Narrative pass failed for %s: %s", recording_id[:8], exc)
+                understanding_calls = upload_understanding_results["api_calls_used"]
+            else:
+                understanding_calls = 0
 
-        # Cleanup tmp frames
-        import shutil
-        if tmp_dir.exists():
-            shutil.rmtree(tmp_dir)
+            # Whole-recording narrative pass: one model call, up to 20 sampled frames
+            if indexed_frame_paths:
+                try:
+                    await _run_whole_recording_narrative(
+                        recording_id=recording_id,
+                        db_path=db_path,
+                        storage=storage,
+                        meta_client=meta_client,
+                        indexed_frame_paths=indexed_frame_paths,
+                        errors=errors,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Narrative pass failed for %s: %s", recording_id[:8], exc)
 
-        # Generate thumbnail from first frame (if any frames exist)
-        await _generate_thumbnail(recording_id, storage, db_path)
+            # Cleanup tmp frames
+            import shutil
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir)
 
-        # Frames never attempted after a budget break count as skipped so the
-        # extracted == indexed + failed + skipped invariant holds.
-        skipped_frames += len(frames) - frame_count - failed_frames - skipped_frames
+            # Generate thumbnail from first frame (if any frames exist)
+            await _generate_thumbnail(recording_id, storage, db_path)
 
-        if frame_count == 0 and len(frames) > 0:
-            status = ProcessingStatus.FAILED
-        elif errors:
-            status = ProcessingStatus.PARTIAL
-        else:
-            status = ProcessingStatus.INDEXED
-        detail = (
-            f"Indexed {frame_count}/{len(frames)} frames, {api_calls} API calls, "
-            f"{cache_hits} cache hits, {failed_frames} failed, "
-            f"{skipped_frames} skipped"
-            + (f", {understanding_calls} understanding calls" if understanding_calls else "")
-        )
+            # Frames never attempted after a budget break count as skipped so the
+            # extracted == indexed + failed + skipped invariant holds.
+            skipped_frames += len(frames) - frame_count - failed_frames - skipped_frames
+
+            if frame_count == 0 and len(frames) > 0:
+                status = ProcessingStatus.FAILED
+            elif errors:
+                status = ProcessingStatus.PARTIAL
+            else:
+                status = ProcessingStatus.INDEXED
+            detail = (
+                f"Indexed {frame_count}/{len(frames)} frames, {api_calls} API calls, "
+                f"{cache_hits} cache hits, {failed_frames} failed, "
+                f"{skipped_frames} skipped"
+                + (f", {understanding_calls} understanding calls" if understanding_calls else "")
+            )
         async with get_db(db_path) as db:
             await db.execute(
                 """UPDATE recordings SET
@@ -1092,5 +1120,88 @@ async def _run_whole_recording_narrative(
     logger.info(
         "Narrative: stored %d steps for recording %s",
         len(result.get("narrative_steps", [])), recording_id[:8],
+    )
+    return True
+
+
+async def _upload_and_analyze_video(
+    recording_id: str,
+    video_abs_path: str,
+    db_path: str,
+    meta_client,
+    duration_seconds: Optional[float],
+    errors: list,
+) -> bool:
+    """Upload a video to the Files API and analyze it via the Responses API.
+
+    Stores the full analysis result as a single upload_understanding segment
+    covering the whole video (0.0 → duration_seconds), and stores the
+    narrative fields to recordings.recording_narrative.
+
+    Returns True on success, False if either API call fails.
+    """
+    try:
+        file_id = await meta_client.upload_video_file(video_abs_path)
+    except Exception as exc:
+        errors.append(f"Video upload failed: {str(exc)[:300]}")
+        logger.warning("upload_video_file failed for %s: %s", recording_id[:8], exc)
+        return False
+
+    try:
+        result = await meta_client.analyze_video_file(file_id)
+    except Exception as exc:
+        errors.append(f"Video analysis failed: {str(exc)[:300]}")
+        logger.warning("analyze_video_file failed for %s: %s", recording_id[:8], exc)
+        return False
+
+    end_secs = duration_seconds if duration_seconds is not None else 0.0
+    segment_hash = hashlib.sha256(
+        f"{recording_id}:direct:{file_id}".encode()
+    ).hexdigest()
+
+    try:
+        await _store_upload_understanding(
+            db_path=db_path,
+            recording_id=recording_id,
+            segment_hash=segment_hash,
+            start_seconds=0.0,
+            end_seconds=end_secs,
+            result=result,
+        )
+    except Exception as exc:
+        errors.append(f"Failed to store video analysis: {str(exc)[:200]}")
+        logger.warning(
+            "Failed to store upload_understanding for %s: %s",
+            recording_id[:8], exc,
+        )
+        return False
+
+    # Store narrative fields (narrative_steps, key_observations, open_questions)
+    # to recordings.recording_narrative — same columns as the frame-based path.
+    narrative_payload = {
+        "scene": result.get("scene_context", ""),
+        "narrative_steps": result.get("narrative_steps", []),
+        "key_observations": result.get("key_observations", []),
+        "open_questions": result.get("open_questions", []),
+        "entities": result.get("entities", []),
+    }
+    try:
+        async with get_db(db_path) as db:
+            await db.execute(
+                "UPDATE recordings SET recording_narrative=?, updated_at=? WHERE recording_id=?",
+                (json.dumps(narrative_payload), _now(), recording_id),
+            )
+            await db.commit()
+    except Exception as exc:
+        logger.warning(
+            "Failed to store narrative for %s: %s", recording_id[:8], exc)
+
+    logger.info(
+        "Direct video analysis complete for %s: %d entities, %d actions, "
+        "%d narrative steps",
+        recording_id[:8],
+        len(result.get("entities", [])),
+        len(result.get("actions", [])),
+        len(result.get("narrative_steps", [])),
     )
     return True

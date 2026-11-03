@@ -70,7 +70,140 @@ def _normalize_severity(sev: str) -> str:
     return sev if sev in VALID_SEVERITY_LEVELS else "medium"
 
 
+# Entity type → hazard category mapping for direct-video path
+_ENTITY_HAZARD_MAP: list[tuple[str, str, str, float]] = [
+    # (keyword in type/description, hazard_category, severity, confidence)
+    ("snake",       "dangerous_animal", "critical", 0.92),
+    ("cobra",       "dangerous_animal", "critical", 0.95),
+    ("spider",      "dangerous_animal", "high",     0.80),
+    ("dog",         "dangerous_animal", "medium",   0.65),
+    ("bear",        "dangerous_animal", "critical", 0.90),
+    ("alligator",   "dangerous_animal", "critical", 0.90),
+    ("crocodile",   "dangerous_animal", "critical", 0.90),
+    ("fire",        "fire_smoke",       "critical", 0.90),
+    ("flame",       "fire_smoke",       "critical", 0.90),
+    ("smoke",       "fire_smoke",       "high",     0.85),
+    ("gun",         "weapon_visible",   "critical", 0.90),
+    ("knife",       "weapon_visible",   "high",     0.85),
+    ("weapon",      "weapon_visible",   "high",     0.85),
+    ("fall",        "person_fall_injury","high",     0.80),
+    ("collision",   "vehicle_collision","high",     0.80),
+]
+
+_UNUSUAL_OBS_HAZARD_MAP: list[tuple[str, str, str, float]] = [
+    ("snake",       "dangerous_animal", "critical", 0.90),
+    ("cobra",       "dangerous_animal", "critical", 0.92),
+    ("fire",        "fire_smoke",       "critical", 0.90),
+    ("smoke",       "fire_smoke",       "high",     0.85),
+    ("gun",         "weapon_visible",   "critical", 0.90),
+    ("weapon",      "weapon_visible",   "high",     0.85),
+    ("knife",       "weapon_visible",   "high",     0.85),
+    ("fell",        "person_fall_injury","high",     0.80),
+    ("fallen",      "person_fall_injury","high",     0.80),
+    ("unconscious", "person_fall_injury","critical", 0.88),
+    ("collision",   "vehicle_collision","high",     0.80),
+]
+
+
 def merge_overlapping_hazards(raw: list[dict]) -> list[dict]:
+    """Merge same-category hazard detections whose time windows overlap or are adjacent."""
+    if not raw:
+        return []
+
+    by_category: dict[str, list[dict]] = {}
+    for item in raw:
+        cat = item["hazard_category"]
+        by_category.setdefault(cat, []).append(item)
+
+    merged = []
+    for cat, items in by_category.items():
+        items_sorted = sorted(items, key=lambda x: x["time_range_start"])
+        groups: list[list[dict]] = []
+        for item in items_sorted:
+            if groups and item["time_range_start"] <= groups[-1][-1]["time_range_end"] + 0.5:
+                groups[-1].append(item)
+            else:
+                groups.append([item])
+        for group in groups:
+            best = max(group, key=lambda x: x["confidence"])
+            all_frames: list[dict] = []
+            seen_paths: set = set()
+            for g in group:
+                for f in g.get("evidence_frames", []):
+                    fp = f.get("frame_path", "")
+                    if fp not in seen_paths:
+                        all_frames.append(f)
+                        seen_paths.add(fp)
+            seg_ids = list({g["segment_id"] for g in group if g.get("segment_id")})
+            merged.append({
+                "hazard_category": cat,
+                "severity": best["severity"],
+                "confidence": max(g["confidence"] for g in group),
+                "timestamp_seconds": group[0]["timestamp_seconds"],
+                "time_range_start": group[0]["time_range_start"],
+                "time_range_end": group[-1]["time_range_end"],
+                "description": best["description"],
+                "evidence_frames": all_frames,
+                "supporting_segment_ids": seg_ids,
+                "is_mocked": group[0].get("is_mocked", False),
+            })
+    return merged
+
+
+def _classify_hazards_from_understanding(
+    entities: list[dict],
+    actions: list[dict],
+    unusual_observations: list[str],
+    scene_context: str,
+    seg_start: float,
+    seg_end: float,
+    segment_id: str,
+) -> list[dict]:
+    """Derive Guardian hazard detections from structured understanding data.
+
+    Used when no frame images are available (direct video pipeline). Scans
+    entity types/descriptions and unusual_observations for hazard keywords and
+    maps them to guardian_alerts schema items. No extra model call — the video
+    analysis already did the work.
+    """
+    seen: dict[str, dict] = {}  # category → best detection so far
+
+    def _add(category: str, severity: str, confidence: float, description: str,
+             timestamp: float) -> None:
+        existing = seen.get(category)
+        if existing is None or confidence > existing["confidence"]:
+            seen[category] = {
+                "hazard_category": category,
+                "severity": severity,
+                "confidence": confidence,
+                "timestamp_seconds": timestamp,
+                "time_range_start": seg_start,
+                "time_range_end": seg_end,
+                "description": description,
+                "evidence_frames": [],
+                "segment_id": segment_id,
+                "is_mocked": False,
+            }
+
+    for entity in entities:
+        combined = f"{entity.get('type','')} {entity.get('description','')}".lower()
+        ts = float(entity.get("first_seen_seconds", seg_start))
+        for keyword, cat, sev, conf in _ENTITY_HAZARD_MAP:
+            if keyword in combined:
+                _add(cat, sev, conf,
+                     f"Detected {entity.get('type','entity')}: {entity.get('description','')}",
+                     ts)
+
+    for obs in unusual_observations:
+        obs_lower = obs.lower()
+        for keyword, cat, sev, conf in _UNUSUAL_OBS_HAZARD_MAP:
+            if keyword in obs_lower:
+                _add(cat, sev, conf, obs, seg_start)
+
+    return list(seen.values())
+
+
+
     """Merge same-category hazard detections whose time windows overlap or are adjacent.
 
     Input items must have: hazard_category, severity, confidence, timestamp_seconds,
@@ -276,16 +409,14 @@ async def run_guardian_detection(
 
     Returns count of newly created alerts.
     """
-    if not hasattr(meta_client, "detect_hazards_for_segment"):
-        logger.debug(
-            "Guardian skipped for %s — meta_client has no detect_hazards_for_segment",
-            recording_id[:8],
-        )
-        return 0
-
     # Detect mock mode
     from .meta_client import MockMetaClient
     is_mocked = isinstance(meta_client, MockMetaClient) or getattr(meta_client, "_is_mock", False)
+
+    # For the frame-based path we need detect_hazards_for_segment.
+    # For the direct-video path (no frames) we use _classify_hazards_from_understanding
+    # which needs no model call. We proceed in both cases and decide per-segment below.
+    has_frame_detection = hasattr(meta_client, "detect_hazards_for_segment")
 
     # Load upload understanding rows
     import aiosqlite
@@ -314,6 +445,7 @@ async def run_guardian_detection(
 
     frame_by_ts = {r["video_timestamp_seconds"]: r["source_frame_path"] for r in obs_rows}
     sorted_ts = sorted(frame_by_ts.keys())
+    has_frames = bool(frame_by_ts)
 
     raw_detections: list[dict] = []
 
@@ -322,19 +454,39 @@ async def run_guardian_detection(
         seg_start = row["start_seconds"]
         seg_end = row["end_seconds"]
         unusual = json.loads(row["unusual_observations_json"] or "[]")
+        entities = json.loads(row["entities_json"] or "[]")
+        actions = json.loads(row["actions_json"] or "[]")
+        ctx = row["scene_context"] or ""
 
-        # Only call the model if this segment has unusual content or keyword match
+        # Check whether this segment contains hazard-relevant content
         has_unusual = bool(unusual)
-        has_keyword = any(_has_hazard_keyword(obs) for obs in unusual)
-        # Also call if scene_context mentions hazard keywords
-        if not has_unusual:
-            ctx = row["scene_context"] or ""
-            has_keyword = _has_hazard_keyword(ctx)
+        has_keyword = (
+            any(_has_hazard_keyword(obs) for obs in unusual)
+            or _has_hazard_keyword(ctx)
+            or any(
+                _has_hazard_keyword(f"{e.get('type','')} {e.get('description','')}")
+                for e in entities
+            )
+        )
 
         if not has_unusual and not has_keyword:
             continue
 
-        # Collect frames in this segment's time window
+        # ── Direct-video path: no frames available ────────────────────────────
+        if not has_frames:
+            detections = _classify_hazards_from_understanding(
+                entities=entities,
+                actions=actions,
+                unusual_observations=unusual,
+                scene_context=ctx,
+                seg_start=seg_start,
+                seg_end=seg_end,
+                segment_id=segment_id,
+            )
+            raw_detections.extend(detections)
+            continue
+
+        # ── Frame-based path ──────────────────────────────────────────────────
         seg_ts = [ts for ts in sorted_ts if seg_start <= ts <= seg_end]
         if not seg_ts:
             continue
@@ -353,6 +505,9 @@ async def run_guardian_detection(
                 pass
 
         if not frame_bytes:
+            continue
+
+        if not has_frame_detection:
             continue
 
         try:
