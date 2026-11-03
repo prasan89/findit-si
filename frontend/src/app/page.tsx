@@ -266,9 +266,6 @@ export default function Home() {
 
   // ── Overview / Home (with inline investigate form) ────────────────────────
   const processingCount = recordings.filter(r => r.processing_status === 'PROCESSING').length
-  const recentRecordings = [...recordings]
-    .sort((a, b) => new Date(b.upload_timestamp).getTime() - new Date(a.upload_timestamp).getTime())
-    .slice(0, 6)
 
   return (
     <AppShell
@@ -375,54 +372,6 @@ export default function Home() {
             {error && <div className="rt-banner-danger text-sm">{error}</div>}
         </div>
         </div>
-
-        {/* Recent recordings */}
-        <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="rt-section-title">Recent Recordings</h3>
-              <button onClick={() => setView('library')} className="text-xs text-[#2563EB] hover:text-[#1D4ED8] font-medium transition-colors">
-                View all →
-              </button>
-            </div>
-
-            {recentRecordings.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {recentRecordings.map(r => {
-                  const isIndexed = r.processing_status === 'INDEXED' || r.processing_status === 'PARTIAL'
-                  return (
-                    <div key={r.recording_id} className="rt-card-hover p-3 flex gap-3">
-                      <div className="w-16 h-11 rounded-md bg-[#F1F5F9] flex items-center justify-center shrink-0 overflow-hidden">
-                        {r.thumbnail_path ? (
-                          <img src={`/thumbnails/${r.recording_id}.jpg`} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <svg viewBox="0 0 24 24" fill="none" width="18" height="18" className="text-[#94A3B8]">
-                            <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5"/>
-                          </svg>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-[#0F172A] truncate">{r.camera_name ?? r.original_filename}</p>
-                        <p className="text-xs text-[#64748B] truncate">{r.camera_location ?? r.original_filename}</p>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isIndexed ? 'bg-[#16A34A]' : 'bg-[#94A3B8]'}`} />
-                          <span className="text-[10px] text-[#94A3B8] font-medium uppercase tracking-wide">{r.processing_status}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="rt-card rt-empty py-12">
-                <svg viewBox="0 0 24 24" fill="none" width="40" height="40" className="text-[#E2E8F0] mb-3">
-                  <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                </svg>
-                <p className="text-sm font-medium text-[#64748B]">No recordings yet</p>
-                <p className="text-xs text-[#94A3B8] mt-1 mb-3">Upload a CCTV recording to get started</p>
-                <button onClick={() => setView('library')} className="rt-btn-primary">Upload Recording</button>
-              </div>
-            )}
-          </div>
       </div>
     </AppShell>
   )
