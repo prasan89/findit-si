@@ -363,7 +363,7 @@ export default function Home() {
                     }
                   }}
                   placeholder={'Describe the incident to investigate...\ne.g. Chain snatch near the entrance around midday'}
-                  rows={3}
+                  rows={2}
                   className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-9 pr-4 py-2.5 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] resize-none transition-colors"
                   disabled={loading}
                 />
