@@ -55,16 +55,6 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
-    id: 'investigate',
-    label: 'Investigate',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
-        <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    ),
-  },
-  {
     id: 'guardian',
     label: 'Guardian',
     icon: (
