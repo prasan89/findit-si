@@ -14,8 +14,17 @@ Evidence-backed CCTV event investigation system. Upload multiple camera recordin
 ```bash
 # 1. Copy and configure environment
 cp .env.example .env
-# Edit .env — add MODEL_API_KEY for real AI analysis (optional; falls back to mock)
+```
 
+Open `.env` and set **`MODEL_API_KEY`** — this is the only required change. Get your key at https://developers.meta.ai (Meta AI developer portal).
+
+```
+MODEL_API_KEY=your_key_here
+```
+
+> **No key?** The app still runs — it uses a mock client that returns empty but deterministic responses. No real scene analysis occurs; Guardian will produce no hazard alerts. Set the key whenever you want real AI results.
+
+```bash
 # 2. Backend
 cd backend
 python -m venv .venv
@@ -37,20 +46,31 @@ Open http://localhost:3000
 
 ## Configuration
 
-`.env` variables (see `.env.example`):
+All configuration is via environment variables. Copy `.env.example` to `.env` and edit as needed.
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `MODEL_API_KEY` | — | **Yes** (for real AI) | Meta Model API key. Absent → mock client (app runs but no real analysis). Get at https://developers.meta.ai |
+| `META_API_KEY` | — | No | Legacy alias for `MODEL_API_KEY`. Use `MODEL_API_KEY` instead. |
+| `META_API_BASE_URL` | `https://api.meta.ai/v1` | No | Vision API base URL |
+| `VISION_PROVIDER` | `meta` | No | Provider for video analysis (`meta` or `mock`) |
+| `VISION_MODEL` | `muse-wonder-1.0` | No | Vision model name used for frame analysis |
+| `INVESTIGATION_MODEL` | `muse-wonder-1.0` | No | Model used for investigation / NL reasoning |
+| `FINDIT_DATA_DIR` | `./data` | No | Storage root for videos, frames, DB |
+| `FINDIT_FRAME_EXTRACTION_FPS` | `1.0` | No | Frames per second to extract |
+| `FINDIT_MAX_FRAMES_PER_VIDEO` | `300` | No | Cap on frames extracted per video |
+| `FINDIT_MAX_API_CALLS_PER_VIDEO` | `300` | No | Cap on vision API calls per video |
+| `FINDIT_MAX_VIDEO_SIZE_MB` | `500` | No | Upload size limit |
+| `BUDGET_LIMIT_USD` | `150.0` | No | Hard spend cap — investigations refuse once exceeded |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | No | Backend URL for the frontend (change for non-localhost deployments) |
+
+### Advanced / reliability tuning (optional)
+
+The defaults below are production-safe for a single-machine demo. Change them only if you know why.
 
 | Variable | Default | Description |
 |---|---|---|
-| `MODEL_API_KEY` | — | Meta Model API key (optional — mock client used if absent) |
-| `META_API_BASE_URL` | `https://api.meta.ai/v1` | Vision API base URL |
-| `FINDIT_DATA_DIR` | `./data` | Storage root for videos, frames, DB |
-| `FINDIT_FRAME_EXTRACTION_FPS` | `1.0` | Frames per second to extract |
-| `FINDIT_MAX_FRAMES_PER_VIDEO` | `300` | Cap on frames extracted per video |
-| `FINDIT_MAX_API_CALLS_PER_VIDEO` | `300` | Cap on vision API calls per video |
-| `FINDIT_MAX_VIDEO_SIZE_MB` | `500` | Upload size limit |
-| **Phase 6 — Reliability & Security** | | |
 | `META_CONNECT_TIMEOUT_S` | `10.0` | Meta API connect timeout (seconds) |
-| `META_READ_TIMEOUT_S` | `60.0` | Meta API vision read timeout (seconds) |
 | `META_TEXT_READ_TIMEOUT_S` | `45.0` | Meta API text-LLM read timeout (seconds) |
 | `MAX_API_ATTEMPTS` | `3` | Max attempts per Meta API call (transient failures only) |
 | `BASE_BACKOFF_SECONDS` | `1.0` | Retry backoff base; exponential with jitter, honors `Retry-After` |
@@ -178,7 +198,7 @@ Response includes:
 ```bash
 cd backend
 source .venv/bin/activate
-pytest                    # all tests (115)
+pytest                    # all tests
 pytest -v tests/test_investigation.py   # investigation-specific tests
 pytest -m live_api        # live API smoke test (requires MODEL_API_KEY)
 ```
@@ -216,31 +236,31 @@ cd frontend && npm run dev &
 
 1. Open http://localhost:3000 — shows **RealityTrace** header.
 
-2. **Cameras tab** → Upload two short video clips:
-   - First clip: set Camera name = "Entrance Camera", location = "Front Door", datetime = now
-   - Second clip: set Camera name = "Hallway Camera", location = "Main Corridor", datetime = (now + 2 minutes)
+2. **Cameras tab** → Upload one or more video clips:
+   - Set Camera name, location, and datetime for each clip.
 
 3. Wait for status to show **INDEXED** (polls every 3s).
 
-4. **Investigate tab** → Click the example query:
-   > "Find when the red bag was left near the door"
+4. **Investigate** (home screen) → Type a query or pick one from Quick Queries:
+   > "Chain snatch near the entrance"
 
 5. Results appear with:
-   - Chronological event timeline
+   - Chronological event list per camera
    - Before / During / After frame navigation on each card
    - Green "Observed facts" vs amber "Inferences (unconfirmed)"
    - Cross-camera candidate links (if any appearance matches found)
    - Evidence gaps for recordings with no matching events
    - Confidence percentage and uncertainty notes
 
-6. Try the time filter query:
-   > "Show events between 00:10 and 01:00"
-
-7. Switch to **Search tab** for the original object-search experience (backward compatible).
+6. **Guardian tab** → Select a recording to see the WhatsApp-style simulation:
+   - **Police chat** — serious incidents only (weapons, dangerous animals, theft, assault)
+   - **Owner chat** — all camera activity grouped in 60-second digest windows
+   - Click any evidence timestamp to open the video at that moment
 
 ### Key talking points
 - Every event is traceable to a source frame and original video timestamp.
 - The system never invents events — if evidence is absent, it says so.
 - Observed facts and inferences are explicitly labeled at different trust levels.
+- Guardian automatically alerts on hazards (fire, weapons, dangerous animals) detected by the AI.
 - Cross-camera links are "candidate" by default — appearance alone never confirms identity.
 - Works without a live API key using the deterministic mock client.
