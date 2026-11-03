@@ -19,6 +19,7 @@ from app.guardian import (
     update_alert_review_status,
     run_guardian_detection,
     VALID_HAZARD_CATEGORIES,
+    _classify_hazards_from_understanding,
 )
 
 
@@ -588,3 +589,214 @@ async def test_api_global_alerts_endpoint(client, tmp_data_dir):
     data = res.json()
     assert "alerts" in data
     assert "total" in data
+
+
+# ── Animal classification — ordinary dogs must NOT trigger hazard alerts ──────
+#
+# Requirements:
+#   - Normal dog presence (walking, sitting, playing, barking) → no alert
+#   - Dangerous behavior (attacking, biting, chasing) → dangerous_animal alert
+#   - Inherently dangerous wild animals → always produce alerts
+#   - Cats, birds, ordinary domestic animals → no alert without behavior context
+
+def _make_entity(type_: str, description: str, first_seen: float = 0.0) -> dict:
+    return {"type": type_, "description": description, "first_seen_seconds": first_seen}
+
+
+def _run_classification(entities=None, observations=None):
+    return _classify_hazards_from_understanding(
+        entities=entities or [],
+        actions=[],
+        unusual_observations=observations or [],
+        scene_context="",
+        seg_start=0.0,
+        seg_end=10.0,
+        segment_id="test-seg",
+    )
+
+
+class TestDogClassification:
+    """Ordinary dogs must never produce a dangerous_animal alert."""
+
+    def test_dog_walking_no_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Brown dog walking across the courtyard")]
+        )
+        assert result == [], "Walking dog should produce no alert"
+
+    def test_dog_sitting_no_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Small dog sitting near the entrance")]
+        )
+        assert result == [], "Sitting dog should produce no alert"
+
+    def test_dog_playing_no_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Dog playing fetch in the yard")]
+        )
+        assert result == [], "Playing dog should produce no alert"
+
+    def test_dog_barking_no_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Dog barking at the gate")]
+        )
+        assert result == [], "Barking dog (no person targeted) should produce no alert"
+
+    def test_dog_passing_through_no_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Stray dog passing through the parking lot")]
+        )
+        assert result == [], "Dog passing through should produce no alert"
+
+    def test_dog_entity_type_no_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("dog", "Labrador retriever, friendly, on leash")]
+        )
+        assert result == [], "Dog entity type alone should produce no alert"
+
+    def test_dog_observation_no_alert(self):
+        result = _run_classification(
+            observations=["A dog is visible near the building entrance"]
+        )
+        assert result == [], "Ordinary dog observation should produce no alert"
+
+    def test_multiple_dogs_no_alert(self):
+        entities = [
+            _make_entity("animal", "Large dog running through the courtyard"),
+            _make_entity("animal", "Small dog near the benches"),
+        ]
+        result = _run_classification(entities=entities)
+        assert result == [], "Multiple ordinary dogs should produce no alert"
+
+
+class TestDogDangerousAlert:
+    """Dogs displaying confirmed dangerous behavior MUST produce an alert."""
+
+    def test_dog_attacking_person_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Dog attacking person near exit")]
+        )
+        assert len(result) == 1
+        assert result[0]["hazard_category"] == "dangerous_animal"
+
+    def test_dog_biting_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Dog biting security guard's arm")]
+        )
+        assert len(result) == 1
+        assert result[0]["hazard_category"] == "dangerous_animal"
+
+    def test_dog_aggressively_chasing_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Dog aggressively chasing a child")]
+        )
+        assert len(result) == 1
+        assert result[0]["hazard_category"] == "dangerous_animal"
+
+    def test_dog_lunging_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Large dog lunging at pedestrian")]
+        )
+        assert len(result) == 1
+        assert result[0]["hazard_category"] == "dangerous_animal"
+
+    def test_dog_attack_observation_alert(self):
+        result = _run_classification(
+            observations=["Dog attack on pedestrian at front gate"]
+        )
+        categories = {r["hazard_category"] for r in result}
+        assert "dangerous_animal" in categories, "Dog attack should produce dangerous_animal alert"
+
+    def test_attacking_dog_observation_alert(self):
+        result = _run_classification(
+            observations=["Attacking dog near the entrance, person backing away"]
+        )
+        categories = {r["hazard_category"] for r in result}
+        assert "dangerous_animal" in categories, "Attacking dog should produce dangerous_animal alert"
+
+    def test_dog_biting_observation_alert(self):
+        result = _run_classification(
+            observations=["Dog biting a delivery worker's leg"]
+        )
+        categories = {r["hazard_category"] for r in result}
+        assert "dangerous_animal" in categories, "Dog biting should produce dangerous_animal alert"
+
+
+class TestOtherDomesticAnimals:
+    """Cats, birds, and other common animals must not produce alerts without dangerous behavior."""
+
+    def test_cat_walking_no_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Orange cat walking along the corridor")]
+        )
+        assert result == [], "Ordinary cat should produce no alert"
+
+    def test_bird_flying_no_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Pigeon flying across the courtyard")]
+        )
+        assert result == [], "Ordinary bird should produce no alert"
+
+    def test_cat_observation_no_alert(self):
+        result = _run_classification(
+            observations=["A cat is sitting on the window ledge"]
+        )
+        assert result == [], "Ordinary cat observation should produce no alert"
+
+
+class TestWildDangerousAnimals:
+    """Inherently dangerous wild animals always produce alerts, no behavior check needed."""
+
+    def test_snake_always_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Snake on the floor near the door")]
+        )
+        assert len(result) == 1
+        assert result[0]["hazard_category"] == "dangerous_animal"
+        assert result[0]["severity"] == "critical"
+
+    def test_cobra_always_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Cobra detected near the stairwell")]
+        )
+        assert len(result) == 1
+        assert result[0]["hazard_category"] == "dangerous_animal"
+
+    def test_tiger_always_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Tiger visible in the corridor")]
+        )
+        assert len(result) == 1
+        assert result[0]["hazard_category"] == "dangerous_animal"
+        assert result[0]["severity"] == "critical"
+
+    def test_bear_always_alert(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Bear near the entrance")]
+        )
+        assert len(result) == 1
+        assert result[0]["hazard_category"] == "dangerous_animal"
+
+
+class TestAnimalDoesNotBlockOtherHazards:
+    """Dog presence alongside a real hazard should not suppress that hazard."""
+
+    def test_dog_plus_fire_only_fire_alert(self):
+        result = _run_classification(
+            entities=[
+                _make_entity("animal", "Dog walking near the entrance"),
+                _make_entity("object", "Fire visible on the left wall"),
+            ]
+        )
+        categories = {r["hazard_category"] for r in result}
+        assert "fire_smoke" in categories, "Fire must still be detected"
+        assert "dangerous_animal" not in categories, "Ordinary dog must not add animal alert"
+
+    def test_dog_plus_smoke_observation(self):
+        result = _run_classification(
+            entities=[_make_entity("animal", "Dog near lobby")],
+            observations=["Smoke detected near the ceiling vents"],
+        )
+        categories = {r["hazard_category"] for r in result}
+        assert "fire_smoke" in categories
+        assert "dangerous_animal" not in categories

@@ -23,6 +23,11 @@ VALID_HAZARD_CATEGORIES = frozenset({
     "weapon_visible",
     "restricted_area_entry",
     "other_hazard",
+    "flood_water",
+    "electrical_hazard",
+    "structural_hazard",
+    "unauthorized_entry",
+    "vandalism",
 })
 
 VALID_SEVERITY_LEVELS = frozenset({"critical", "high", "medium", "low"})
@@ -36,6 +41,11 @@ HAZARD_CATEGORY_LABELS = {
     "weapon_visible": "Weapon Visible",
     "restricted_area_entry": "Restricted Area Entry",
     "other_hazard": "Other Hazard",
+    "flood_water": "Flood / Water Hazard",
+    "electrical_hazard": "Electrical Hazard",
+    "structural_hazard": "Structural Hazard",
+    "unauthorized_entry": "Unauthorized Entry",
+    "vandalism": "Vandalism / Property Damage",
 }
 
 # Keywords that trigger a guardian analysis call even when unusual_observations is empty
@@ -44,7 +54,11 @@ HAZARD_KEYWORDS = frozenset({
     "fall", "fell", "fallen", "lying", "collapsed", "unconscious",
     "collision", "crash", "impact",
     "snake", "weapon", "gun", "knife", "firearm",
-    "flood", "flooding", "exposed wire", "structural",
+    "flood", "flooding", "water leak", "water damage",
+    "electrical", "spark", "short circuit",
+    "structural", "collapse",
+    "vandal", "vandalism", "graffiti", "break-in", "break in",
+    "exposed wire",
 })
 
 
@@ -70,13 +84,35 @@ def _normalize_severity(sev: str) -> str:
     return sev if sev in VALID_SEVERITY_LEVELS else "medium"
 
 
-# Entity type → hazard category mapping for direct-video path
+# Keywords in entity descriptions that indicate an animal is actively dangerous.
+# Presence alone (walking, sitting, playing) is NOT sufficient.
+_DANGEROUS_ANIMAL_BEHAVIOR_KEYWORDS: frozenset[str] = frozenset({
+    "attack", "attacking", "biting", "bite", "chasing", "chase",
+    "lunging", "lunge", "aggressive", "aggression", "threatening",
+    "cornered", "charging", "mauling",
+})
+
+# Domestic/common animals that are NOT inherently dangerous.
+# An entity whose type/description contains one of these words will only
+# produce a dangerous_animal alert if a behavior keyword is also present.
+_CONDITIONAL_ANIMAL_KEYWORDS: frozenset[str] = frozenset({
+    "dog", "cat", "bird", "chicken", "pigeon", "crow",
+})
+
+# Entity type → hazard category mapping for direct-video path.
+# Only inherently dangerous wild animals are listed unconditionally.
+# Domestic animals (dog, cat, bird) also appear here so the behavior-conditional
+# check in _classify_hazards_from_understanding can fire when needed.
 _ENTITY_HAZARD_MAP: list[tuple[str, str, str, float]] = [
     # (keyword in type/description, hazard_category, severity, confidence)
     ("snake",       "dangerous_animal", "critical", 0.92),
     ("cobra",       "dangerous_animal", "critical", 0.95),
     ("spider",      "dangerous_animal", "high",     0.80),
-    ("dog",         "dangerous_animal", "medium",   0.65),
+    # Domestic animals: classified only when behavior keywords confirm danger
+    # (the conditional gate is in _classify_hazards_from_understanding)
+    ("dog",         "dangerous_animal", "high",     0.82),
+    ("cat",         "dangerous_animal", "medium",   0.65),
+    ("bird",        "dangerous_animal", "low",      0.55),
     ("bear",        "dangerous_animal", "critical", 0.90),
     ("alligator",   "dangerous_animal", "critical", 0.90),
     ("crocodile",   "dangerous_animal", "critical", 0.90),
@@ -98,6 +134,13 @@ _ENTITY_HAZARD_MAP: list[tuple[str, str, str, float]] = [
     ("weapon",      "weapon_visible",   "high",     0.85),
     ("fall",        "person_fall_injury","high",     0.80),
     ("collision",   "vehicle_collision","high",     0.80),
+    ("flood",       "flood_water",      "high",     0.85),
+    ("water",       "flood_water",      "medium",   0.70),
+    ("electrical",  "electrical_hazard","high",     0.82),
+    ("spark",       "electrical_hazard","critical", 0.88),
+    ("collapse",    "structural_hazard","critical", 0.90),
+    ("vandal",      "vandalism",        "high",     0.80),
+    ("graffiti",    "vandalism",        "medium",   0.72),
 ]
 
 _UNUSUAL_OBS_HAZARD_MAP: list[tuple[str, str, str, float]] = [
@@ -109,6 +152,12 @@ _UNUSUAL_OBS_HAZARD_MAP: list[tuple[str, str, str, float]] = [
     ("bear",              "dangerous_animal",    "critical", 0.90),
     ("wolf",              "dangerous_animal",    "critical", 0.88),
     ("elephant",          "dangerous_animal",    "critical", 0.90),
+    # Dogs / cats only when behavior indicates active danger
+    ("dog attack",        "dangerous_animal",    "high",     0.82),
+    ("attacking dog",     "dangerous_animal",    "high",     0.82),
+    ("dog biting",        "dangerous_animal",    "high",     0.80),
+    ("dog chasing",       "dangerous_animal",    "medium",   0.72),
+    ("dog aggressive",    "dangerous_animal",    "medium",   0.70),
     ("fire",              "fire_smoke",           "critical", 0.90),
     ("smoke",             "fire_smoke",           "high",     0.85),
     ("gun",               "weapon_visible",       "critical", 0.90),
@@ -118,7 +167,8 @@ _UNUSUAL_OBS_HAZARD_MAP: list[tuple[str, str, str, float]] = [
     ("fallen",            "person_fall_injury",   "high",     0.80),
     ("unconscious",       "person_fall_injury",   "critical", 0.88),
     ("collision",         "vehicle_collision",    "high",     0.80),
-    # Robbery / assault patterns
+    # Robbery / assault patterns — including natural-language descriptions
+    # that the LLM uses without crime vocabulary (e.g. chain snatching)
     ("snatch",            "other_hazard",         "high",     0.82),
     ("grab",              "other_hazard",         "high",     0.78),
     ("physical interaction", "other_hazard",      "medium",   0.72),
@@ -132,6 +182,33 @@ _UNUSUAL_OBS_HAZARD_MAP: list[tuple[str, str, str, float]] = [
     ("theft",             "other_hazard",         "high",     0.82),
     ("loiter",            "other_hazard",         "low",      0.60),
     ("trespass",          "restricted_area_entry","medium",   0.72),
+    # Chain-snatching / theft — LLM often narrates the act without crime words
+    ("no longer visible", "other_hazard",         "high",     0.78),
+    ("extends arm toward","other_hazard",          "medium",   0.72),
+    ("reaches toward",    "other_hazard",          "medium",   0.70),
+    ("clutches his neck", "other_hazard",          "high",     0.80),
+    ("clutches her neck", "other_hazard",          "high",     0.80),
+    ("clutches neck",     "other_hazard",          "high",     0.80),
+    ("departs quickly",   "other_hazard",          "medium",   0.68),
+    ("speeds away",       "other_hazard",          "medium",   0.68),
+    ("drives away quickly","other_hazard",         "medium",   0.68),
+    ("runs toward",       "other_hazard",          "medium",   0.65),
+    ("points after",      "other_hazard",          "medium",   0.65),
+    # Property-hazard categories
+    ("flood",             "flood_water",         "high",     0.85),
+    ("water leak",        "flood_water",         "high",     0.82),
+    ("water damage",      "flood_water",         "high",     0.80),
+    ("electrical",        "electrical_hazard",   "high",     0.82),
+    ("spark",             "electrical_hazard",   "critical", 0.88),
+    ("short circuit",     "electrical_hazard",   "critical", 0.88),
+    ("structural",        "structural_hazard",   "high",     0.80),
+    ("collapse",          "structural_hazard",   "critical", 0.90),
+    ("vandal",            "vandalism",           "high",     0.80),
+    ("graffiti",          "vandalism",           "medium",   0.72),
+    ("break-in",          "unauthorized_entry",  "high",     0.85),
+    ("break in",          "unauthorized_entry",  "high",     0.85),
+    ("forced entry",      "unauthorized_entry",  "critical", 0.90),
+    ("intrusion",         "unauthorized_entry",  "high",     0.82),
 ]
 
 
@@ -220,6 +297,11 @@ def _classify_hazards_from_understanding(
         ts = float(entity.get("first_seen_seconds", seg_start))
         for keyword, cat, sev, conf in _ENTITY_HAZARD_MAP:
             if keyword in combined:
+                # For conditional domestic animals: require explicit dangerous
+                # behavior in the description before raising a hazard alert.
+                if keyword in _CONDITIONAL_ANIMAL_KEYWORDS:
+                    if not any(bk in combined for bk in _DANGEROUS_ANIMAL_BEHAVIOR_KEYWORDS):
+                        continue
                 _add(cat, sev, conf,
                      f"Detected {entity.get('type','entity')}: {entity.get('description','')}",
                      ts)

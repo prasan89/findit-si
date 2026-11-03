@@ -31,35 +31,139 @@ export interface FeedItem {
   recording_filename?: string
 }
 
-// ── Serious event types that can reach the police feed ────────────────────────
+// ── Police alert eligibility — mirrors backend police_eligibility.py ──────────
+//
+// Only THEFT, ASSAULT, and ABUSE incidents may reach the Police / 911 feed.
+// All other categories (fire, animals, weapons, motion, persons, vehicles, etc.)
+// are owner-only regardless of severity or confidence.
 
-const POLICE_EVENT_TYPES = new Set([
+// Event types that map to THEFT
+const THEFT_EVENT_TYPES = new Set([
   'possible-theft',
-  'possible-assault',
-  'confrontation',
+  'robbery',
+  'chain-snatching',
+  'vehicle-theft',
+  'carjacking',
 ])
 
-// ── Alert hazard categories that reach the police feed ───────────────────────
+// Event types that map to ASSAULT
+const ASSAULT_EVENT_TYPES = new Set([
+  'possible-assault',
+  'confrontation',
+  'dangerous-threat',
+  'armed-person',
+])
 
-function isPoliceAlert(alert: GuardianAlert): boolean {
-  const { hazard_category: cat, severity: sev } = alert
-  if (cat === 'weapon_visible') return true
-  if (cat === 'fire_smoke' && (sev === 'critical' || sev === 'high')) return true
-  if (cat === 'dangerous_animal' && (sev === 'critical' || sev === 'high')) return true
-  if (cat === 'other_hazard' && (sev === 'critical' || sev === 'high')) return true
+// Description keyword sets for other_hazard alerts (matches backend logic)
+const THEFT_KEYWORDS = [
+  'snatch', 'snatching', 'theft', 'steal', 'stolen', 'rob', 'robbery',
+  'pickpocket', 'loot', 'looting',
+  'chain', 'necklace', 'bag grab', 'purse', 'handbag',
+]
+const ASSAULT_KEYWORDS = [
+  'assault', 'attack', 'attacked', 'punch', 'hit', 'strike', 'beat',
+  'struggle', 'grab', 'grabbed', 'violence', 'violent', 'shove',
+  'confront', 'confrontation',
+  'physical interaction', 'physical altercation', 'physical contact',
+  'arm movement', 'arm movements',
+]
+const ABUSE_KEYWORDS = [
+  'abuse', 'abused', 'harass', 'harassment', 'coerce', 'coercion',
+  'intimidate', 'intimidation', 'bully', 'bullying', 'torment',
+]
+
+// ── Owner alert eligibility ───────────────────────────────────────────────────
+//
+// The owner feed shows property hazard and security events.
+// Routine activity (normal visitors, normal motion, harmless animals) is excluded.
+
+const OWNER_ELIGIBLE_HAZARD_CATEGORIES = new Set([
+  'fire_smoke',
+  'person_fall_injury',
+  'vehicle_collision',
+  'dangerous_animal',
+  'weapon_visible',
+  'restricted_area_entry',
+  'other_hazard',
+  'flood_water',
+  'electrical_hazard',
+  'structural_hazard',
+  'unauthorized_entry',
+  'vandalism',
+])
+
+const OWNER_SECURITY_EVENT_TYPES = new Set([
+  'possible-theft',
+  'robbery',
+  'chain-snatching',
+  'vehicle-theft',
+  'carjacking',
+  'possible-assault',
+  'confrontation',
+  'dangerous-threat',
+  'armed-person',
+  'suspicious-approach-departure',
+  'sudden-fall',
+  'other-anomaly',
+])
+
+const OWNER_ROUTINE_EVENT_TYPES = new Set([
+  'person_detected',
+  'vehicle_detected',
+  'narrative_step',
+  'motion_detected',
+])
+
+function descriptionMatchesPolice(description: string): boolean {
+  const d = description.toLowerCase()
+  return (
+    THEFT_KEYWORDS.some(k => d.includes(k)) ||
+    ASSAULT_KEYWORDS.some(k => d.includes(k)) ||
+    ABUSE_KEYWORDS.some(k => d.includes(k))
+  )
+}
+
+export function isPoliceEligibleAlert(alert: GuardianAlert): boolean {
+  const { hazard_category: cat, description } = alert
+  // other_hazard: check description for theft/assault/abuse keywords
+  if (cat === 'other_hazard') {
+    return !!description && descriptionMatchesPolice(description)
+  }
+  // All other hazard categories (fire_smoke, dangerous_animal, weapon_visible,
+  // person_fall_injury, vehicle_collision, restricted_area_entry) → owner only
+  return false
+}
+
+export function isPoliceEligibleEvent(ev: Event): boolean {
+  if (ev.confidence < 0.6) return false
+  if (THEFT_EVENT_TYPES.has(ev.event_type)) return true
+  if (ASSAULT_EVENT_TYPES.has(ev.event_type)) return true
+  // No other event types qualify
+  return false
+}
+
+export function isOwnerEligibleAlert(alert: GuardianAlert): boolean {
+  return OWNER_ELIGIBLE_HAZARD_CATEGORIES.has(alert.hazard_category)
+}
+
+export function isOwnerEligibleEvent(ev: Event): boolean {
+  if (OWNER_ROUTINE_EVENT_TYPES.has(ev.event_type)) return false
+  if (OWNER_SECURITY_EVENT_TYPES.has(ev.event_type)) return true
   return false
 }
 
 export function feedsForAlert(alert: GuardianAlert): FeedTarget[] {
-  return isPoliceAlert(alert) ? ['police', 'owner'] : ['owner']
+  const policeEligible = isPoliceEligibleAlert(alert)
+  const ownerEligible = isOwnerEligibleAlert(alert)
+  if (policeEligible) return ['police', 'owner']
+  if (ownerEligible) return ['owner']
+  return []
 }
 
 export function feedsForEvent(ev: Event): FeedTarget[] {
-  if (POLICE_EVENT_TYPES.has(ev.event_type) && ev.confidence >= 0.6) {
-    return ['police', 'owner']
-  }
-  // All events reach owner
-  return ['owner']
+  if (isPoliceEligibleEvent(ev)) return ['police', 'owner']
+  if (isOwnerEligibleEvent(ev)) return ['owner']
+  return []
 }
 
 // ── Severity tag ──────────────────────────────────────────────────────────────
@@ -71,9 +175,8 @@ export function severityTagForAlert(alert: GuardianAlert): SeverityTag {
 }
 
 export function severityTagForEvent(ev: Event): SeverityTag {
-  if (POLICE_EVENT_TYPES.has(ev.event_type)) {
+  if (isPoliceEligibleEvent(ev)) {
     if (ev.confidence >= 0.75) return 'Critical'
-    if (ev.confidence >= 0.6) return 'Review'
     return 'Review'
   }
   if (ev.event_type === 'suspicious-approach-departure') return 'Review'
@@ -194,6 +297,13 @@ export function withinTimeRange(item: FeedItem, range: TimeRange): boolean {
 
 export type FeedFilter = 'all' | 'police_urgent' | 'unusual_review' | 'routine'
 
+export const FILTER_OPTIONS: { value: FeedFilter; label: string }[] = [
+  { value: 'all', label: 'All Events' },
+  { value: 'police_urgent', label: 'Police / Urgent' },
+  { value: 'unusual_review', label: 'Unusual / Review' },
+  { value: 'routine', label: 'Routine' },
+]
+
 export function matchesFilter(item: FeedItem, filter: FeedFilter): boolean {
   if (filter === 'all') return true
   if (filter === 'police_urgent') return item.feeds.includes('police')
@@ -221,6 +331,17 @@ export const CATEGORY_LABELS: Record<string, string> = {
   person_detected:                  'Person Detected',
   vehicle_detected:                 'Vehicle Detected',
   narrative_step:                   'Activity Recorded',
+  robbery:                          'Robbery',
+  'chain-snatching':                'Chain Snatching',
+  'vehicle-theft':                  'Vehicle Theft',
+  carjacking:                       'Carjacking',
+  'dangerous-threat':               'Dangerous Threat',
+  'armed-person':                   'Armed Person',
+  'flood_water':                    'Flood / Water Hazard',
+  'electrical_hazard':              'Electrical Hazard',
+  'structural_hazard':              'Structural Hazard',
+  'unauthorized_entry':             'Unauthorized Entry',
+  'vandalism':                      'Vandalism / Property Damage',
 }
 
 export function categoryLabel(category: string): string {

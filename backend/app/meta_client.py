@@ -69,7 +69,7 @@ Return ONLY valid JSON — no prose, no markdown fences:
 HAZARD_ANALYSIS_PROMPT = """You are a second-pass hazard and object detection analyst reviewing a CCTV frame. The general scene analysis has already noted people, vehicles, and common objects. Your task is to find what it may have missed.
 
 Look specifically for:
-1. Animals — snakes, rodents, dogs, cats, birds, insects or any creature on the floor, countertop, or in an unusual location. Describe species (if identifiable), color, size, and exact position.
+1. Dangerous animals — snakes, spiders, wild predators (bears, tigers, lions, wolves, alligators), or any creature in an unusual or threatening location. Do NOT report ordinary pet dogs, cats, or birds that are simply present, walking, sitting, or passing through — these are normal activity. Only report an animal if it is a wild/dangerous species, or if a domestic animal is actively displaying dangerous behavior (attacking, biting, chasing, or cornering a person).
 2. Hazards — fire, smoke, flooding/water pooling, sparks, fallen objects blocking paths, spilled liquids, exposed wires, broken glass, structural damage visible in frame.
 3. Unusual floor-level objects — items on the ground that are out of place: dropped items, unknown packages, stains, debris.
 4. Concealed or partially hidden objects — items tucked behind furniture, partially occluded, or placed in atypical locations.

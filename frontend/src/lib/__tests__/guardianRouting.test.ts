@@ -1,6 +1,10 @@
 import {
   feedsForAlert,
   feedsForEvent,
+  isPoliceEligibleAlert,
+  isPoliceEligibleEvent,
+  isOwnerEligibleAlert,
+  isOwnerEligibleEvent,
   severityTagForAlert,
   severityTagForEvent,
   deduplicateItems,
@@ -65,35 +69,134 @@ function makeRecording(overrides: Partial<Recording> = {}): Recording {
   }
 }
 
+// ── isPoliceEligibleAlert ─────────────────────────────────────────────────────
+
+describe('isPoliceEligibleAlert', () => {
+  // ── Allowed ────────────────────────────────────────────────────────────────
+  test('other_hazard with theft description → eligible', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'other_hazard',
+      description: 'Chain snatching robbery observed',
+    }))).toBe(true)
+  })
+
+  test('other_hazard with assault description → eligible', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'other_hazard',
+      description: 'Assault observed between two persons',
+    }))).toBe(true)
+  })
+
+  test('other_hazard with abuse description → eligible', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'other_hazard',
+      description: 'Harassment and abuse directed at victim',
+    }))).toBe(true)
+  })
+
+  // ── Blocked — severity does not grant eligibility ─────────────────────────
+  test('weapon_visible critical → owner only', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'weapon_visible', severity: 'critical',
+    }))).toBe(false)
+  })
+
+  test('fire_smoke critical → owner only', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'fire_smoke', severity: 'critical',
+    }))).toBe(false)
+  })
+
+  test('fire_smoke high → owner only', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'fire_smoke', severity: 'high',
+    }))).toBe(false)
+  })
+
+  test('dangerous_animal critical → owner only', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'dangerous_animal', severity: 'critical',
+    }))).toBe(false)
+  })
+
+  test('other_hazard critical but unrelated description → owner only', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'other_hazard',
+      severity: 'critical',
+      description: 'Person walking near entrance',
+    }))).toBe(false)
+  })
+
+  test('other_hazard no description → owner only', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'other_hazard',
+      description: '',
+    }))).toBe(false)
+  })
+
+  test('person_fall_injury → owner only', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'person_fall_injury', severity: 'critical',
+    }))).toBe(false)
+  })
+
+  test('vehicle_collision → owner only', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'vehicle_collision', severity: 'critical',
+    }))).toBe(false)
+  })
+
+  test('restricted_area_entry → owner only', () => {
+    expect(isPoliceEligibleAlert(makeAlert({
+      hazard_category: 'restricted_area_entry', severity: 'critical',
+    }))).toBe(false)
+  })
+})
+
 // ── feedsForAlert ─────────────────────────────────────────────────────────────
 
 describe('feedsForAlert', () => {
-  test('weapon_visible → both feeds', () => {
-    expect(feedsForAlert(makeAlert({ hazard_category: 'weapon_visible' }))).toEqual(['police', 'owner'])
+  test('other_hazard with theft description → both feeds', () => {
+    expect(feedsForAlert(makeAlert({
+      hazard_category: 'other_hazard',
+      description: 'Robbery and theft observed near gate',
+    }))).toEqual(['police', 'owner'])
   })
 
-  test('fire_smoke critical → both feeds', () => {
-    expect(feedsForAlert(makeAlert({ hazard_category: 'fire_smoke', severity: 'critical' }))).toEqual(['police', 'owner'])
+  test('other_hazard with assault description → both feeds', () => {
+    expect(feedsForAlert(makeAlert({
+      hazard_category: 'other_hazard',
+      description: 'Assault between individuals',
+    }))).toEqual(['police', 'owner'])
   })
 
-  test('fire_smoke high → both feeds', () => {
-    expect(feedsForAlert(makeAlert({ hazard_category: 'fire_smoke', severity: 'high' }))).toEqual(['police', 'owner'])
+  // These were previously police-eligible; now owner-only per strict allowlist
+  test('weapon_visible → owner only', () => {
+    expect(feedsForAlert(makeAlert({ hazard_category: 'weapon_visible' }))).toEqual(['owner'])
+  })
+
+  test('fire_smoke critical → owner only', () => {
+    expect(feedsForAlert(makeAlert({ hazard_category: 'fire_smoke', severity: 'critical' }))).toEqual(['owner'])
   })
 
   test('fire_smoke medium → owner only', () => {
     expect(feedsForAlert(makeAlert({ hazard_category: 'fire_smoke', severity: 'medium' }))).toEqual(['owner'])
   })
 
-  test('dangerous_animal critical → both feeds', () => {
-    expect(feedsForAlert(makeAlert({ hazard_category: 'dangerous_animal', severity: 'critical' }))).toEqual(['police', 'owner'])
+  test('dangerous_animal critical → owner only', () => {
+    expect(feedsForAlert(makeAlert({ hazard_category: 'dangerous_animal', severity: 'critical' }))).toEqual(['owner'])
   })
 
   test('dangerous_animal low → owner only', () => {
     expect(feedsForAlert(makeAlert({ hazard_category: 'dangerous_animal', severity: 'low' }))).toEqual(['owner'])
   })
 
-  test('other_hazard critical → both feeds', () => {
-    expect(feedsForAlert(makeAlert({ hazard_category: 'other_hazard', severity: 'critical' }))).toEqual(['police', 'owner'])
+  test('other_hazard unrelated description → owner only', () => {
+    expect(feedsForAlert(makeAlert({
+      hazard_category: 'other_hazard',
+      severity: 'critical',
+      description: 'Person near entrance',
+    }))).toEqual(['owner'])
   })
 
   test('person_fall_injury → owner only', () => {
@@ -109,15 +212,91 @@ describe('feedsForAlert', () => {
   })
 })
 
+// ── isPoliceEligibleEvent ─────────────────────────────────────────────────────
+
+describe('isPoliceEligibleEvent', () => {
+  // ── THEFT events ──────────────────────────────────────────────────────────
+  test('possible-theft confidence >= 0.6 → eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'possible-theft', confidence: 0.7 }))).toBe(true)
+  })
+
+  test('robbery confidence >= 0.6 → eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'robbery', confidence: 0.8 }))).toBe(true)
+  })
+
+  test('chain-snatching confidence >= 0.6 → eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'chain-snatching', confidence: 0.9 }))).toBe(true)
+  })
+
+  test('vehicle-theft confidence >= 0.6 → eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'vehicle-theft', confidence: 0.75 }))).toBe(true)
+  })
+
+  test('carjacking confidence >= 0.6 → eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'carjacking', confidence: 0.65 }))).toBe(true)
+  })
+
+  // ── ASSAULT events ────────────────────────────────────────────────────────
+  test('possible-assault confidence >= 0.6 → eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'possible-assault', confidence: 0.6 }))).toBe(true)
+  })
+
+  test('confrontation confidence >= 0.6 → eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'confrontation', confidence: 0.8 }))).toBe(true)
+  })
+
+  test('dangerous-threat confidence >= 0.6 → eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'dangerous-threat', confidence: 0.7 }))).toBe(true)
+  })
+
+  test('armed-person confidence >= 0.6 → eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'armed-person', confidence: 0.65 }))).toBe(true)
+  })
+
+  // ── Confidence threshold ──────────────────────────────────────────────────
+  test('possible-theft confidence < 0.6 → not eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'possible-theft', confidence: 0.5 }))).toBe(false)
+  })
+
+  test('robbery confidence < 0.6 → not eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'robbery', confidence: 0.5 }))).toBe(false)
+  })
+
+  // ── Blocked event types ───────────────────────────────────────────────────
+  test('suspicious-approach-departure → not eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'suspicious-approach-departure', confidence: 0.9 }))).toBe(false)
+  })
+
+  test('person_detected → not eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'person_detected', confidence: 0.95 }))).toBe(false)
+  })
+
+  test('vehicle_detected → not eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'vehicle_detected', confidence: 0.95 }))).toBe(false)
+  })
+
+  test('sudden-fall → not eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'sudden-fall', confidence: 0.9 }))).toBe(false)
+  })
+
+  test('other-anomaly → not eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'other-anomaly', confidence: 0.9 }))).toBe(false)
+  })
+
+  test('narrative_step → not eligible', () => {
+    expect(isPoliceEligibleEvent(makeEvent({ event_type: 'narrative_step', confidence: 0.9 }))).toBe(false)
+  })
+})
+
 // ── feedsForEvent ─────────────────────────────────────────────────────────────
 
 describe('feedsForEvent', () => {
   const ALL_TYPES = [
-    'person_detected', 'vehicle_detected', 'possible-theft', 'possible-assault',
-    'confrontation', 'suspicious-approach-departure', 'sudden-fall', 'other-anomaly', 'narrative_step',
+    'possible-theft', 'possible-assault',
+    'confrontation', 'suspicious-approach-departure', 'sudden-fall', 'other-anomaly',
   ]
 
-  test.each(ALL_TYPES)('every event type reaches owner feed: %s', (evType) => {
+  test.each(ALL_TYPES)('every security event type reaches owner feed: %s', (evType) => {
     const ev = makeEvent({ event_type: evType, confidence: 0.9 })
     expect(feedsForEvent(ev)).toContain('owner')
   })
@@ -126,7 +305,7 @@ describe('feedsForEvent', () => {
     expect(feedsForEvent(makeEvent({ event_type: 'possible-theft', confidence: 0.7 }))).toEqual(['police', 'owner'])
   })
 
-  test('possible-theft confidence < 0.6 → owner only', () => {
+  test('possible-theft confidence < 0.6 → owner only (not police, but still owner-eligible)', () => {
     expect(feedsForEvent(makeEvent({ event_type: 'possible-theft', confidence: 0.5 }))).toEqual(['owner'])
   })
 
@@ -144,12 +323,102 @@ describe('feedsForEvent', () => {
     expect(feeds).not.toContain('police')
   })
 
-  test('person_detected → owner only', () => {
-    expect(feedsForEvent(makeEvent({ event_type: 'person_detected', confidence: 0.95 }))).toEqual(['owner'])
+  test('person_detected → not in owner feed (routine)', () => {
+    expect(feedsForEvent(makeEvent({ event_type: 'person_detected', confidence: 0.95 }))).toEqual([])
   })
 
-  test('vehicle_detected → owner only', () => {
-    expect(feedsForEvent(makeEvent({ event_type: 'vehicle_detected', confidence: 0.95 }))).toEqual(['owner'])
+  test('vehicle_detected → not in owner feed (routine)', () => {
+    expect(feedsForEvent(makeEvent({ event_type: 'vehicle_detected', confidence: 0.95 }))).toEqual([])
+  })
+
+  test('robbery confidence >= 0.6 → both feeds', () => {
+    expect(feedsForEvent(makeEvent({ event_type: 'robbery', confidence: 0.7 }))).toEqual(['police', 'owner'])
+  })
+
+  test('vehicle-theft confidence >= 0.6 → both feeds', () => {
+    expect(feedsForEvent(makeEvent({ event_type: 'vehicle-theft', confidence: 0.8 }))).toEqual(['police', 'owner'])
+  })
+
+  test('chain-snatching confidence >= 0.6 → both feeds', () => {
+    expect(feedsForEvent(makeEvent({ event_type: 'chain-snatching', confidence: 0.9 }))).toEqual(['police', 'owner'])
+  })
+
+  test('robbery confidence < 0.6 → owner only (not police, but still owner-eligible)', () => {
+    expect(feedsForEvent(makeEvent({ event_type: 'robbery', confidence: 0.5 }))).toEqual(['owner'])
+  })
+
+  test('dangerous-threat confidence >= 0.6 → both feeds', () => {
+    expect(feedsForEvent(makeEvent({ event_type: 'dangerous-threat', confidence: 0.8 }))).toEqual(['police', 'owner'])
+  })
+})
+
+// ── isOwnerEligibleAlert ──────────────────────────────────────────────────────
+
+describe('isOwnerEligibleAlert', () => {
+  test('fire_smoke → owner eligible', () => {
+    expect(isOwnerEligibleAlert(makeAlert({ hazard_category: 'fire_smoke' }))).toBe(true)
+  })
+  test('dangerous_animal → owner eligible', () => {
+    expect(isOwnerEligibleAlert(makeAlert({ hazard_category: 'dangerous_animal' }))).toBe(true)
+  })
+  test('flood_water → owner eligible', () => {
+    expect(isOwnerEligibleAlert(makeAlert({ hazard_category: 'flood_water' as any }))).toBe(true)
+  })
+  test('electrical_hazard → owner eligible', () => {
+    expect(isOwnerEligibleAlert(makeAlert({ hazard_category: 'electrical_hazard' as any }))).toBe(true)
+  })
+  test('structural_hazard → owner eligible', () => {
+    expect(isOwnerEligibleAlert(makeAlert({ hazard_category: 'structural_hazard' as any }))).toBe(true)
+  })
+  test('unauthorized_entry → owner eligible', () => {
+    expect(isOwnerEligibleAlert(makeAlert({ hazard_category: 'unauthorized_entry' as any }))).toBe(true)
+  })
+  test('vandalism → owner eligible', () => {
+    expect(isOwnerEligibleAlert(makeAlert({ hazard_category: 'vandalism' as any }))).toBe(true)
+  })
+  test('weapon_visible → owner eligible', () => {
+    expect(isOwnerEligibleAlert(makeAlert({ hazard_category: 'weapon_visible' }))).toBe(true)
+  })
+  test('restricted_area_entry → owner eligible', () => {
+    expect(isOwnerEligibleAlert(makeAlert({ hazard_category: 'restricted_area_entry' }))).toBe(true)
+  })
+  test('unknown_hazard → not owner eligible', () => {
+    expect(isOwnerEligibleAlert(makeAlert({ hazard_category: 'unknown_hazard' as any }))).toBe(false)
+  })
+})
+
+// ── isOwnerEligibleEvent ──────────────────────────────────────────────────────
+
+describe('isOwnerEligibleEvent', () => {
+  test('suspicious-approach-departure → owner eligible', () => {
+    expect(isOwnerEligibleEvent(makeEvent({ event_type: 'suspicious-approach-departure' }))).toBe(true)
+  })
+  test('sudden-fall → owner eligible', () => {
+    expect(isOwnerEligibleEvent(makeEvent({ event_type: 'sudden-fall' }))).toBe(true)
+  })
+  test('possible-theft → owner eligible', () => {
+    expect(isOwnerEligibleEvent(makeEvent({ event_type: 'possible-theft' }))).toBe(true)
+  })
+  test('possible-assault → owner eligible', () => {
+    expect(isOwnerEligibleEvent(makeEvent({ event_type: 'possible-assault' }))).toBe(true)
+  })
+  test('other-anomaly → owner eligible', () => {
+    expect(isOwnerEligibleEvent(makeEvent({ event_type: 'other-anomaly' }))).toBe(true)
+  })
+  test('person_detected → not owner eligible (routine)', () => {
+    expect(isOwnerEligibleEvent(makeEvent({ event_type: 'person_detected' }))).toBe(false)
+  })
+  test('vehicle_detected → not owner eligible (routine)', () => {
+    expect(isOwnerEligibleEvent(makeEvent({ event_type: 'vehicle_detected' }))).toBe(false)
+  })
+  test('narrative_step → not owner eligible (routine)', () => {
+    expect(isOwnerEligibleEvent(makeEvent({ event_type: 'narrative_step' }))).toBe(false)
+  })
+  test('motion_detected → not owner eligible (routine)', () => {
+    expect(isOwnerEligibleEvent(makeEvent({ event_type: 'motion_detected' }))).toBe(false)
+  })
+  test('unknown_event_type → not owner eligible', () => {
+    expect(isOwnerEligibleEvent(makeEvent({ event_type: 'unknown_event_type' }))).toBe(false)
   })
 })
 
@@ -230,18 +499,32 @@ describe('deduplicateItems', () => {
   })
 
   test('standalone event (no nearby alert) becomes its own FeedItem', () => {
-    const ev = makeEvent({ event_type: 'vehicle_detected', confidence: 0.7 })
+    const ev = makeEvent({ event_type: 'suspicious-approach-departure', confidence: 0.7 })
     const items = deduplicateItems([], [ev], recs)
     expect(items).toHaveLength(1)
     expect(items[0].source).toBe('event')
   })
 
   test('alert absorbed event has feeds from alert routing, not event routing', () => {
-    // weapon_visible alert absorbs a person_detected event within 5s
-    const alert = makeAlert({ hazard_category: 'weapon_visible', timestamp_seconds: 30 })
+    // other_hazard with theft description absorbs a person_detected event within 5s
+    // → feeds come from alert's police eligibility (theft → police), not from event routing
+    const alert = makeAlert({
+      hazard_category: 'other_hazard',
+      description: 'Robbery observed near entrance',
+      timestamp_seconds: 30,
+    })
     const ev = makeEvent({ event_type: 'person_detected', confidence: 0.9, timestamp_seconds: 31 })
     const items = deduplicateItems([alert], [ev], recs)
     expect(items[0].feeds).toContain('police')
+  })
+
+  test('weapon_visible alert absorbed event has owner-only feeds', () => {
+    // weapon_visible is no longer police-eligible under strict allowlist
+    const alert = makeAlert({ hazard_category: 'weapon_visible', timestamp_seconds: 30 })
+    const ev = makeEvent({ event_type: 'person_detected', confidence: 0.9, timestamp_seconds: 31 })
+    const items = deduplicateItems([alert], [ev], recs)
+    expect(items[0].feeds).not.toContain('police')
+    expect(items[0].feeds).toContain('owner')
   })
 
   test('items sorted by timestamp ascending', () => {
@@ -295,7 +578,8 @@ test('categoryLabel falls back to replacing hyphens for unknown types', () => {
 
 test('all expected hazard categories have labels', () => {
   const hazardCats = ['fire_smoke', 'person_fall_injury', 'vehicle_collision',
-    'dangerous_animal', 'weapon_visible', 'restricted_area_entry', 'other_hazard']
+    'dangerous_animal', 'weapon_visible', 'restricted_area_entry', 'other_hazard',
+    'flood_water', 'electrical_hazard', 'structural_hazard', 'unauthorized_entry', 'vandalism']
   for (const cat of hazardCats) {
     expect(CATEGORY_LABELS[cat]).toBeDefined()
   }

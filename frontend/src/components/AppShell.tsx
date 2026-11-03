@@ -1,15 +1,9 @@
 'use client'
-import { useState } from 'react'
 
-type NavItem = {
-  id: string
-  label: string
-  icon: React.ReactNode
-  badge?: number
-}
+type AppView = 'home' | 'results' | 'workspace' | 'library' | 'guardian'
 
 interface Props {
-  activeView: string
+  activeView: AppView | string
   onNavigate: (view: string) => void
   recordingCount: number
   indexedCount: number
@@ -17,53 +11,45 @@ interface Props {
   children: React.ReactNode
   topbarRight?: React.ReactNode
   fullHeight?: boolean
+  guardianAlertCount?: number
 }
 
-function CameraIcon({ className }: { className?: string }) {
+function GridIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} width="18" height="18">
+    <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+      <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+      <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+      <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+    </svg>
+  )
+}
+
+function VideoCameraIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden="true">
       <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }
 
-function ChevronIcon({ collapsed, className }: { collapsed: boolean; className?: string }) {
+function SearchIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" width="16" height="16" className={className} style={{ transform: collapsed ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }}>
-      <path d="M15 19l-7-7 7-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   )
 }
 
-const NAV_ITEMS: NavItem[] = [
-  {
-    id: 'home',
-    label: 'Overview',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
-        <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  {
-    id: 'library',
-    label: 'Recordings',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
-        <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  {
-    id: 'guardian',
-    label: 'Guardian',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" width="20" height="20">
-        <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-]
+function ShieldIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden="true">
+      <path d="M12 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016A11.955 11.955 0 0112 2.944z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
 
 export default function AppShell({
   activeView,
@@ -74,101 +60,99 @@ export default function AppShell({
   children,
   topbarRight,
   fullHeight = false,
+  guardianAlertCount,
 }: Props) {
-  const [collapsed, setCollapsed] = useState(false)
+  const visibleNavView =
+    activeView === 'results' || activeView === 'workspace' ? 'results' : activeView
 
-  const visibleNavView = ['home', 'library', 'investigate', 'guardian'].includes(activeView)
-    ? activeView
-    : activeView === 'results' || activeView === 'workspace'
-      ? 'investigate'
-      : activeView
+  const NAV_ITEMS = [
+    { id: 'home',     label: 'Overview',       icon: <GridIcon />,        badge: undefined },
+    { id: 'library',  label: 'Recordings',     icon: <VideoCameraIcon />, badge: recordingCount > 0 ? recordingCount : undefined },
+    { id: 'results',  label: 'Investigations', icon: <SearchIcon />,      badge: undefined },
+    { id: 'guardian', label: 'Guardian',       icon: <ShieldIcon />,      badge: guardianAlertCount && guardianAlertCount > 0 ? guardianAlertCount : undefined },
+  ]
 
   return (
-    <div className="flex" style={{ height: '100dvh', overflow: 'hidden' }}>
-      {/* ── Sidebar ─────────────────────────────────── */}
-      <aside
-        className="flex flex-col bg-white border-r border-[#E2E8F0] h-full overflow-hidden shrink-0 transition-all duration-200"
-        style={{ width: collapsed ? 56 : 220, zIndex: 20 }}
+    <div className="flex flex-col" style={{ height: '100dvh', overflow: 'hidden' }}>
+      {/* Top navigation bar */}
+      <header
+        className="flex items-center bg-white shrink-0"
+        style={{ height: 56, borderBottom: '1px solid #E2E8F0', paddingLeft: 20, paddingRight: 20 }}
       >
-        {/* Logo row */}
-        <div className="flex items-center gap-3 px-4 border-b border-[#E2E8F0] shrink-0" style={{ height: 56 }}>
-          <div className="rt-sidebar-logo-icon">
-            <CameraIcon className="w-[18px] h-[18px] text-white" />
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 shrink-0 mr-8">
+          <div
+            className="flex items-center justify-center rounded-md font-bold text-white text-sm select-none shrink-0"
+            style={{ width: 32, height: 32, backgroundColor: '#2563EB', letterSpacing: '-0.02em' }}
+          >
+            RT
           </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <span className="font-bold text-[#0F172A] text-sm tracking-tight block leading-tight">RealityTrace</span>
-              <span className="text-[10px] text-[#94A3B8] font-medium block">CCTV Investigation</span>
-            </div>
-          )}
+          <div className="hidden sm:block">
+            <p className="font-semibold text-sm leading-tight" style={{ color: '#0F172A' }}>RealityTrace</p>
+            <p className="text-xs leading-tight" style={{ color: '#94A3B8' }}>AI Video Intelligence</p>
+          </div>
         </div>
 
-        {/* Nav items */}
-        <nav className="flex-1 overflow-y-auto rt-sidebar-section pt-3">
-          {!collapsed && (
-            <p className="rt-sidebar-section-label">Navigation</p>
-          )}
-          <ul className="space-y-0.5">
-            {NAV_ITEMS.map(item => (
-              <li key={item.id}>
-                <button
-                  onClick={() => onNavigate(item.id)}
-                  className={`rt-nav-item ${visibleNavView === item.id ? 'rt-nav-item-active' : ''} ${collapsed ? 'justify-center px-0' : ''}`}
-                  title={collapsed ? item.label : undefined}
-                >
-                  <span className="rt-nav-item-icon">{item.icon}</span>
-                  {!collapsed && <span>{item.label}</span>}
-                  {!collapsed && item.id === 'library' && recordingCount > 0 && (
-                    <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#94A3B8]">
-                      {recordingCount}
-                    </span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
+        {/* Nav tabs */}
+        <nav className="flex items-center gap-1 flex-1 min-w-0">
+          {NAV_ITEMS.map(item => {
+            const isActive = visibleNavView === item.id
+            return (
+              <button
+                key={item.id}
+                onClick={() => onNavigate(item.id)}
+                className="flex items-center gap-1.5 px-3 rounded-md text-sm font-medium transition-colors duration-150 relative whitespace-nowrap"
+                style={{
+                  height: 36,
+                  color: isActive ? '#2563EB' : '#64748B',
+                  backgroundColor: isActive ? '#EFF6FF' : 'transparent',
+                }}
+                onMouseEnter={e => {
+                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#F8FAFC'
+                }}
+                onMouseLeave={e => {
+                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'
+                }}
+              >
+                <span className="shrink-0" style={{ color: isActive ? '#2563EB' : '#94A3B8' }}>{item.icon}</span>
+                <span>{item.label}</span>
+                {item.badge !== undefined && (
+                  <span
+                    className="text-xs font-semibold rounded-full px-1.5 py-0.5 leading-none"
+                    style={{
+                      backgroundColor: isActive ? '#BFDBFE' : '#F1F5F9',
+                      color: isActive ? '#1D4ED8' : '#64748B',
+                      minWidth: '1.25rem',
+                      textAlign: 'center',
+                    }}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </nav>
 
-        {/* Status + collapse toggle */}
-        <div className="shrink-0 border-t border-[#E2E8F0] px-3 py-3 space-y-2">
-          {!collapsed && (
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[#F8FAFC]">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${indexedCount > 0 ? 'bg-[#16A34A]' : 'bg-[#94A3B8]'}`} />
-              <span className="text-xs text-[#64748B] truncate">
-                {indexedCount > 0 ? `${indexedCount} camera${indexedCount !== 1 ? 's' : ''} indexed` : 'No cameras indexed'}
-              </span>
-            </div>
+        {/* Right slot + indexed status */}
+        <div className="flex items-center gap-3 shrink-0 ml-4">
+          {indexedCount > 0 && (
+            <span className="hidden md:flex items-center gap-1.5 text-xs" style={{ color: '#64748B' }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#16A34A' }} />
+              {indexedCount} indexed
+            </span>
           )}
-          <button
-            onClick={() => setCollapsed(c => !c)}
-            className={`rt-nav-item ${collapsed ? 'justify-center px-0' : ''}`}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            <ChevronIcon collapsed={collapsed} className="w-4 h-4 shrink-0" />
-            {!collapsed && <span className="text-xs">Collapse</span>}
-          </button>
+          {topbarRight}
         </div>
-      </aside>
+      </header>
 
-      {/* ── Main area ───────────────────────────────── */}
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        {/* Topbar */}
-        <header className="flex items-center gap-3 bg-white border-b border-[#E2E8F0] px-4 shrink-0" style={{ height: 56 }}>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-semibold text-[#0F172A] truncate">{pageTitle}</h1>
-          </div>
-          {topbarRight && (
-            <div className="flex items-center gap-2 shrink-0">
-              {topbarRight}
-            </div>
-          )}
-        </header>
-
-        {/* Content */}
-        <main className={fullHeight ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1 overflow-y-auto bg-[#F8FAFC]'}>
-          {children}
-        </main>
-      </div>
+      {/* Page content */}
+      <main
+        className={fullHeight ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1 overflow-y-auto'}
+        style={fullHeight ? undefined : { backgroundColor: '#F8FAFC' }}
+      >
+        {children}
+      </main>
     </div>
   )
 }

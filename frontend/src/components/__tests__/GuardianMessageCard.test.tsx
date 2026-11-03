@@ -124,3 +124,65 @@ test('Acknowledge button not shown for event-sourced items', () => {
   renderCard({ source: 'event' })
   expect(screen.queryByLabelText('Acknowledge')).not.toBeInTheDocument()
 })
+
+// ── Dispatch action ───────────────────────────────────────────────────────────
+
+test('shows Dispatch button on police tab for alert items', () => {
+  renderCard({ source: 'alert' }, true)
+  expect(screen.getByLabelText('Dispatch (simulation)')).toBeInTheDocument()
+})
+
+test('does not show Dispatch button on owner tab', () => {
+  renderCard({ source: 'alert' }, false)
+  expect(screen.queryByLabelText('Dispatch (simulation)')).not.toBeInTheDocument()
+})
+
+test('does not show Dispatch button for event-sourced items on police tab', () => {
+  renderCard({ source: 'event' }, true)
+  expect(screen.queryByLabelText('Dispatch (simulation)')).not.toBeInTheDocument()
+})
+
+// ── Thumbnail states ──────────────────────────────────────────────────────────
+
+test('renders evidence thumbnail when evidence frames are present', () => {
+  renderCard({ evidence_frames: [{ frame_path: 'test/frame.jpg', timestamp_seconds: 10, role: 'during' }] })
+  const img = screen.getByAltText('Evidence')
+  expect(img).toBeInTheDocument()
+  expect(img).toHaveAttribute('src', '/frames/test%2Fframe.jpg')
+})
+
+test('renders no-video state when evidence frames are empty', () => {
+  renderCard({ evidence_frames: [] })
+  expect(screen.queryByAltText('Evidence')).not.toBeInTheDocument()
+})
+
+// ── Dispatch action ───────────────────────────────────────────────────────────
+
+test('shows Dispatch button on police tab for alert items', () => {
+  renderCard({ source: 'alert' }, true)
+  expect(screen.getByLabelText('Dispatch (simulation)')).toBeInTheDocument()
+})
+
+test('does not show Dispatch button on owner tab', () => {
+  renderCard({ source: 'alert' }, false)
+  expect(screen.queryByLabelText('Dispatch (simulation)')).not.toBeInTheDocument()
+})
+
+test('does not show Dispatch button for event-sourced items on police tab', () => {
+  renderCard({ source: 'event' }, true)
+  expect(screen.queryByLabelText('Dispatch (simulation)')).not.toBeInTheDocument()
+})
+
+// ── Thumbnail states ──────────────────────────────────────────────────────────
+
+test('renders evidence thumbnail when evidence frames are present', () => {
+  renderCard({ evidence_frames: [{ frame_path: 'test/frame.jpg', timestamp_seconds: 10, role: 'during' }] })
+  const img = screen.getByAltText('Evidence')
+  expect(img).toBeInTheDocument()
+  expect(img).toHaveAttribute('src', '/frames/test%2Fframe.jpg')
+})
+
+test('renders no-video state when evidence frames are empty', () => {
+  renderCard({ evidence_frames: [] })
+  expect(screen.queryByAltText('Evidence')).not.toBeInTheDocument()
+})

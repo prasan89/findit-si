@@ -1,5 +1,5 @@
 'use client'
-import type { FeedItem } from '@/lib/guardianRouting'
+import type { FeedItem, FeedTarget } from '@/lib/guardianRouting'
 import GuardianMessageCard from './GuardianMessageCard'
 
 type FeedTab = 'police' | 'owner'
@@ -11,6 +11,53 @@ interface Props {
   selectedItemId: string | null
   onSelectItem: (item: FeedItem) => void
   onAcknowledge: (item: FeedItem, status: 'acknowledged' | 'dismissed') => void
+}
+
+// Shield icon for Police tab
+function ShieldIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M12 2L3 6v6c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V6L12 2z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+// Home icon for Owner tab
+function HomeIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H5a1 1 0 01-1-1V9.5z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9 21V12h6v9"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+// Info circle icon for empty state
+function InfoIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
 }
 
 export default function GuardianFeed({
@@ -25,128 +72,126 @@ export default function GuardianFeed({
   const ownerItems = items.filter(i => i.feeds.includes('owner'))
   const visibleItems = tab === 'police' ? policeItems : ownerItems
 
+  const policeNewCount = policeItems.filter(i => i.review_status === 'new').length
+  const ownerCount = ownerItems.length
+
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="flex flex-col flex-1 min-h-0 bg-white">
       {/* Tab bar */}
-      <div className="flex border-b border-[#E2E8F0] bg-white shrink-0">
+      <div className="flex shrink-0 border-b border-slate-200 bg-white">
         {/* Police / 911 tab */}
         <button
           onClick={() => onTabChange('police')}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold border-b-2 transition-colors ${
+          className={`relative flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-500 ${
             tab === 'police'
-              ? 'border-[#2563EB] text-[#2563EB] bg-[#EFF6FF]/40'
-              : 'border-transparent text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC]'
+              ? 'text-red-600 bg-red-50/60'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
           }`}
-          aria-label="Police / 911 feed"
+          aria-selected={tab === 'police'}
+          role="tab"
         >
-          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-lg shrink-0">
-            🚔
-          </div>
-          <div className="text-left">
-            <div className="text-sm font-semibold">Police / 911</div>
-            <div className="text-xs text-[#64748B] font-normal">Serious incidents requiring police attention</div>
-          </div>
-          {policeItems.length > 0 && (
-            <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${
-              tab === 'police' ? 'bg-red-500 text-white' : 'bg-[#E2E8F0] text-[#64748B]'
-            }`}>
-              {policeItems.filter(i => i.review_status === 'new').length} urgent
-            </span>
+          {/* Active underline indicator */}
+          {tab === 'police' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-500 rounded-t" />
           )}
+
+          <ShieldIcon
+            className={`w-4 h-4 shrink-0 ${tab === 'police' ? 'text-red-500' : 'text-slate-400'}`}
+          />
+          <span className="font-semibold">Police / 911</span>
+
+          {policeNewCount > 0 ? (
+            <span
+              className={`text-xs font-bold px-1.5 py-0.5 rounded-full tabular-nums ${
+                tab === 'police'
+                  ? 'bg-red-500 text-white'
+                  : 'bg-red-100 text-red-600'
+              }`}
+            >
+              {policeNewCount}
+            </span>
+          ) : policeItems.length > 0 ? (
+            <span
+              className={`text-xs font-medium px-1.5 py-0.5 rounded-full tabular-nums ${
+                tab === 'police'
+                  ? 'bg-red-100 text-red-600'
+                  : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              {policeItems.length}
+            </span>
+          ) : null}
         </button>
 
         {/* Property Owner tab */}
         <button
           onClick={() => onTabChange('owner')}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold border-b-2 transition-colors ${
+          className={`relative flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
             tab === 'owner'
-              ? 'border-[#2563EB] text-[#2563EB] bg-[#EFF6FF]/40'
-              : 'border-transparent text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC]'
+              ? 'text-blue-600 bg-blue-50/60'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
           }`}
-          aria-label="Property Owner feed"
+          aria-selected={tab === 'owner'}
+          role="tab"
         >
-          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-lg shrink-0">
-            👤
-          </div>
-          <div className="text-left">
-            <div className="text-sm font-semibold">Property Owner</div>
-            <div className="text-xs text-[#64748B] font-normal">All events (motion, people, vehicles, hazards)</div>
-          </div>
-          {ownerItems.length > 0 && (
-            <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${
-              tab === 'owner' ? 'bg-[#2563EB] text-white' : 'bg-[#E2E8F0] text-[#64748B]'
-            }`}>
-              {ownerItems.length} events
+          {/* Active underline indicator */}
+          {tab === 'owner' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-t" />
+          )}
+
+          <HomeIcon
+            className={`w-4 h-4 shrink-0 ${tab === 'owner' ? 'text-blue-500' : 'text-slate-400'}`}
+          />
+          <span className="font-semibold">Property Owner</span>
+
+          {ownerCount > 0 && (
+            <span
+              className={`text-xs font-medium px-1.5 py-0.5 rounded-full tabular-nums ${
+                tab === 'owner'
+                  ? 'bg-blue-100 text-blue-600'
+                  : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              {ownerCount}
             </span>
           )}
         </button>
       </div>
 
-      {/* Police simulation banner */}
+      {/* Simulation notice for police tab */}
       {tab === 'police' && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 shrink-0">
-          <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-amber-600 shrink-0">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/>
-            <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-100 shrink-0">
+          <InfoIcon className="w-3.5 h-3.5 text-amber-500 shrink-0" />
           <span className="text-xs text-amber-700">
-            <strong>Simulation only</strong> — no real emergency call placed. This is a demonstration of what Guardian would report.
+            <strong>Simulation only</strong> — no real emergency call placed.
           </span>
         </div>
       )}
 
-      {/* Police chat header */}
-      {tab === 'police' && (
-        <div className="flex items-center gap-3 px-4 py-2.5 bg-[#075E54] shrink-0">
-          <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm">🚔</div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-white">Police Dispatch (Simulation)</div>
-            <div className="text-[11px] text-green-200">RealityTrace Guardian ● Simulation</div>
-          </div>
-          <div className="text-[11px] text-white/60">Simulation only — no real emergency call placed</div>
-        </div>
-      )}
-
-      {/* Owner chat header */}
-      {tab === 'owner' && (
-        <div className="flex items-center gap-3 px-4 py-2.5 bg-[#128C7E] shrink-0">
-          <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm">👤</div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-white">Property Owner</div>
-            <div className="text-[11px] text-green-200">All camera activity</div>
-          </div>
-        </div>
-      )}
-
-      {/* Feed content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ background: '#F8FAFC' }}>
+      {/* Scrollable feed content */}
+      <div className="flex-1 overflow-y-auto min-h-0">
         {visibleItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-48 gap-3">
-            <div className="w-12 h-12 rounded-full bg-white border border-[#E2E8F0] flex items-center justify-center text-2xl shadow-sm">
-              {tab === 'police' ? '🛡️' : '📭'}
+          <div className="flex flex-col items-center justify-center h-48 gap-3 px-6 text-center">
+            <div
+              className={`w-11 h-11 rounded-full flex items-center justify-center ${
+                tab === 'police' ? 'bg-red-50 text-red-400' : 'bg-blue-50 text-blue-400'
+              }`}
+            >
+              {tab === 'police' ? (
+                <ShieldIcon className="w-5 h-5" />
+              ) : (
+                <HomeIcon className="w-5 h-5" />
+              )}
             </div>
-            <p className="text-sm font-medium text-[#64748B]">
+            <p className="text-sm font-medium text-slate-600">No alerts</p>
+            <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
               {tab === 'police'
-                ? 'No serious incidents to report'
-                : 'No camera activity recorded yet'}
-            </p>
-            <p className="text-xs text-[#94A3B8] text-center max-w-60">
-              {tab === 'police'
-                ? 'Guardian found no police-relevant incidents matching the current filters.'
-                : 'Events will appear here once recordings are indexed.'}
+                ? 'No police-eligible alerts. Theft, assault, and abuse incidents will appear here.'
+                : 'No property alerts. Hazard events will appear here.'}
             </p>
           </div>
         ) : (
-          <>
-            {/* Date separator */}
-            <div className="flex items-center gap-2 py-1">
-              <div className="flex-1 h-px bg-[#E2E8F0]" />
-              <span className="text-[11px] text-[#94A3B8] bg-white px-2 py-0.5 rounded-full border border-[#E2E8F0]">
-                Today
-              </span>
-              <div className="flex-1 h-px bg-[#E2E8F0]" />
-            </div>
-
+          <div className="divide-y divide-slate-100">
             {visibleItems.map(item => (
               <GuardianMessageCard
                 key={item.id}
@@ -157,37 +202,8 @@ export default function GuardianFeed({
                 isSelected={selectedItemId === item.id}
               />
             ))}
-
-            {/* Incident report summary at bottom of police feed */}
-            {tab === 'police' && visibleItems.length > 0 && (
-              <div className="rt-card p-3 flex items-start gap-2 bg-blue-50 border border-blue-100">
-                <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-blue-500 mt-0.5 shrink-0">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/>
-                  <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-blue-700">Automatic Incident Report</p>
-                  <p className="text-xs text-blue-600 mt-0.5">
-                    An incident report has been assembled from video evidence
-                    ({visibleItems.length} event{visibleItems.length !== 1 ? 's' : ''}) and is ready for review.
-                  </p>
-                </div>
-              </div>
-            )}
-          </>
+          </div>
         )}
-      </div>
-
-      {/* Simulated chat input bar */}
-      <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-t border-[#E2E8F0] shrink-0">
-        <div className="flex-1 rounded-full bg-[#F1F5F9] px-4 py-2 text-xs text-[#94A3B8]">
-          Automated alerts appear here (no manual reply)
-        </div>
-        <div className="w-8 h-8 rounded-full bg-[#E2E8F0] flex items-center justify-center opacity-40">
-          <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-[#64748B]">
-            <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </div>
       </div>
     </div>
   )
