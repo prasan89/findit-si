@@ -569,23 +569,30 @@ def _parse_temporal_query(query: str) -> dict:
 
 _ACTION_SYNONYMS: dict[str, frozenset] = {
     # Removal / transport
-    # Also includes outcome phrases the LLM uses when it describes the result of
-    # removal rather than the action directly ("no longer visible", "lowers down").
-    "taken":      frozenset({"taken", "carried", "carries", "removed", "moved",
-                              "transported", "transporting", "transport",
-                              "lifted", "picked", "relocated", "taken out", "carry",
-                              "carrying", "carrying out", "moving", "dragging", "drag",
-                              "hauled", "hauling", "brought", "bringing",
+    # "taken" / "removed" = directional removal (away from a location).
+    # "carried" is intentionally direction-neutral — excluded here to avoid
+    # matching "carrying a chair to a spot" (placement) when the query asks
+    # for removal. "no longer visible" etc. are outcome phrases LLMs use
+    # when they describe a removal result without stating the action directly.
+    "taken":      frozenset({"taken", "removed", "moved away", "lifted away",
+                              "relocated", "taken out", "taken away",
                               "no longer", "not visible", "lowers down", "bends down",
-                              "bends and lowers", "not in its original"}),
-    "took":       frozenset({"taken", "carried", "carries", "removed", "moved",
-                              "transported", "lifted", "picked", "relocated",
-                              "carry", "carrying", "moving", "dragging", "hauled",
+                              "bends and lowers", "not in its original", "not in its",
+                              "disappeared", "missing", "gone"}),
+    # "took away" / "took" — directional removal: object was taken FROM a location.
+    # Deliberately excludes "carried/carry/carries" to avoid matching someone who
+    # carried an object TO a location (placing) — carrying is direction-neutral.
+    "took":       frozenset({"taken away", "took away", "removed", "moved away",
+                              "lifted away", "picked up", "relocated",
                               "no longer", "not visible", "lowers down", "bends down",
-                              "bends and lowers", "not in its original"}),
-    "removed":    frozenset({"removed", "carried", "carries", "taken", "moved",
-                              "transported", "transporting", "lifted", "relocated",
-                              "no longer", "not visible", "not in its original"}),
+                              "bends and lowers", "not in its original",
+                              "not in its", "disappeared", "missing"}),
+    "away":       frozenset({"away", "taken away", "carried away", "moved away",
+                              "no longer", "not visible", "not in its original",
+                              "not in its", "disappeared", "missing",
+                              "walks back", "leaves the"}),
+    "removed":    frozenset({"removed", "taken", "moved away", "lifted",
+                              "relocated", "no longer", "not visible", "not in its original"}),
     "carried":    frozenset({"carried", "carry", "carries", "carrying", "taken", "moved",
                               "transported", "transporting", "lifted", "hauled", "hauling"}),
     "moved":      frozenset({"moved", "moving", "carried", "carries", "taken", "relocated",
