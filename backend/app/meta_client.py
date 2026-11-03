@@ -242,9 +242,7 @@ Return ONLY valid JSON — no prose, no markdown fences:
   ]
 }"""
 
-WHOLE_RECORDING_PROMPT_VERSION = "n1"
-
-VIDEO_ANALYSIS_PROMPT = """You are analyzing a security camera recording. Watch the entire video carefully and return a complete analysis. Return ONLY valid JSON — no markdown, no prose outside the JSON:
+VIDEO_ANALYSIS_PROMPT ="""You are analyzing a security camera recording. Watch the entire video carefully and return a complete analysis. Return ONLY valid JSON — no markdown, no prose outside the JSON:
 {
   "scene_context": "one sentence: location type, camera angle, lighting",
   "entities": [
@@ -312,8 +310,6 @@ Rules:
 - Describe motion direction, speed, and posture when visible.
 - Never accuse anyone of a crime. Use neutral observable language.
 - If the scene is static, set static_scene to true and entities/actions may be empty."""
-
-VIDEO_ANALYSIS_PROMPT_VERSION = "v1"
 
 
 @runtime_checkable
@@ -1395,11 +1391,6 @@ def validate_clip_analysis(parsed) -> dict:
     return parsed
 
 
-def _parse_json_response(content: str) -> dict:
-    """Backwards-compatible wrapper around parse_model_json (no finish reason)."""
-    return parse_model_json(content)
-
-
 def validate_upload_understanding(parsed) -> dict:
     """Validate a parsed upload understanding response (lenient — all fields optional except top-level dict).
 
@@ -1465,50 +1456,6 @@ def validate_video_analysis(parsed) -> dict:
                 f"Video analysis '{key}' must be a list if present"
             )
     return parsed
-
-
-GUARDIAN_HAZARD_PROMPT = """You are a hazard detection specialist reviewing a CCTV video segment. The frames below are evenly-sampled from one continuous segment, each labeled with its video timestamp in seconds.
-
-Your ONLY task is to identify LIFE-SAFETY and SECURITY HAZARDS visible in this segment. Focus exclusively on:
-
-1. FIRE / SMOKE (fire_smoke) — visible flames, smoke, smoldering, or heat distortion indicating fire. Even small or beginning fires must be reported.
-2. PERSON FALL / INJURY (person_fall_injury) — a person visibly falling, collapsed on the ground, or in a posture indicating injury (not sitting normally). Exclude people who lie down intentionally.
-3. VEHICLE COLLISION (vehicle_collision) — vehicles making contact, a vehicle striking a person or structure, or immediate pre-collision.
-4. DANGEROUS ANIMAL (dangerous_animal) — a wild or aggressive animal visibly present in a non-containment area (not a leashed pet in an expected location).
-5. WEAPON VISIBLE (weapon_visible) — a firearm, knife, or other weapon visible in a person's hand or conspicuously displayed (not secured in a holster or display case).
-6. RESTRICTED AREA ENTRY (restricted_area_entry) — a person crossing a clearly marked restricted boundary (fence with warning signs, secured door forced open, barrier bypassed).
-7. OTHER HAZARD (other_hazard) — any other directly visible life-safety hazard not in the above categories (e.g., flooding near electrical equipment, structural collapse, exposed high-voltage wiring).
-
-Rules:
-- Report ONLY what is DIRECTLY VISIBLE in these frames. Do not infer; describe observed evidence.
-- If a category has no evidence in these frames, omit it from hazards entirely.
-- If confidence is below 0.3, omit the hazard entirely.
-- SEVERITY: critical = immediate life-threatening, high = serious risk requiring immediate attention, medium = potential hazard needing investigation, low = possible/borderline.
-- timestamp_seconds: the earliest frame timestamp in seconds where the hazard is first clearly visible.
-- If the scene is normal with no hazards visible, return an empty hazards list.
-
-Return ONLY valid JSON — no prose, no markdown fences:
-{
-  "hazards": [
-    {
-      "hazard_category": "fire_smoke|person_fall_injury|vehicle_collision|dangerous_animal|weapon_visible|restricted_area_entry|other_hazard",
-      "severity": "critical|high|medium|low",
-      "confidence": 0.85,
-      "timestamp_seconds": 3.0,
-      "description": "Visible flames on the right side of the corridor at 3.0s, smoke accumulating near ceiling",
-      "needs_review": false
-    }
-  ],
-  "scene_clear": true
-}"""
-
-GUARDIAN_PROMPT_VERSION = "g1"
-
-VALID_HAZARD_CATEGORIES = frozenset({
-    "fire_smoke", "person_fall_injury", "vehicle_collision",
-    "dangerous_animal", "weapon_visible", "restricted_area_entry", "other_hazard",
-})
-VALID_SEVERITY_LEVELS = frozenset({"critical", "high", "medium", "low"})
 
 
 def validate_guardian_hazard_response(parsed) -> dict:

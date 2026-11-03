@@ -7,7 +7,6 @@ import InvestigationVideoList from '@/components/InvestigationVideoList'
 import GuardianPanel from '@/components/GuardianPanel'
 import type {
   Recording,
-  SearchResult,
   InvestigationResult,
   MultiAgentInvestigationResult,
   VideoAnalysisSummary,
@@ -26,7 +25,6 @@ const EXAMPLE_QUERIES: { label: string }[] = [
 
 export default function Home() {
   const [recordings, setRecordings] = useState<Recording[]>([])
-  const [searchResult, setSearchResult] = useState<SearchResult | null>(null) // kept for future use
   const [view, setView] = useState<AppView>('home')
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<Mode>('standard')

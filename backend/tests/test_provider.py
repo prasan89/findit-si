@@ -15,7 +15,7 @@ from app.meta_client import (
     MuseSparkClient,
     MockMetaClient,
     get_meta_client,
-    _parse_json_response,
+    parse_model_json,
     MUSE_SPARK_MODEL,
     API_BASE_URL,
 )
@@ -25,25 +25,25 @@ from app.meta_client import (
 
 def test_parse_clean_json():
     data = json.dumps({"objects": [], "scene_summary": "empty room"})
-    result = _parse_json_response(data)
+    result = parse_model_json(data)
     assert result["scene_summary"] == "empty room"
 
 
 def test_parse_json_with_markdown_fence():
     data = '```json\n{"objects": [], "scene_summary": "test"}\n```'
-    result = _parse_json_response(data)
+    result = parse_model_json(data)
     assert result["objects"] == []
 
 
 def test_parse_json_embedded_in_prose():
     data = 'Here is the analysis: {"objects": [{"label": "book"}], "scene_summary": "desk"}'
-    result = _parse_json_response(data)
+    result = parse_model_json(data)
     assert result["objects"][0]["label"] == "book"
 
 
 def test_parse_raises_on_invalid_json():
     with pytest.raises(ValueError, match="non-JSON"):
-        _parse_json_response("This is not JSON at all.")
+        parse_model_json("This is not JSON at all.")
 
 
 # ── MockMetaClient ────────────────────────────────────────────────────────────
