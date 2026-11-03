@@ -248,17 +248,23 @@ export default function Home() {
     </header>
   )
 
-  if (view === 'library' || view === 'guardian') {
+  if (view === 'library') {
     return (
       <div className="min-h-screen bg-[#F8FAFC]">
         <SecondaryHeader />
         <div className="max-w-5xl mx-auto px-6 py-6">
-          {view === 'library' && (
-            <VideoLibrary recordings={recordings} onUploadComplete={fetchRecordings} onDelete={fetchRecordings} />
-          )}
-          {view === 'guardian' && (
-            <GuardianPanel recordings={recordings} />
-          )}
+          <VideoLibrary recordings={recordings} onUploadComplete={fetchRecordings} onDelete={fetchRecordings} />
+        </div>
+      </div>
+    )
+  }
+
+  if (view === 'guardian') {
+    return (
+      <div className="flex flex-col" style={{ height: '100dvh' }}>
+        <SecondaryHeader />
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <GuardianPanel recordings={recordings} />
         </div>
       </div>
     )
