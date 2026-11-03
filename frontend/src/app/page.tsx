@@ -296,47 +296,49 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Investigate form — compact single row */}
-        <div className="rt-card px-4 py-3">
+        {/* Investigate form — centered card */}
+        <div className="flex justify-center">
+        <div className="rt-card px-6 py-5 w-full max-w-2xl space-y-3">
             {indexedCount === 0 && (
-              <div className="rt-banner-warning text-xs mb-3">
+              <div className="rt-banner-warning text-xs">
                 No indexed recordings yet.{' '}
                 <button onClick={() => setView('library')} className="underline font-medium hover:opacity-80">Upload videos</button>{' '}
                 to get started.
               </div>
             )}
             {mode === 'multi-agent' && (
-              <p className="rt-banner-info text-xs mb-3">
+              <p className="rt-banner-info text-xs">
                 Runs 8 specialist agents: evidence retrieval, visual intelligence, temporal reasoning,
                 cross-camera correlation, contradiction detection, evidence audit, and report synthesis.
               </p>
             )}
-            <form onSubmit={handleInvestigate} className="flex items-center gap-3">
-              {/* Mode toggle */}
-              <div className="flex gap-0.5 p-0.5 bg-[#F1F5F9] rounded-lg shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setMode('standard')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                    mode === 'standard' ? 'bg-white shadow-sm text-[#0F172A]' : 'text-[#64748B] hover:text-[#0F172A]'
-                  }`}
-                >
-                  Standard
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode('multi-agent')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                    mode === 'multi-agent' ? 'bg-white shadow-sm text-[#0F172A]' : 'text-[#64748B] hover:text-[#0F172A]'
-                  }`}
-                >
-                  Multi-Agent
-                </button>
-              </div>
 
+            {/* Mode toggle */}
+            <div className="flex gap-0.5 p-0.5 bg-[#F1F5F9] rounded-lg self-start w-fit">
+              <button
+                type="button"
+                onClick={() => setMode('standard')}
+                className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  mode === 'standard' ? 'bg-white shadow-sm text-[#0F172A]' : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
+              >
+                Standard
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('multi-agent')}
+                className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  mode === 'multi-agent' ? 'bg-white shadow-sm text-[#0F172A]' : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
+              >
+                Multi-Agent
+              </button>
+            </div>
+
+            <form onSubmit={handleInvestigate} className="space-y-2">
               {/* Input */}
-              <div className="relative flex-1">
-                <svg viewBox="0 0 24 24" fill="none" width="15" height="15" className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none">
+              <div className="relative">
+                <svg viewBox="0 0 24 24" fill="none" width="16" height="16" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none">
                   <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
                   <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
@@ -344,17 +346,21 @@ export default function Home() {
                   type="text"
                   value={query}
                   onChange={e => setQuery(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      if (query.trim() && !loading) handleInvestigate(e as unknown as React.FormEvent)
+                    }
+                  }}
                   placeholder="Describe the incident to investigate…"
-                  className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-9 pr-4 py-2 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] transition-colors"
+                  className="w-full rounded-xl border border-[#E2E8F0] bg-white pl-10 pr-4 py-3 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] transition-colors"
                   disabled={loading}
                 />
               </div>
-
-              {/* Submit */}
               <button
                 type="submit"
                 disabled={loading || !query.trim() || indexedCount === 0}
-                className="rt-btn-primary shrink-0"
+                className="rt-btn-primary w-full py-2.5 justify-center"
               >
                 <svg viewBox="0 0 24 24" fill="none" width="15" height="15">
                   <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
@@ -362,11 +368,12 @@ export default function Home() {
                 </svg>
                 {loading
                   ? (mode === 'multi-agent' ? 'Running…' : 'Investigating…')
-                  : (mode === 'multi-agent' ? 'Investigate (8 Agents)' : 'Investigate')
+                  : (mode === 'multi-agent' ? 'Investigate with 8 Agents' : 'Investigate')
                 }
               </button>
             </form>
-            {error && <div className="rt-banner-danger text-sm mt-3">{error}</div>}
+            {error && <div className="rt-banner-danger text-sm">{error}</div>}
+        </div>
         </div>
 
         {/* Recent recordings */}
