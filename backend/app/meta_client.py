@@ -205,6 +205,7 @@ WHOLE_RECORDING_NARRATIVE_PROMPT = """You are analyzing a CCTV recording for a s
 Write:
 1. THE SCENE — one sentence: location type, camera angle, approximate time of day
 2. THE SEQUENCE — numbered steps describing what actually happened in order. Each step must be tied to a timestamp range. Describe who is present, what they do, how they move, and what changes. Use neutral observable language (no crime verdicts).
+   IMPORTANT: When an object changes state or location (e.g. a chair that was present is gone, a bag that was on the floor is now being held), explicitly state what action caused the change — "person picks up the chair and carries it away" not just "chair is no longer visible". Describe the action, not only the result.
 3. KEY OBSERVATIONS — 3-5 bullet points summarizing the most significant observable facts: unusual behaviors, entity appearances/disappearances, notable interactions, anything that stands out
 4. OPEN QUESTIONS — what cannot be determined from this footage (obstructions, cuts, unclear motion)
 

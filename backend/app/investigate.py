@@ -569,13 +569,23 @@ def _parse_temporal_query(query: str) -> dict:
 
 _ACTION_SYNONYMS: dict[str, frozenset] = {
     # Removal / transport
+    # Also includes outcome phrases the LLM uses when it describes the result of
+    # removal rather than the action directly ("no longer visible", "lowers down").
     "taken":      frozenset({"taken", "carried", "carries", "removed", "moved",
                               "transported", "transporting", "transport",
                               "lifted", "picked", "relocated", "taken out", "carry",
                               "carrying", "carrying out", "moving", "dragging", "drag",
-                              "hauled", "hauling", "brought", "bringing"}),
+                              "hauled", "hauling", "brought", "bringing",
+                              "no longer", "not visible", "lowers down", "bends down",
+                              "bends and lowers", "not in its original"}),
+    "took":       frozenset({"taken", "carried", "carries", "removed", "moved",
+                              "transported", "lifted", "picked", "relocated",
+                              "carry", "carrying", "moving", "dragging", "hauled",
+                              "no longer", "not visible", "lowers down", "bends down",
+                              "bends and lowers", "not in its original"}),
     "removed":    frozenset({"removed", "carried", "carries", "taken", "moved",
-                              "transported", "transporting", "lifted", "relocated"}),
+                              "transported", "transporting", "lifted", "relocated",
+                              "no longer", "not visible", "not in its original"}),
     "carried":    frozenset({"carried", "carry", "carries", "carrying", "taken", "moved",
                               "transported", "transporting", "lifted", "hauled", "hauling"}),
     "moved":      frozenset({"moved", "moving", "carried", "carries", "taken", "relocated",
@@ -656,6 +666,7 @@ _ACTION_QUERY_TERMS = frozenset({
     "enter", "leave", "exit", "deliver", "place", "appear",
     "brought", "bring", "bringing", "dragged", "drag", "dragging",
     "went", "gone", "came", "come",
+    "took", "away",
     # Approach / advance
     "approach", "approaches", "approaching", "approached",
     # Escape / flight
@@ -682,18 +693,22 @@ def _action_synonyms_for_terms(query_terms: list[str]) -> frozenset:
 def _action_confirmed_in_headline(
     action_description: str,
     action_synonyms: frozenset,
+    observed_facts: Optional[list] = None,
 ) -> bool:
-    """Return True when the action_description explicitly describes the action.
+    """Return True when the action_description or observed_facts confirms the action.
 
-    Checks both exact terms and the expanded synonym set. The action_description
-    is the vision model's primary description of what happened in this event —
-    if it describes removal/entry/transport, the event is about that action.
+    Checks both the primary action headline and the observed_facts list against
+    the expanded synonym set. This handles cases where the LLM describes the
+    outcome ("chair no longer visible") rather than the action ("picks up chair").
     """
-    if not action_synonyms or not action_description:
+    if not action_synonyms:
         return False
-    text = action_description.lower()
+    # Build combined text: action headline + all observed facts
+    parts = [action_description or ""]
+    if observed_facts:
+        parts.extend(str(f) for f in observed_facts)
+    text = " ".join(parts).lower()
     for syn in action_synonyms:
-        # Check for any word in the synonym set appearing as a word boundary
         if re.search(r"\b" + re.escape(syn.lower()) + r"\b", text):
             return True
     return False
@@ -1782,7 +1797,10 @@ def _classify_video(
         if is_action_query and has_subject_terms:
             action_synonyms = _action_synonyms_for_terms(qt)
             action_confirmed = any(
-                _action_confirmed_in_headline(e.action_description, action_synonyms)
+                _action_confirmed_in_headline(
+                    e.action_description, action_synonyms,
+                    getattr(e, "observed_facts", None),
+                )
                 for e in events
             )
             if not action_confirmed:
