@@ -134,7 +134,7 @@ export default function AppShell({
           })}
         </nav>
 
-        {/* Right slot + indexed status */}
+        {/* Right slot + indexed status + hackathon badge */}
         <div className="flex items-center gap-3 shrink-0 ml-4">
           {indexedCount > 0 && (
             <span className="hidden md:flex items-center gap-1.5 text-xs" style={{ color: '#64748B' }}>
@@ -142,6 +142,24 @@ export default function AppShell({
               {indexedCount} indexed
             </span>
           )}
+          {/* Meta AI Hackathon badge */}
+          <span
+            className="hidden sm:flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full whitespace-nowrap select-none"
+            style={{
+              background: 'linear-gradient(135deg, #ede9fe 0%, #f0f4ff 100%)',
+              color: '#5b21b6',
+              border: '1px solid #ddd6fe',
+            }}
+          >
+            <svg viewBox="0 0 16 16" fill="none" width="13" height="13" aria-hidden="true">
+              <path d="M8 1l1.5 3.5L13 6l-3.5 1.5L8 11l-1.5-3.5L3 6l3.5-1.5L8 1z" fill="currentColor" opacity="0.9"/>
+              <path d="M13 10l.75 1.75L15.5 12.5l-1.75.75L13 15l-.75-1.75L10.5 12.5l1.75-.75L13 10z" fill="currentColor" opacity="0.6"/>
+            </svg>
+            Built for the Meta AI Hackathon
+            <svg viewBox="0 0 16 16" fill="none" width="12" height="12" aria-hidden="true">
+              <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </span>
           {topbarRight}
         </div>
       </header>
