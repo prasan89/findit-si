@@ -296,11 +296,8 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Two-column layout: investigate form (left) + recent recordings (right) */}
-        <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5 items-start">
-
-          {/* Investigate form */}
-          <div className="rt-card p-5 space-y-3">
+        {/* Investigate form — full width */}
+        <div className="rt-card p-5 space-y-3">
             <div>
               <h2 className="rt-section-title">Investigate</h2>
               <p className="rt-section-subtitle">Describe an incident in plain language</p>
@@ -388,10 +385,10 @@ export default function Home() {
             </form>
 
             {error && <div className="rt-banner-danger text-sm">{error}</div>}
-          </div>
+        </div>
 
-          {/* Recent recordings — fills remaining width */}
-          <div>
+        {/* Recent recordings */}
+        <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="rt-section-title">Recent Recordings</h3>
               <button onClick={() => setView('library')} className="text-xs text-[#2563EB] hover:text-[#1D4ED8] font-medium transition-colors">
@@ -400,7 +397,7 @@ export default function Home() {
             </div>
 
             {recentRecordings.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {recentRecordings.map(r => {
                   const isIndexed = r.processing_status === 'INDEXED' || r.processing_status === 'PARTIAL'
                   return (
@@ -437,8 +434,6 @@ export default function Home() {
               </div>
             )}
           </div>
-
-        </div>
       </div>
     </AppShell>
   )
