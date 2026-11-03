@@ -1,13 +1,10 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import VideoLibrary from '@/components/VideoLibrary'
-import SearchPanel from '@/components/SearchPanel'
-import TemporalTimeline from '@/components/TemporalTimeline'
 import UsageBadge from '@/components/UsageBadge'
 import RealityTraceWorkspace from '@/components/RealityTraceWorkspace'
 import InvestigationVideoList from '@/components/InvestigationVideoList'
 import GuardianPanel from '@/components/GuardianPanel'
-import NarrativePanel from '@/components/NarrativePanel'
 import type {
   Recording,
   SearchResult,
@@ -16,7 +13,7 @@ import type {
   VideoAnalysisSummary,
 } from '@/types'
 
-type AppView = 'home' | 'results' | 'workspace' | 'library' | 'timeline' | 'search' | 'guardian' | 'narrative'
+type AppView = 'home' | 'results' | 'workspace' | 'library' | 'guardian'
 type Mode = 'standard' | 'multi-agent'
 
 const EXAMPLE_QUERIES: { label: string }[] = [
@@ -29,7 +26,7 @@ const EXAMPLE_QUERIES: { label: string }[] = [
 
 export default function Home() {
   const [recordings, setRecordings] = useState<Recording[]>([])
-  const [searchResult, setSearchResult] = useState<SearchResult | null>(null)
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null) // kept for future use
   const [view, setView] = useState<AppView>('home')
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<Mode>('standard')
@@ -232,7 +229,7 @@ export default function Home() {
         </button>
         <div className="w-px h-5 bg-[#E2E8F0]" />
         <nav className="flex gap-1">
-          {(['library', 'timeline', 'search', 'guardian', 'narrative'] as AppView[]).map(v => (
+          {(['library', 'guardian'] as AppView[]).map(v => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -251,7 +248,7 @@ export default function Home() {
     </header>
   )
 
-  if (view === 'library' || view === 'timeline' || view === 'search' || view === 'guardian' || view === 'narrative') {
+  if (view === 'library' || view === 'guardian') {
     return (
       <div className="min-h-screen bg-[#F8FAFC]">
         <SecondaryHeader />
@@ -259,25 +256,8 @@ export default function Home() {
           {view === 'library' && (
             <VideoLibrary recordings={recordings} onUploadComplete={fetchRecordings} onDelete={fetchRecordings} />
           )}
-          {view === 'timeline' && (
-            <TemporalTimeline
-              recordings={recordings}
-              onInvestigated={result => {
-                setInvestigationResult(result)
-                setMultiAgentResult(null)
-                setActiveVideoSummary(null)
-                setView('results')
-              }}
-            />
-          )}
-          {view === 'search' && (
-            <SearchPanel recordings={recordings} searchResult={searchResult} onSearch={setSearchResult} />
-          )}
           {view === 'guardian' && (
             <GuardianPanel recordings={recordings} />
-          )}
-          {view === 'narrative' && (
-            <NarrativePanel recordings={recordings} />
           )}
         </div>
       </div>
@@ -303,10 +283,7 @@ export default function Home() {
           <button onClick={() => setView('library')} className="rt-btn-ghost text-sm">
             Cameras ({recordings.length})
           </button>
-          <button onClick={() => setView('timeline')} className="rt-btn-ghost text-sm">Timeline</button>
-          <button onClick={() => setView('search')} className="rt-btn-ghost text-sm">Search</button>
           <button onClick={() => setView('guardian')} className="rt-btn-ghost text-sm">Guardian</button>
-          <button onClick={() => setView('narrative')} className="rt-btn-ghost text-sm">Narrative</button>
           <div className="w-px h-5 bg-[#E2E8F0] mx-1" />
           <UsageBadge />
         </div>
