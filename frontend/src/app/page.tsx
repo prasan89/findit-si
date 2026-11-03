@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import AppShell from '@/components/AppShell'
 import VideoLibrary from '@/components/VideoLibrary'
 import UsageBadge from '@/components/UsageBadge'
 import RealityTraceWorkspace from '@/components/RealityTraceWorkspace'
@@ -12,16 +13,25 @@ import type {
   VideoAnalysisSummary,
 } from '@/types'
 
-type AppView = 'home' | 'results' | 'workspace' | 'library' | 'guardian'
+type AppView = 'home' | 'results' | 'workspace' | 'library' | 'guardian' | 'investigate'
 type Mode = 'standard' | 'multi-agent'
 
-const EXAMPLE_QUERIES: { label: string }[] = [
-  { label: 'Chain snatch or bag theft' },
-  { label: 'Assault or physical confrontation' },
-  { label: 'Suspicious approach and departure' },
-  { label: 'Person entering or exiting' },
-  { label: 'Unattended object left behind' },
+const EXAMPLE_QUERIES: string[] = [
+  'Chain snatch or bag theft',
+  'Assault or physical confrontation',
+  'Suspicious approach and departure',
+  'Person entering or exiting',
+  'Unattended object left behind',
 ]
+
+const PAGE_TITLES: Record<string, string> = {
+  home:        'Overview',
+  library:     'Recordings',
+  investigate: 'Investigate',
+  results:     'Investigation Results',
+  workspace:   'Evidence Workspace',
+  guardian:    'Guardian',
+}
 
 export default function Home() {
   const [recordings, setRecordings] = useState<Recording[]>([])
@@ -32,7 +42,6 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [investigationResult, setInvestigationResult] = useState<InvestigationResult | null>(null)
   const [multiAgentResult, setMultiAgentResult] = useState<MultiAgentInvestigationResult | null>(null)
-  // The specific video the user opened from the results list
   const [activeVideoSummary, setActiveVideoSummary] = useState<VideoAnalysisSummary | null>(null)
 
   const fetchRecordings = useCallback(async () => {
@@ -63,7 +72,6 @@ export default function Home() {
 
     try {
       if (mode === 'multi-agent') {
-        // Submit job — returns immediately with job_id
         const submitRes = await fetch('/api/investigations/multi-agent/jobs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -77,16 +85,14 @@ export default function Home() {
         }
         const { job_id } = await submitRes.json()
 
-        // Kick off standard investigation in parallel (fast, non-blocking)
         const stdPromise = fetch('/api/investigations/', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: query.trim() }),
         }).then(r => r.ok ? r.json() : null).catch(() => null)
 
-        // Poll for multi-agent job completion
         const POLL_INTERVAL_MS = 2500
-        const POLL_TIMEOUT_MS = 300_000 // 5 min hard cap
+        const POLL_TIMEOUT_MS = 300_000
         const deadline = Date.now() + POLL_TIMEOUT_MS
         let maResult: MultiAgentInvestigationResult | null = null
 
@@ -106,16 +112,12 @@ export default function Home() {
             return
           }
           const poll = await pollRes.json()
-          if (poll.status === 'completed') {
-            maResult = poll.result as MultiAgentInvestigationResult
-            break
-          }
+          if (poll.status === 'completed') { maResult = poll.result as MultiAgentInvestigationResult; break }
           if (poll.status === 'failed') {
             setError(poll.error || 'Multi-agent investigation failed')
             setLoading(false)
             return
           }
-          // status === 'running': keep polling
         }
 
         if (!maResult) {
@@ -125,7 +127,6 @@ export default function Home() {
         }
 
         setMultiAgentResult(maResult)
-
         const stdResult = await stdPromise
         if (stdResult) {
           setInvestigationResult(stdResult)
@@ -167,33 +168,48 @@ export default function Home() {
     setLoading(false)
   }
 
-  // Open a specific video from the results list
   function handleOpenVideo(summary: VideoAnalysisSummary) {
     setActiveVideoSummary(summary)
     setView('workspace')
   }
 
-  // Back from workspace to results list
   function handleBackToResults() {
     setActiveVideoSummary(null)
     setView('results')
   }
 
-  // Investigation results list view
+  function navigate(v: string) {
+    if (v === 'investigate') setView('investigate')
+    else setView(v as AppView)
+  }
+
+  const pageTitle = PAGE_TITLES[view] ?? 'RealityTrace'
+
+  // ── Investigation results list ─────────────────────────────────────────────
   if (view === 'results' && investigationResult) {
     return (
-      <InvestigationVideoList
-        result={investigationResult}
-        recordings={recordings}
-        onOpenVideo={handleOpenVideo}
-        onNewInvestigation={() => setView('home')}
-      />
+      <AppShell
+        activeView="investigate"
+        onNavigate={navigate}
+        recordingCount={recordings.length}
+        indexedCount={indexedCount}
+        pageTitle="Investigation Results"
+        topbarRight={<UsageBadge />}
+      >
+        <div className="h-full overflow-y-auto">
+          <InvestigationVideoList
+            result={investigationResult}
+            recordings={recordings}
+            onOpenVideo={handleOpenVideo}
+            onNewInvestigation={() => setView('investigate')}
+          />
+        </div>
+      </AppShell>
     )
   }
 
-  // Video detail workspace view — filtered to the selected recording
+  // ── Video detail workspace ─────────────────────────────────────────────────
   if (view === 'workspace' && investigationResult && activeVideoSummary) {
-    // Filter events for this recording only
     const filteredResult = {
       ...investigationResult,
       events: investigationResult.events.filter(
@@ -201,232 +217,334 @@ export default function Home() {
       ),
     }
     return (
-      <RealityTraceWorkspace
-        recordings={recordings}
-        result={filteredResult}
-        multiAgentResult={multiAgentResult}
-        onNewInvestigation={handleBackToResults}
-        activeRecordingId={activeVideoSummary.recording_id}
-        videoSummary={activeVideoSummary}
-      />
+      <AppShell
+        activeView="investigate"
+        onNavigate={navigate}
+        recordingCount={recordings.length}
+        indexedCount={indexedCount}
+        pageTitle="Evidence Workspace"
+        topbarRight={<UsageBadge />}
+        fullHeight
+      >
+        <RealityTraceWorkspace
+          recordings={recordings}
+          result={filteredResult}
+          multiAgentResult={multiAgentResult}
+          onNewInvestigation={handleBackToResults}
+          activeRecordingId={activeVideoSummary.recording_id}
+          videoSummary={activeVideoSummary}
+        />
+      </AppShell>
     )
   }
 
-  // ── Shared header for secondary views ─────────────────────────────────────
-  const SecondaryHeader = () => (
-    <header className="flex items-center justify-between px-6 py-3 bg-white border-b border-[#E2E8F0] shadow-sm">
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => setView('home')}
-          className="rt-btn-ghost text-sm gap-1.5"
-        >
-          <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
-            <path d="M19 12H5M5 12l7-7M5 12l7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          Investigate
-        </button>
-        <div className="w-px h-5 bg-[#E2E8F0]" />
-        <nav className="flex gap-1">
-          {(['library', 'guardian'] as AppView[]).map(v => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${
-                view === v
-                  ? 'bg-[#EFF6FF] text-[#2563EB]'
-                  : 'text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9]'
-              }`}
-            >
-              {v === 'library' ? `Cameras (${recordings.length})` : v.charAt(0).toUpperCase() + v.slice(1)}
-            </button>
-          ))}
-        </nav>
-      </div>
-      <UsageBadge />
-    </header>
-  )
-
+  // ── Recordings library ─────────────────────────────────────────────────────
   if (view === 'library') {
     return (
-      <div className="min-h-screen bg-[#F8FAFC]">
-        <SecondaryHeader />
-        <div className="max-w-5xl mx-auto px-6 py-6">
+      <AppShell
+        activeView="library"
+        onNavigate={navigate}
+        recordingCount={recordings.length}
+        indexedCount={indexedCount}
+        pageTitle={`Recordings (${recordings.length})`}
+        topbarRight={<UsageBadge />}
+      >
+        <div className="max-w-4xl mx-auto px-6 py-6">
           <VideoLibrary recordings={recordings} onUploadComplete={fetchRecordings} onDelete={fetchRecordings} />
         </div>
-      </div>
+      </AppShell>
     )
   }
 
+  // ── Guardian ───────────────────────────────────────────────────────────────
   if (view === 'guardian') {
     return (
-      <div className="flex flex-col" style={{ height: '100dvh' }}>
-        <SecondaryHeader />
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <GuardianPanel recordings={recordings} />
-        </div>
-      </div>
+      <AppShell
+        activeView="guardian"
+        onNavigate={navigate}
+        recordingCount={recordings.length}
+        indexedCount={indexedCount}
+        pageTitle="Guardian"
+        topbarRight={<UsageBadge />}
+        fullHeight
+      >
+        <GuardianPanel recordings={recordings} />
+      </AppShell>
     )
   }
 
-  // ── Home / investigation form ──────────────────────────────────────────────
-  return (
-    <div className="min-h-screen flex flex-col bg-[#F8FAFC]">
+  // ── Investigate form ───────────────────────────────────────────────────────
+  if (view === 'investigate') {
+    return (
+      <AppShell
+        activeView="investigate"
+        onNavigate={navigate}
+        recordingCount={recordings.length}
+        indexedCount={indexedCount}
+        pageTitle="Investigate"
+        topbarRight={<UsageBadge />}
+      >
+        <div className="flex items-center justify-center min-h-full px-4 py-12">
+          <div className="w-full max-w-lg space-y-5">
 
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-3 bg-white border-b border-[#E2E8F0] shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[#2563EB] flex items-center justify-center">
-            <svg viewBox="0 0 24 24" fill="none" style={{ width: 18, height: 18 }}>
+            {/* Status chips */}
+            <div className="flex items-center justify-center gap-3 text-xs">
+              <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full border border-[#E2E8F0] shadow-sm">
+                <span className={`w-2 h-2 rounded-full ${indexedCount > 0 ? 'bg-[#16A34A]' : 'bg-[#94A3B8]'}`} />
+                <span className="text-[#64748B] font-medium">{indexedCount} camera{indexedCount !== 1 ? 's' : ''} indexed</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full border border-[#E2E8F0] shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-[#94A3B8]" />
+                <span className="text-[#94A3B8]">{recordings.length} recordings</span>
+              </div>
+            </div>
+
+            {/* Investigation card */}
+            <div className="rt-card p-6 shadow-md space-y-4">
+
+              {/* Mode toggle */}
+              <div className="flex gap-1 p-1 bg-[#F1F5F9] rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setMode('standard')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
+                    mode === 'standard'
+                      ? 'bg-white shadow-sm text-[#0F172A]'
+                      : 'text-[#64748B] hover:text-[#0F172A]'
+                  }`}
+                >
+                  Standard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('multi-agent')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
+                    mode === 'multi-agent'
+                      ? 'bg-white shadow-sm text-[#0F172A]'
+                      : 'text-[#64748B] hover:text-[#0F172A]'
+                  }`}
+                >
+                  Multi-Agent
+                  <span className="ml-1.5 text-[11px] font-normal text-[#94A3B8]">8 agents</span>
+                </button>
+              </div>
+
+              {mode === 'multi-agent' && (
+                <p className="rt-banner-info text-xs">
+                  Runs 8 specialist agents: evidence retrieval, visual intelligence, temporal reasoning,
+                  cross-camera correlation, contradiction detection, evidence audit, and report synthesis.
+                </p>
+              )}
+
+              {indexedCount === 0 && (
+                <div className="rt-banner-warning text-xs">
+                  No indexed recordings yet.{' '}
+                  <button onClick={() => setView('library')} className="underline font-medium hover:opacity-80">
+                    Upload videos
+                  </button>{' '}
+                  to get started.
+                </div>
+              )}
+
+              <form onSubmit={handleInvestigate} className="space-y-3">
+                <div className="relative">
+                  <svg viewBox="0 0 24 24" fill="none" className="absolute left-3.5 top-3.5 w-4 h-4 text-[#94A3B8] pointer-events-none">
+                    <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
+                    <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                  <textarea
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault()
+                        if (query.trim() && !loading) handleInvestigate(e as unknown as React.FormEvent)
+                      }
+                    }}
+                    placeholder={'Describe the incident to investigate...\ne.g. Chain snatch near the entrance around midday'}
+                    rows={3}
+                    className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-10 pr-4 py-3 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] resize-none transition-colors"
+                    disabled={loading}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading || !query.trim() || indexedCount === 0}
+                  className="rt-btn-primary w-full py-2.5 justify-center"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
+                    <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
+                    <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                  {loading
+                    ? (mode === 'multi-agent' ? 'Agents running… polling for results' : 'Investigating…')
+                    : (mode === 'multi-agent' ? 'Investigate with 8 Agents' : 'Investigate')
+                  }
+                </button>
+              </form>
+
+              {error && <div className="rt-banner-danger text-sm">{error}</div>}
+            </div>
+
+            {/* Quick query chips */}
+            <div className="space-y-2">
+              <p className="text-[11px] text-[#94A3B8] text-center font-semibold uppercase tracking-widest">
+                Quick Queries
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {EXAMPLE_QUERIES.map(label => (
+                  <button
+                    key={label}
+                    onClick={() => setQuery(label)}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-white border border-[#E2E8F0] text-[#64748B] font-medium hover:bg-[#EFF6FF] hover:text-[#2563EB] hover:border-[#BFDBFE] transition-colors shadow-sm"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  // ── Overview / Home ────────────────────────────────────────────────────────
+  const processingCount = recordings.filter(r => r.processing_status === 'PROCESSING').length
+  const recentRecordings = [...recordings]
+    .sort((a, b) => new Date(b.upload_timestamp).getTime() - new Date(a.upload_timestamp).getTime())
+    .slice(0, 4)
+
+  return (
+    <AppShell
+      activeView="home"
+      onNavigate={navigate}
+      recordingCount={recordings.length}
+      indexedCount={indexedCount}
+      pageTitle="Overview"
+      topbarRight={<UsageBadge />}
+    >
+      <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+
+        {/* Welcome / CTA */}
+        <div className="rt-card p-8 flex flex-col sm:flex-row items-start sm:items-center gap-6">
+          <div className="w-14 h-14 rounded-2xl bg-[#2563EB] flex items-center justify-center shadow-md shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" style={{ width: 28, height: 28 }}>
               <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
-          <span className="font-bold text-[#0F172A] text-base tracking-tight">RealityTrace</span>
-          <span className="text-xs text-[#94A3B8] font-medium hidden sm:block">CCTV Investigation</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setView('library')} className="rt-btn-ghost text-sm">
-            Cameras ({recordings.length})
-          </button>
-          <button onClick={() => setView('guardian')} className="rt-btn-ghost text-sm">Guardian</button>
-          <div className="w-px h-5 bg-[#E2E8F0] mx-1" />
-          <UsageBadge />
-        </div>
-      </header>
-
-      {/* Hero + form */}
-      <div className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-lg space-y-6">
-
-          {/* Hero text */}
-          <div className="text-center space-y-2">
-            <div className="mx-auto w-14 h-14 rounded-2xl bg-[#2563EB] flex items-center justify-center shadow-md">
-              <svg viewBox="0 0 24 24" fill="none" style={{ width: 28, height: 28 }}>
-                <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <h1 className="text-3xl font-bold text-[#0F172A] tracking-tight">RealityTrace</h1>
-            <p className="text-[#64748B] text-sm">Evidence-backed CCTV investigation workspace</p>
-          </div>
-
-          {/* Status row */}
-          <div className="flex items-center justify-center gap-3 text-xs">
-            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full border border-[#E2E8F0] shadow-sm">
-              <span className={`w-2 h-2 rounded-full ${indexedCount > 0 ? 'bg-[#16A34A]' : 'bg-[#94A3B8]'}`} />
-              <span className="text-[#64748B] font-medium">{indexedCount} camera{indexedCount !== 1 ? 's' : ''} indexed</span>
-            </div>
-            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full border border-[#E2E8F0] shadow-sm">
-              <span className="w-2 h-2 rounded-full bg-[#94A3B8]" />
-              <span className="text-[#94A3B8]">{recordings.length} recordings</span>
-            </div>
-          </div>
-
-          {/* Investigation card */}
-          <div className="rt-card p-6 shadow-md space-y-4">
-
-            {/* Mode toggle */}
-            <div className="flex gap-1 p-1 bg-[#F1F5F9] rounded-xl">
-              <button
-                type="button"
-                onClick={() => setMode('standard')}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
-                  mode === 'standard'
-                    ? 'bg-white shadow-sm text-[#0F172A]'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                Standard
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('multi-agent')}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
-                  mode === 'multi-agent'
-                    ? 'bg-white shadow-sm text-[#0F172A]'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                Multi-Agent
-                <span className="ml-1.5 text-[11px] font-normal text-[#94A3B8]">8 agents</span>
-              </button>
-            </div>
-
-            {mode === 'multi-agent' && (
-              <p className="rt-banner-info text-xs">
-                Runs 8 specialist agents: evidence retrieval, visual intelligence, temporal reasoning,
-                cross-camera correlation, contradiction detection, evidence audit, and report synthesis.
-              </p>
-            )}
-
-            {indexedCount === 0 && (
-              <div className="rt-banner-warning text-xs">
-                No indexed recordings yet.{' '}
-                <button onClick={() => setView('library')} className="underline font-medium hover:opacity-80">
-                  Upload videos
-                </button>{' '}
-                to get started.
-              </div>
-            )}
-
-            {/* Query input */}
-            <form onSubmit={handleInvestigate} className="space-y-3">
-              <div className="relative">
-                <svg viewBox="0 0 24 24" fill="none" className="absolute left-3.5 top-3.5 w-4 h-4 text-[#94A3B8] pointer-events-none">
-                  <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
-                  <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                <textarea
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault()
-                      if (query.trim() && !loading) handleInvestigate(e as unknown as React.FormEvent)
-                    }
-                  }}
-                  placeholder={'Describe the incident to investigate...\ne.g. Chain snatch near the entrance around midday'}
-                  rows={3}
-                  className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-10 pr-4 py-3 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] resize-none transition-colors"
-                  disabled={loading}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading || !query.trim() || indexedCount === 0}
-                className="rt-btn-primary w-full py-2.5 justify-center"
-              >
-                <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
-                  <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
-                  <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                {loading
-                  ? (mode === 'multi-agent' ? 'Agents running… polling for results' : 'Investigating…')
-                  : (mode === 'multi-agent' ? 'Investigate with 8 Agents' : 'Investigate')
-                }
-              </button>
-            </form>
-
-            {error && <div className="rt-banner-danger text-sm">{error}</div>}
-          </div>
-
-          {/* Quick query chips */}
-          <div className="space-y-2">
-            <p className="text-[11px] text-[#94A3B8] text-center font-semibold uppercase tracking-widest">
-              Quick Queries
+          <div className="flex-1">
+            <h2 className="text-xl font-bold text-[#0F172A] tracking-tight">Evidence-backed CCTV Investigation</h2>
+            <p className="text-sm text-[#64748B] mt-1">
+              Upload CCTV recordings, then describe incidents in plain language. RealityTrace retrieves
+              evidence, maps timelines, and surfaces corroborated facts vs inferences.
             </p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {EXAMPLE_QUERIES.map(({ label }) => (
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={() => setView('library')} className="rt-btn-secondary text-sm">
+              Upload Recording
+            </button>
+            <button
+              onClick={() => setView('investigate')}
+              disabled={indexedCount === 0}
+              className="rt-btn-primary text-sm"
+            >
+              Investigate
+            </button>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Recordings', value: recordings.length, color: 'text-[#0F172A]' },
+            { label: 'Indexed', value: indexedCount, color: 'text-[#16A34A]' },
+            { label: 'Processing', value: processingCount, color: processingCount > 0 ? 'text-[#2563EB]' : 'text-[#94A3B8]' },
+            { label: 'Cameras', value: new Set(recordings.map(r => r.camera_name).filter(Boolean)).size, color: 'text-[#0F172A]' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="rt-card p-4">
+              <p className="text-xs text-[#64748B] font-medium mb-1">{label}</p>
+              <p className={`text-2xl font-bold ${color}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Recent recordings */}
+        {recentRecordings.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="rt-section-title">Recent Recordings</h3>
+              <button onClick={() => setView('library')} className="text-xs text-[#2563EB] hover:text-[#1D4ED8] font-medium transition-colors">
+                View all →
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {recentRecordings.map(r => {
+                const isIndexed = r.processing_status === 'INDEXED' || r.processing_status === 'PARTIAL'
+                return (
+                  <div key={r.recording_id} className="rt-card-hover p-4 flex gap-3">
+                    <div className="w-16 h-11 rounded-lg bg-[#F1F5F9] flex items-center justify-center shrink-0 overflow-hidden">
+                      {r.thumbnail_path ? (
+                        <img src={`/thumbnails/${r.recording_id}.jpg`} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-[#94A3B8]">
+                          <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5"/>
+                        </svg>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#0F172A] truncate">{r.camera_name ?? r.original_filename}</p>
+                      <p className="text-xs text-[#64748B] truncate">{r.camera_location ?? r.original_filename}</p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${isIndexed ? 'bg-[#16A34A]' : 'bg-[#94A3B8]'}`} />
+                        <span className="text-[10px] text-[#94A3B8] font-medium">{r.processing_status}</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {recordings.length === 0 && (
+          <div className="rt-card rt-empty py-20">
+            <svg viewBox="0 0 24 24" fill="none" className="w-12 h-12 text-[#E2E8F0] mb-4">
+              <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+            </svg>
+            <p className="text-sm font-medium text-[#64748B]">No recordings yet</p>
+            <p className="text-xs text-[#94A3B8] mt-1 mb-4">Upload a CCTV recording to get started</p>
+            <button onClick={() => setView('library')} className="rt-btn-primary">
+              Upload Recording
+            </button>
+          </div>
+        )}
+
+        {/* Quick actions (investigate shortcuts) */}
+        {indexedCount > 0 && (
+          <div>
+            <h3 className="rt-section-title mb-3">Quick Investigate</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {EXAMPLE_QUERIES.map(label => (
                 <button
                   key={label}
-                  onClick={() => setQuery(label)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-white border border-[#E2E8F0] text-[#64748B] font-medium hover:bg-[#EFF6FF] hover:text-[#2563EB] hover:border-[#BFDBFE] transition-colors shadow-sm"
+                  onClick={() => { setQuery(label); setView('investigate') }}
+                  className="rt-card-hover p-3 flex items-center gap-3 text-left"
                 >
-                  {label}
+                  <div className="w-7 h-7 rounded-lg bg-[#EFF6FF] flex items-center justify-center shrink-0">
+                    <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-[#2563EB]">
+                      <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </div>
+                  <span className="text-sm text-[#0F172A] font-medium">{label}</span>
                 </button>
               ))}
             </div>
           </div>
-        </div>
+        )}
       </div>
-    </div>
+    </AppShell>
   )
 }
