@@ -13,24 +13,15 @@ import type {
   VideoAnalysisSummary,
 } from '@/types'
 
-type AppView = 'home' | 'results' | 'workspace' | 'library' | 'guardian' | 'investigate'
+type AppView = 'home' | 'results' | 'workspace' | 'library' | 'guardian'
 type Mode = 'standard' | 'multi-agent'
 
-const EXAMPLE_QUERIES: string[] = [
-  'Chain snatch or bag theft',
-  'Assault or physical confrontation',
-  'Suspicious approach and departure',
-  'Person entering or exiting',
-  'Unattended object left behind',
-]
-
 const PAGE_TITLES: Record<string, string> = {
-  home:        'Overview',
-  library:     'Recordings',
-  investigate: 'Investigate',
-  results:     'Investigation Results',
-  workspace:   'Evidence Workspace',
-  guardian:    'Guardian',
+  home:      'Overview',
+  library:   'Recordings',
+  results:   'Investigation Results',
+  workspace: 'Evidence Workspace',
+  guardian:  'Guardian',
 }
 
 export default function Home() {
@@ -179,8 +170,8 @@ export default function Home() {
   }
 
   function navigate(v: string) {
-    if (v === 'investigate') setView('investigate')
-    else setView(v as AppView)
+    // Clicking "Investigate" goes to home where the form lives
+    setView(v === 'investigate' ? 'home' : v as AppView)
   }
 
   const pageTitle = PAGE_TITLES[view] ?? 'RealityTrace'
@@ -201,7 +192,7 @@ export default function Home() {
             result={investigationResult}
             recordings={recordings}
             onOpenVideo={handleOpenVideo}
-            onNewInvestigation={() => setView('investigate')}
+            onNewInvestigation={() => setView('home')}
           />
         </div>
       </AppShell>
@@ -273,143 +264,7 @@ export default function Home() {
     )
   }
 
-  // ── Investigate form ───────────────────────────────────────────────────────
-  if (view === 'investigate') {
-    return (
-      <AppShell
-        activeView="investigate"
-        onNavigate={navigate}
-        recordingCount={recordings.length}
-        indexedCount={indexedCount}
-        pageTitle="Investigate"
-        topbarRight={<UsageBadge />}
-      >
-        <div className="flex items-center justify-center min-h-full px-4 py-12">
-          <div className="w-full max-w-lg space-y-5">
-
-            {/* Status chips */}
-            <div className="flex items-center justify-center gap-3 text-xs">
-              <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full border border-[#E2E8F0] shadow-sm">
-                <span className={`w-2 h-2 rounded-full ${indexedCount > 0 ? 'bg-[#16A34A]' : 'bg-[#94A3B8]'}`} />
-                <span className="text-[#64748B] font-medium">{indexedCount} camera{indexedCount !== 1 ? 's' : ''} indexed</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full border border-[#E2E8F0] shadow-sm">
-                <span className="w-2 h-2 rounded-full bg-[#94A3B8]" />
-                <span className="text-[#94A3B8]">{recordings.length} recordings</span>
-              </div>
-            </div>
-
-            {/* Investigation card */}
-            <div className="rt-card p-6 shadow-md space-y-4">
-
-              {/* Mode toggle */}
-              <div className="flex gap-1 p-1 bg-[#F1F5F9] rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setMode('standard')}
-                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    mode === 'standard'
-                      ? 'bg-white shadow-sm text-[#0F172A]'
-                      : 'text-[#64748B] hover:text-[#0F172A]'
-                  }`}
-                >
-                  Standard
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode('multi-agent')}
-                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    mode === 'multi-agent'
-                      ? 'bg-white shadow-sm text-[#0F172A]'
-                      : 'text-[#64748B] hover:text-[#0F172A]'
-                  }`}
-                >
-                  Multi-Agent
-                  <span className="ml-1.5 text-[11px] font-normal text-[#94A3B8]">8 agents</span>
-                </button>
-              </div>
-
-              {mode === 'multi-agent' && (
-                <p className="rt-banner-info text-xs">
-                  Runs 8 specialist agents: evidence retrieval, visual intelligence, temporal reasoning,
-                  cross-camera correlation, contradiction detection, evidence audit, and report synthesis.
-                </p>
-              )}
-
-              {indexedCount === 0 && (
-                <div className="rt-banner-warning text-xs">
-                  No indexed recordings yet.{' '}
-                  <button onClick={() => setView('library')} className="underline font-medium hover:opacity-80">
-                    Upload videos
-                  </button>{' '}
-                  to get started.
-                </div>
-              )}
-
-              <form onSubmit={handleInvestigate} className="space-y-3">
-                <div className="relative">
-                  <svg viewBox="0 0 24 24" fill="none" className="absolute left-3.5 top-3.5 w-4 h-4 text-[#94A3B8] pointer-events-none">
-                    <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
-                    <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                  </svg>
-                  <textarea
-                    value={query}
-                    onChange={e => setQuery(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                        e.preventDefault()
-                        if (query.trim() && !loading) handleInvestigate(e as unknown as React.FormEvent)
-                      }
-                    }}
-                    placeholder={'Describe the incident to investigate...\ne.g. Chain snatch near the entrance around midday'}
-                    rows={3}
-                    className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-10 pr-4 py-3 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] resize-none transition-colors"
-                    disabled={loading}
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={loading || !query.trim() || indexedCount === 0}
-                  className="rt-btn-primary w-full py-2.5 justify-center"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
-                    <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
-                    <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                  </svg>
-                  {loading
-                    ? (mode === 'multi-agent' ? 'Agents running… polling for results' : 'Investigating…')
-                    : (mode === 'multi-agent' ? 'Investigate with 8 Agents' : 'Investigate')
-                  }
-                </button>
-              </form>
-
-              {error && <div className="rt-banner-danger text-sm">{error}</div>}
-            </div>
-
-            {/* Quick query chips */}
-            <div className="space-y-2">
-              <p className="text-[11px] text-[#94A3B8] text-center font-semibold uppercase tracking-widest">
-                Quick Queries
-              </p>
-              <div className="flex flex-wrap gap-2 justify-center">
-                {EXAMPLE_QUERIES.map(label => (
-                  <button
-                    key={label}
-                    onClick={() => setQuery(label)}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-white border border-[#E2E8F0] text-[#64748B] font-medium hover:bg-[#EFF6FF] hover:text-[#2563EB] hover:border-[#BFDBFE] transition-colors shadow-sm"
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </AppShell>
-    )
-  }
-
-  // ── Overview / Home ────────────────────────────────────────────────────────
+  // ── Overview / Home (with inline investigate form) ────────────────────────
   const processingCount = recordings.filter(r => r.processing_status === 'PROCESSING').length
   const recentRecordings = [...recordings]
     .sort((a, b) => new Date(b.upload_timestamp).getTime() - new Date(a.upload_timestamp).getTime())
@@ -424,35 +279,7 @@ export default function Home() {
       pageTitle="Overview"
       topbarRight={<UsageBadge />}
     >
-      <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
-
-        {/* Welcome / CTA */}
-        <div className="rt-card p-8 flex flex-col sm:flex-row items-start sm:items-center gap-6">
-          <div className="w-14 h-14 rounded-2xl bg-[#2563EB] flex items-center justify-center shadow-md shrink-0">
-            <svg viewBox="0 0 24 24" fill="none" style={{ width: 28, height: 28 }}>
-              <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-          <div className="flex-1">
-            <h2 className="text-xl font-bold text-[#0F172A] tracking-tight">Evidence-backed CCTV Investigation</h2>
-            <p className="text-sm text-[#64748B] mt-1">
-              Upload CCTV recordings, then describe incidents in plain language. RealityTrace retrieves
-              evidence, maps timelines, and surfaces corroborated facts vs inferences.
-            </p>
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <button onClick={() => setView('library')} className="rt-btn-secondary text-sm">
-              Upload Recording
-            </button>
-            <button
-              onClick={() => setView('investigate')}
-              disabled={indexedCount === 0}
-              className="rt-btn-primary text-sm"
-            >
-              Investigate
-            </button>
-          </div>
-        </div>
+      <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
 
         {/* Stats row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -467,6 +294,97 @@ export default function Home() {
               <p className={`text-2xl font-bold ${color}`}>{value}</p>
             </div>
           ))}
+        </div>
+
+        {/* Investigate form */}
+        <div className="rt-card p-6 shadow-md space-y-4">
+          <div>
+            <h2 className="rt-section-title">Investigate</h2>
+            <p className="rt-section-subtitle">Describe an incident to search across all indexed recordings</p>
+          </div>
+
+          {/* Mode toggle */}
+          <div className="flex gap-1 p-1 bg-[#F1F5F9] rounded-xl">
+            <button
+              type="button"
+              onClick={() => setMode('standard')}
+              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
+                mode === 'standard'
+                  ? 'bg-white shadow-sm text-[#0F172A]'
+                  : 'text-[#64748B] hover:text-[#0F172A]'
+              }`}
+            >
+              Standard
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('multi-agent')}
+              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
+                mode === 'multi-agent'
+                  ? 'bg-white shadow-sm text-[#0F172A]'
+                  : 'text-[#64748B] hover:text-[#0F172A]'
+              }`}
+            >
+              Multi-Agent
+              <span className="ml-1.5 text-[11px] font-normal text-[#94A3B8]">8 agents</span>
+            </button>
+          </div>
+
+          {mode === 'multi-agent' && (
+            <p className="rt-banner-info text-xs">
+              Runs 8 specialist agents: evidence retrieval, visual intelligence, temporal reasoning,
+              cross-camera correlation, contradiction detection, evidence audit, and report synthesis.
+            </p>
+          )}
+
+          {indexedCount === 0 && (
+            <div className="rt-banner-warning text-xs">
+              No indexed recordings yet.{' '}
+              <button onClick={() => setView('library')} className="underline font-medium hover:opacity-80">
+                Upload videos
+              </button>{' '}
+              to get started.
+            </div>
+          )}
+
+          <form onSubmit={handleInvestigate} className="space-y-3">
+            <div className="relative">
+              <svg viewBox="0 0 24 24" fill="none" className="absolute left-3.5 top-3.5 w-4 h-4 text-[#94A3B8] pointer-events-none">
+                <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+              <textarea
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault()
+                    if (query.trim() && !loading) handleInvestigate(e as unknown as React.FormEvent)
+                  }
+                }}
+                placeholder={'Describe the incident to investigate...\ne.g. Chain snatch near the entrance around midday'}
+                rows={3}
+                className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-10 pr-4 py-3 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] resize-none transition-colors"
+                disabled={loading}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading || !query.trim() || indexedCount === 0}
+              className="rt-btn-primary w-full py-2.5 justify-center"
+            >
+              <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
+                <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+              {loading
+                ? (mode === 'multi-agent' ? 'Agents running… polling for results' : 'Investigating…')
+                : (mode === 'multi-agent' ? 'Investigate with 8 Agents' : 'Investigate')
+              }
+            </button>
+          </form>
+
+          {error && <div className="rt-banner-danger text-sm">{error}</div>}
         </div>
 
         {/* Recent recordings */}
@@ -507,9 +425,9 @@ export default function Home() {
           </div>
         )}
 
-        {/* Empty state */}
+        {/* Empty state — no recordings at all */}
         {recordings.length === 0 && (
-          <div className="rt-card rt-empty py-20">
+          <div className="rt-card rt-empty py-16">
             <svg viewBox="0 0 24 24" fill="none" className="w-12 h-12 text-[#E2E8F0] mb-4">
               <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
             </svg>
@@ -518,30 +436,6 @@ export default function Home() {
             <button onClick={() => setView('library')} className="rt-btn-primary">
               Upload Recording
             </button>
-          </div>
-        )}
-
-        {/* Quick actions (investigate shortcuts) */}
-        {indexedCount > 0 && (
-          <div>
-            <h3 className="rt-section-title mb-3">Quick Investigate</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {EXAMPLE_QUERIES.map(label => (
-                <button
-                  key={label}
-                  onClick={() => { setQuery(label); setView('investigate') }}
-                  className="rt-card-hover p-3 flex items-center gap-3 text-left"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-[#EFF6FF] flex items-center justify-center shrink-0">
-                    <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-[#2563EB]">
-                      <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
-                      <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                  </div>
-                  <span className="text-sm text-[#0F172A] font-medium">{label}</span>
-                </button>
-              ))}
-            </div>
           </div>
         )}
       </div>

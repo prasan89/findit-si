@@ -26,6 +26,7 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
   const [cameraName, setCameraName] = useState('')
   const [cameraLocation, setCameraLocation] = useState('')
   const [activeVideo, setActiveVideo] = useState<Recording | null>(null)
+  const [uploadOpen, setUploadOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -56,6 +57,7 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
 
     setUploading(false)
     if (fileRef.current) fileRef.current.value = ''
+    setUploadOpen(false)
     onUploadComplete()
   }
 
@@ -75,13 +77,36 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
 
   return (
     <div className="space-y-5">
-      {/* Upload card */}
-      <div className="rt-card p-6">
-        <div className="mb-4">
-          <h2 className="rt-section-title">Upload CCTV Recording</h2>
-          <p className="rt-section-subtitle">Supports .mp4, .mov, .avi, .mkv, .webm</p>
+      {/* Header row with toggle button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="rt-section-title">Camera Library</h2>
+          <p className="rt-section-subtitle">{recordings.length} recording{recordings.length !== 1 ? 's' : ''}{indexedCount > 0 ? ` · ${indexedCount} indexed` : ''}</p>
         </div>
-        <form onSubmit={handleUpload} className="space-y-4">
+        <button
+          onClick={() => setUploadOpen(o => !o)}
+          className="rt-btn-primary"
+        >
+          <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
+            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 12V4m0 0L8 8m4-4l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Upload Recording
+        </button>
+      </div>
+
+      {/* Upload form — collapsed by default */}
+      {uploadOpen && (
+        <div className="rt-card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="rt-section-title">Upload CCTV Recording</h3>
+              <p className="rt-section-subtitle">Supports .mp4, .mov, .avi, .mkv, .webm</p>
+            </div>
+            <button onClick={() => setUploadOpen(false)} className="rt-btn-ghost p-1.5" title="Close">
+              <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+            </button>
+          </div>
+          <form onSubmit={handleUpload} className="space-y-4">
           {/* File picker */}
           <div>
             <label className="rt-label">Video files</label>
@@ -155,17 +180,6 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
             )}
           </button>
         </form>
-      </div>
-
-      {/* Library header */}
-      {recordings.length > 0 && (
-        <div className="flex items-center justify-between">
-          <h2 className="rt-section-title">Camera Library</h2>
-          <div className="flex items-center gap-3 text-sm text-[#64748B]">
-            <span>{recordings.length} recording{recordings.length !== 1 ? 's' : ''}</span>
-            <span className="text-[#E2E8F0]">·</span>
-            <span className="text-[#16A34A] font-medium">{indexedCount} indexed</span>
-          </div>
         </div>
       )}
 
@@ -175,8 +189,8 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
           <svg viewBox="0 0 24 24" fill="none" className="w-10 h-10 text-[#E2E8F0] mb-3">
             <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
           </svg>
-          <p className="text-sm font-medium text-[#64748B]">No videos uploaded yet</p>
-          <p className="text-xs text-[#94A3B8] mt-1">Upload CCTV recordings above to get started</p>
+          <p className="text-sm font-medium text-[#64748B]">No recordings yet</p>
+          <p className="text-xs text-[#94A3B8] mt-1">Click "Upload Recording" to get started</p>
         </div>
       ) : (
         <div className="space-y-2">
