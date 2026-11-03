@@ -240,7 +240,7 @@ export default function Home() {
         pageTitle={`Recordings (${recordings.length})`}
         topbarRight={<UsageBadge />}
       >
-        <div className="max-w-4xl mx-auto px-6 py-6">
+        <div className="px-6 py-5">
           <VideoLibrary recordings={recordings} onUploadComplete={fetchRecordings} onDelete={fetchRecordings} />
         </div>
       </AppShell>
@@ -268,7 +268,7 @@ export default function Home() {
   const processingCount = recordings.filter(r => r.processing_status === 'PROCESSING').length
   const recentRecordings = [...recordings]
     .sort((a, b) => new Date(b.upload_timestamp).getTime() - new Date(a.upload_timestamp).getTime())
-    .slice(0, 4)
+    .slice(0, 6)
 
   return (
     <AppShell
@@ -279,116 +279,118 @@ export default function Home() {
       pageTitle="Overview"
       topbarRight={<UsageBadge />}
     >
-      <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
+      <div className="px-6 py-5 space-y-5">
 
-        {/* Stats row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {/* Stats row — full width, 4 cols */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             { label: 'Total Recordings', value: recordings.length, color: 'text-[#0F172A]' },
             { label: 'Indexed', value: indexedCount, color: 'text-[#16A34A]' },
             { label: 'Processing', value: processingCount, color: processingCount > 0 ? 'text-[#2563EB]' : 'text-[#94A3B8]' },
             { label: 'Cameras', value: new Set(recordings.map(r => r.camera_name).filter(Boolean)).size, color: 'text-[#0F172A]' },
           ].map(({ label, value, color }) => (
-            <div key={label} className="rt-card p-4">
-              <p className="text-xs text-[#64748B] font-medium mb-1">{label}</p>
-              <p className={`text-2xl font-bold ${color}`}>{value}</p>
+            <div key={label} className="rt-card px-4 py-3">
+              <p className="text-xs text-[#64748B] font-medium">{label}</p>
+              <p className={`text-2xl font-bold mt-0.5 ${color}`}>{value}</p>
             </div>
           ))}
         </div>
 
-        {/* Investigate form */}
-        <div className="rt-card p-6 shadow-md space-y-4">
-          <div>
-            <h2 className="rt-section-title">Investigate</h2>
-            <p className="rt-section-subtitle">Describe an incident to search across all indexed recordings</p>
+        {/* Two-column layout: investigate form (left) + recent recordings (right) */}
+        <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-5 items-start">
+
+          {/* Investigate form */}
+          <div className="rt-card p-5 space-y-3">
+            <div>
+              <h2 className="rt-section-title">Investigate</h2>
+              <p className="rt-section-subtitle">Describe an incident in plain language</p>
+            </div>
+
+            {/* Mode toggle */}
+            <div className="flex gap-1 p-1 bg-[#F1F5F9] rounded-xl">
+              <button
+                type="button"
+                onClick={() => setMode('standard')}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                  mode === 'standard'
+                    ? 'bg-white shadow-sm text-[#0F172A]'
+                    : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
+              >
+                Standard
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('multi-agent')}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                  mode === 'multi-agent'
+                    ? 'bg-white shadow-sm text-[#0F172A]'
+                    : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
+              >
+                Multi-Agent
+                <span className="ml-1.5 text-[11px] font-normal text-[#94A3B8]">8 agents</span>
+              </button>
+            </div>
+
+            {mode === 'multi-agent' && (
+              <p className="rt-banner-info text-xs">
+                Runs 8 specialist agents: evidence retrieval, visual intelligence, temporal reasoning,
+                cross-camera correlation, contradiction detection, evidence audit, and report synthesis.
+              </p>
+            )}
+
+            {indexedCount === 0 && (
+              <div className="rt-banner-warning text-xs">
+                No indexed recordings yet.{' '}
+                <button onClick={() => setView('library')} className="underline font-medium hover:opacity-80">
+                  Upload videos
+                </button>{' '}
+                to get started.
+              </div>
+            )}
+
+            <form onSubmit={handleInvestigate} className="space-y-2">
+              <div className="relative">
+                <svg viewBox="0 0 24 24" fill="none" width="16" height="16" className="absolute left-3 top-3 text-[#94A3B8] pointer-events-none">
+                  <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                <textarea
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault()
+                      if (query.trim() && !loading) handleInvestigate(e as unknown as React.FormEvent)
+                    }
+                  }}
+                  placeholder={'Describe the incident to investigate...\ne.g. Chain snatch near the entrance around midday'}
+                  rows={3}
+                  className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-9 pr-4 py-2.5 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] resize-none transition-colors"
+                  disabled={loading}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading || !query.trim() || indexedCount === 0}
+                className="rt-btn-primary w-full py-2 justify-center"
+              >
+                <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+                  <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                {loading
+                  ? (mode === 'multi-agent' ? 'Agents running…' : 'Investigating…')
+                  : (mode === 'multi-agent' ? 'Investigate with 8 Agents' : 'Investigate')
+                }
+              </button>
+            </form>
+
+            {error && <div className="rt-banner-danger text-sm">{error}</div>}
           </div>
 
-          {/* Mode toggle */}
-          <div className="flex gap-1 p-1 bg-[#F1F5F9] rounded-xl">
-            <button
-              type="button"
-              onClick={() => setMode('standard')}
-              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
-                mode === 'standard'
-                  ? 'bg-white shadow-sm text-[#0F172A]'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
-            >
-              Standard
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('multi-agent')}
-              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
-                mode === 'multi-agent'
-                  ? 'bg-white shadow-sm text-[#0F172A]'
-                  : 'text-[#64748B] hover:text-[#0F172A]'
-              }`}
-            >
-              Multi-Agent
-              <span className="ml-1.5 text-[11px] font-normal text-[#94A3B8]">8 agents</span>
-            </button>
-          </div>
-
-          {mode === 'multi-agent' && (
-            <p className="rt-banner-info text-xs">
-              Runs 8 specialist agents: evidence retrieval, visual intelligence, temporal reasoning,
-              cross-camera correlation, contradiction detection, evidence audit, and report synthesis.
-            </p>
-          )}
-
-          {indexedCount === 0 && (
-            <div className="rt-banner-warning text-xs">
-              No indexed recordings yet.{' '}
-              <button onClick={() => setView('library')} className="underline font-medium hover:opacity-80">
-                Upload videos
-              </button>{' '}
-              to get started.
-            </div>
-          )}
-
-          <form onSubmit={handleInvestigate} className="space-y-3">
-            <div className="relative">
-              <svg viewBox="0 0 24 24" fill="none" className="absolute left-3.5 top-3.5 w-4 h-4 text-[#94A3B8] pointer-events-none">
-                <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              <textarea
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault()
-                    if (query.trim() && !loading) handleInvestigate(e as unknown as React.FormEvent)
-                  }
-                }}
-                placeholder={'Describe the incident to investigate...\ne.g. Chain snatch near the entrance around midday'}
-                rows={3}
-                className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-10 pr-4 py-3 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] resize-none transition-colors"
-                disabled={loading}
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading || !query.trim() || indexedCount === 0}
-              className="rt-btn-primary w-full py-2.5 justify-center"
-            >
-              <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
-                <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              {loading
-                ? (mode === 'multi-agent' ? 'Agents running… polling for results' : 'Investigating…')
-                : (mode === 'multi-agent' ? 'Investigate with 8 Agents' : 'Investigate')
-              }
-            </button>
-          </form>
-
-          {error && <div className="rt-banner-danger text-sm">{error}</div>}
-        </div>
-
-        {/* Recent recordings */}
-        {recentRecordings.length > 0 && (
+          {/* Recent recordings — fills remaining width */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="rt-section-title">Recent Recordings</h3>
@@ -396,48 +398,47 @@ export default function Home() {
                 View all →
               </button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {recentRecordings.map(r => {
-                const isIndexed = r.processing_status === 'INDEXED' || r.processing_status === 'PARTIAL'
-                return (
-                  <div key={r.recording_id} className="rt-card-hover p-4 flex gap-3">
-                    <div className="w-16 h-11 rounded-lg bg-[#F1F5F9] flex items-center justify-center shrink-0 overflow-hidden">
-                      {r.thumbnail_path ? (
-                        <img src={`/thumbnails/${r.recording_id}.jpg`} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-[#94A3B8]">
-                          <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5"/>
-                        </svg>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-[#0F172A] truncate">{r.camera_name ?? r.original_filename}</p>
-                      <p className="text-xs text-[#64748B] truncate">{r.camera_location ?? r.original_filename}</p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${isIndexed ? 'bg-[#16A34A]' : 'bg-[#94A3B8]'}`} />
-                        <span className="text-[10px] text-[#94A3B8] font-medium">{r.processing_status}</span>
+
+            {recentRecordings.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3 gap-3">
+                {recentRecordings.map(r => {
+                  const isIndexed = r.processing_status === 'INDEXED' || r.processing_status === 'PARTIAL'
+                  return (
+                    <div key={r.recording_id} className="rt-card-hover p-3 flex gap-3">
+                      <div className="w-16 h-11 rounded-md bg-[#F1F5F9] flex items-center justify-center shrink-0 overflow-hidden">
+                        {r.thumbnail_path ? (
+                          <img src={`/thumbnails/${r.recording_id}.jpg`} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <svg viewBox="0 0 24 24" fill="none" width="18" height="18" className="text-[#94A3B8]">
+                            <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5"/>
+                          </svg>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-[#0F172A] truncate">{r.camera_name ?? r.original_filename}</p>
+                        <p className="text-xs text-[#64748B] truncate">{r.camera_location ?? r.original_filename}</p>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isIndexed ? 'bg-[#16A34A]' : 'bg-[#94A3B8]'}`} />
+                          <span className="text-[10px] text-[#94A3B8] font-medium uppercase tracking-wide">{r.processing_status}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="rt-card rt-empty py-12">
+                <svg viewBox="0 0 24 24" fill="none" width="40" height="40" className="text-[#E2E8F0] mb-3">
+                  <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                </svg>
+                <p className="text-sm font-medium text-[#64748B]">No recordings yet</p>
+                <p className="text-xs text-[#94A3B8] mt-1 mb-3">Upload a CCTV recording to get started</p>
+                <button onClick={() => setView('library')} className="rt-btn-primary">Upload Recording</button>
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Empty state — no recordings at all */}
-        {recordings.length === 0 && (
-          <div className="rt-card rt-empty py-16">
-            <svg viewBox="0 0 24 24" fill="none" className="w-12 h-12 text-[#E2E8F0] mb-4">
-              <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-            </svg>
-            <p className="text-sm font-medium text-[#64748B]">No recordings yet</p>
-            <p className="text-xs text-[#94A3B8] mt-1 mb-4">Upload a CCTV recording to get started</p>
-            <button onClick={() => setView('library')} className="rt-btn-primary">
-              Upload Recording
-            </button>
-          </div>
-        )}
+        </div>
       </div>
     </AppShell>
   )
