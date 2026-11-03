@@ -296,95 +296,77 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Investigate form — full width */}
-        <div className="rt-card p-5 space-y-3">
-            <div>
-              <h2 className="rt-section-title">Investigate</h2>
-              <p className="rt-section-subtitle">Describe an incident in plain language</p>
-            </div>
-
-            {/* Mode toggle */}
-            <div className="flex gap-1 p-1 bg-[#F1F5F9] rounded-xl">
-              <button
-                type="button"
-                onClick={() => setMode('standard')}
-                className={`flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                  mode === 'standard'
-                    ? 'bg-white shadow-sm text-[#0F172A]'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                Standard
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('multi-agent')}
-                className={`flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                  mode === 'multi-agent'
-                    ? 'bg-white shadow-sm text-[#0F172A]'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                Multi-Agent
-                <span className="ml-1.5 text-[11px] font-normal text-[#94A3B8]">8 agents</span>
-              </button>
-            </div>
-
+        {/* Investigate form — compact single row */}
+        <div className="rt-card px-4 py-3">
+            {indexedCount === 0 && (
+              <div className="rt-banner-warning text-xs mb-3">
+                No indexed recordings yet.{' '}
+                <button onClick={() => setView('library')} className="underline font-medium hover:opacity-80">Upload videos</button>{' '}
+                to get started.
+              </div>
+            )}
             {mode === 'multi-agent' && (
-              <p className="rt-banner-info text-xs">
+              <p className="rt-banner-info text-xs mb-3">
                 Runs 8 specialist agents: evidence retrieval, visual intelligence, temporal reasoning,
                 cross-camera correlation, contradiction detection, evidence audit, and report synthesis.
               </p>
             )}
-
-            {indexedCount === 0 && (
-              <div className="rt-banner-warning text-xs">
-                No indexed recordings yet.{' '}
-                <button onClick={() => setView('library')} className="underline font-medium hover:opacity-80">
-                  Upload videos
-                </button>{' '}
-                to get started.
+            <form onSubmit={handleInvestigate} className="flex items-center gap-3">
+              {/* Mode toggle */}
+              <div className="flex gap-0.5 p-0.5 bg-[#F1F5F9] rounded-lg shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setMode('standard')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                    mode === 'standard' ? 'bg-white shadow-sm text-[#0F172A]' : 'text-[#64748B] hover:text-[#0F172A]'
+                  }`}
+                >
+                  Standard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('multi-agent')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                    mode === 'multi-agent' ? 'bg-white shadow-sm text-[#0F172A]' : 'text-[#64748B] hover:text-[#0F172A]'
+                  }`}
+                >
+                  Multi-Agent
+                </button>
               </div>
-            )}
 
-            <form onSubmit={handleInvestigate} className="space-y-2">
-              <div className="relative">
-                <svg viewBox="0 0 24 24" fill="none" width="16" height="16" className="absolute left-3 top-3 text-[#94A3B8] pointer-events-none">
+              {/* Input */}
+              <div className="relative flex-1">
+                <svg viewBox="0 0 24 24" fill="none" width="15" height="15" className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none">
                   <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
                   <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
-                <textarea
+                <input
+                  type="text"
                   value={query}
                   onChange={e => setQuery(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault()
-                      if (query.trim() && !loading) handleInvestigate(e as unknown as React.FormEvent)
-                    }
-                  }}
-                  placeholder={'Describe the incident to investigate...\ne.g. Chain snatch near the entrance around midday'}
-                  rows={2}
-                  className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-9 pr-4 py-2.5 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] resize-none transition-colors"
+                  placeholder="Describe the incident to investigate…"
+                  className="w-full rounded-lg border border-[#E2E8F0] bg-white pl-9 pr-4 py-2 text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#93C5FD] focus:border-[#2563EB] transition-colors"
                   disabled={loading}
                 />
               </div>
+
+              {/* Submit */}
               <button
                 type="submit"
                 disabled={loading || !query.trim() || indexedCount === 0}
-                className="rt-btn-primary w-full py-2 justify-center"
+                className="rt-btn-primary shrink-0"
               >
-                <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+                <svg viewBox="0 0 24 24" fill="none" width="15" height="15">
                   <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.5"/>
                   <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
                 {loading
-                  ? (mode === 'multi-agent' ? 'Agents running…' : 'Investigating…')
-                  : (mode === 'multi-agent' ? 'Investigate with 8 Agents' : 'Investigate')
+                  ? (mode === 'multi-agent' ? 'Running…' : 'Investigating…')
+                  : (mode === 'multi-agent' ? 'Investigate (8 Agents)' : 'Investigate')
                 }
               </button>
             </form>
-
-            {error && <div className="rt-banner-danger text-sm">{error}</div>}
+            {error && <div className="rt-banner-danger text-sm mt-3">{error}</div>}
         </div>
 
         {/* Recent recordings */}
