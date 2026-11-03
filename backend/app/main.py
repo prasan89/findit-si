@@ -136,11 +136,11 @@ async def _recover_stuck_recordings(settings, storage) -> None:
     async with get_db(settings.db_path) as db:
         db.row_factory = aiosqlite.Row
         stuck = await (await db.execute(
-            "SELECT recording_id, original_filename FROM recordings WHERE processing_status = ?",
-            (ProcessingStatus.PROCESSING.value,),
+            "SELECT recording_id, original_filename FROM recordings WHERE processing_status IN (?, ?)",
+            (ProcessingStatus.PROCESSING.value, ProcessingStatus.PENDING.value),
         )).fetchall()
         if stuck:
-            logger.info("Recovering %d stuck PROCESSING recording(s)…", len(stuck))
+            logger.info("Recovering %d unprocessed recording(s)…", len(stuck))
             for row in stuck:
                 await db.execute(
                     "UPDATE recordings SET processing_status = ? WHERE recording_id = ?",
@@ -148,26 +148,33 @@ async def _recover_stuck_recordings(settings, storage) -> None:
                 )
             await db.commit()
 
+    # Limit concurrent reprocessing to avoid overwhelming ffmpeg + Meta API.
+    _recovery_sem = asyncio.Semaphore(3)
+
+    async def _reprocess(row):
+        async with _recovery_sem:
+            rid = row["recording_id"]
+            raw_client = get_meta_client()
+            meta_client = build_accounted_client(
+                delegate=raw_client,
+                db_path=settings.db_path,
+                provider=settings.vision_provider,
+                budget_limit_usd=settings.budget_limit_usd,
+                budget_reserve_usd=settings.budget_reserve_usd,
+            )
+            await process_recording(
+                recording_id=rid,
+                db_path=settings.db_path,
+                storage=storage,
+                meta_client=meta_client,
+                fps=settings.findit_frame_extraction_fps,
+                max_frames=settings.findit_max_frames_per_video,
+                max_api_calls=settings.findit_max_api_calls_per_video,
+            )
+
     for row in stuck:
-        rid = row["recording_id"]
-        logger.info("Requeueing recording %s (%s)", rid[:8], row["original_filename"])
-        raw_client = get_meta_client()
-        meta_client = build_accounted_client(
-            delegate=raw_client,
-            db_path=settings.db_path,
-            provider=settings.vision_provider,
-            budget_limit_usd=settings.budget_limit_usd,
-            budget_reserve_usd=settings.budget_reserve_usd,
-        )
-        asyncio.create_task(process_recording(
-            recording_id=rid,
-            db_path=settings.db_path,
-            storage=storage,
-            meta_client=meta_client,
-            fps=settings.findit_frame_extraction_fps,
-            max_frames=settings.findit_max_frames_per_video,
-            max_api_calls=settings.findit_max_api_calls_per_video,
-        ))
+        logger.info("Requeueing recording %s (%s)", row["recording_id"][:8], row["original_filename"])
+        asyncio.create_task(_reprocess(row))
 
 
 def create_app() -> FastAPI:

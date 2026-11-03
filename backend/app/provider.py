@@ -534,6 +534,15 @@ class AccountedFrameAnalyzer:
                     )
         raise last_exc  # type: ignore[misc]
 
+    def __getattr__(self, name: str):
+        """Proxy methods not defined here to the delegate.
+
+        Enables analyze_upload_segment and analyze_whole_recording to pass
+        through to MuseSparkClient without a separate accounted wrapper.
+        These methods run bounded_llm_call internally for concurrency control.
+        """
+        return getattr(self.delegate, name)
+
 
 def build_accounted_client(
     delegate: FrameAnalyzer,
