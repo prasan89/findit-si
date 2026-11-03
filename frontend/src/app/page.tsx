@@ -32,14 +32,6 @@ const EXAMPLE_QUERIES = [
   'Suspicious activity near exit',
 ]
 
-function CameraIcon({ size = 16 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" width={size} height={size} aria-hidden="true">
-      <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  )
-}
-
 function SearchIconSm() {
   return (
     <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden="true">
@@ -56,41 +48,6 @@ function SpinnerIcon() {
       <path d="M12 2a10 10 0 0110 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
     </svg>
   )
-}
-
-function ShieldIconSm() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden="true">
-      <path d="M12 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016A11.955 11.955 0 0112 2.944z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  )
-}
-
-function UploadIconSm() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden="true">
-      <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 12V4m0 0l-3 3m3-3l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  )
-}
-
-function getStatusBadge(status: string) {
-  if (status === 'INDEXED') return { label: 'Indexed', cls: 'bg-green-100 text-green-700' }
-  if (status === 'PARTIAL') return { label: 'Partial', cls: 'bg-yellow-100 text-yellow-700' }
-  if (status === 'PROCESSING') return { label: 'Processing', cls: 'bg-blue-100 text-blue-700' }
-  return { label: status, cls: 'bg-slate-100 text-slate-500' }
-}
-
-function formatTimestamp(ts: string | undefined | null): string {
-  if (!ts) return ''
-  try {
-    return new Date(ts).toLocaleString(undefined, {
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-    })
-  } catch {
-    return ts
-  }
 }
 
 export default function Home() {
@@ -352,14 +309,6 @@ export default function Home() {
   const activeAlerts = 0
   const totalIndexed = recordings.filter(r => r.processing_status === 'INDEXED').length
 
-  const recentRecordings = [...recordings]
-    .sort((a, b) => {
-      const ta = a.upload_timestamp ?? ''
-      const tb = b.upload_timestamp ?? ''
-      return tb.localeCompare(ta)
-    })
-    .slice(0, 5)
-
   const cameraNames = Array.from(
     new Set(recordings.map(r => r.camera_name).filter((c): c is string => Boolean(c)))
   )
@@ -381,11 +330,7 @@ export default function Home() {
           <p className="text-sm text-slate-500 mt-1">Monitor, investigate, and respond to security events</p>
         </div>
 
-        {/* 2-column layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-          {/* LEFT COLUMN — 2/3 width */}
-          <div className="lg:col-span-2 space-y-5">
+        <div className="max-w-3xl space-y-5">
 
             {/* KPI row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -540,96 +485,6 @@ export default function Home() {
 
               {error && <div className="rt-banner-danger text-sm">{error}</div>}
             </div>
-          </div>
-
-          {/* RIGHT COLUMN — 1/3 width */}
-          <div className="space-y-4">
-
-            {/* Recent recordings */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-slate-900 mb-3">Recent recordings</h2>
-
-              {recentRecordings.length === 0 ? (
-                <div className="text-center py-8 text-slate-400">
-                  <CameraIcon size={28} />
-                  <p className="mt-2 text-xs">No recordings yet</p>
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-2">
-                    {recentRecordings.map(rec => {
-                      const badge = getStatusBadge(rec.processing_status ?? '')
-                      const ts = formatTimestamp(rec.upload_timestamp)
-                      return (
-                        <div
-                          key={rec.recording_id}
-                          className="group rounded-lg border border-slate-100 overflow-hidden hover:border-slate-300 transition-colors cursor-default"
-                        >
-                          {/* Thumbnail */}
-                          <div className="aspect-video bg-slate-100 overflow-hidden">
-                            <img
-                              src={`/thumbnails/${rec.recording_id}.jpg`}
-                              alt={rec.original_filename}
-                              className="w-full h-full object-cover"
-                              onError={e => {
-                                const t = e.currentTarget
-                                t.style.display = 'none'
-                                const parent = t.parentElement
-                                if (parent) {
-                                  parent.classList.add('flex', 'items-center', 'justify-center', 'text-slate-300')
-                                  parent.innerHTML = '<svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>'
-                                }
-                              }}
-                            />
-                          </div>
-                          <div className="p-2 space-y-0.5">
-                            <p className="text-xs font-medium text-slate-800 truncate" title={rec.original_filename}>
-                              {rec.original_filename}
-                            </p>
-                            {rec.camera_name && (
-                              <p className="text-xs text-slate-500 truncate">{rec.camera_name}</p>
-                            )}
-                            {ts && <p className="text-xs text-slate-400">{ts}</p>}
-                            <span className={`inline-block text-xs font-medium px-1.5 py-0.5 rounded ${badge.cls}`}>
-                              {badge.label}
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  <button
-                    onClick={() => navigate('library')}
-                    className="mt-3 w-full text-xs text-blue-600 hover:text-blue-700 font-medium text-right transition-colors"
-                  >
-                    View all recordings →
-                  </button>
-                </>
-              )}
-            </div>
-
-            {/* Quick actions */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
-              <h2 className="text-sm font-semibold text-slate-900 mb-3">Quick actions</h2>
-
-              <button
-                onClick={() => navigate('library')}
-                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-700 font-medium hover:bg-slate-50 hover:border-slate-300 transition-colors"
-              >
-                <UploadIconSm />
-                Upload recording
-              </button>
-
-              <button
-                onClick={() => navigate('guardian')}
-                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-200 text-sm text-slate-700 font-medium hover:bg-slate-50 hover:border-slate-300 transition-colors"
-              >
-                <ShieldIconSm />
-                View Guardian →
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </AppShell>
