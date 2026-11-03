@@ -235,7 +235,11 @@ export default function VideoLibrary({ recordings, onUploadComplete, onDelete }:
                       <div className="text-amber-600">Recording date unknown</div>
                     )}
                     <div className="flex gap-4 text-[#94A3B8]">
-                      <span>{r.frame_count} frames</span>
+                      {r.indexing_status_detail?.startsWith('Direct video') ? (
+                        <span>Direct analysis</span>
+                      ) : (
+                        <span>{r.frame_count} frames</span>
+                      )}
                       {r.video_duration_seconds != null && <span>{formatDuration(r.video_duration_seconds)}</span>}
                       {r.file_size_bytes != null && <span>{(r.file_size_bytes / 1_000_000).toFixed(1)} MB</span>}
                     </div>

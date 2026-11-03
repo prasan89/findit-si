@@ -41,6 +41,13 @@ MIN_CONFIRMING_FRAMES = 2
 PERSON_SUBJECTS = frozenset({
     "person", "persons", "people", "human", "humans",
     "man", "men", "woman", "women",
+    # Role / occupation words common in CCTV narration
+    "rider", "riders", "driver", "drivers", "passenger", "passengers",
+    "pedestrian", "pedestrians",
+    "suspect", "suspects", "attacker", "attackers",
+    "perpetrator", "perpetrators", "victim", "victims",
+    "bystander", "bystanders", "subject", "subjects",
+    "male", "males", "female", "females",
 })
 VEHICLE_SUBJECTS = frozenset({
     "car", "cars", "vehicle", "vehicles", "truck", "trucks",

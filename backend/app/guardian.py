@@ -91,17 +91,31 @@ _ENTITY_HAZARD_MAP: list[tuple[str, str, str, float]] = [
 ]
 
 _UNUSUAL_OBS_HAZARD_MAP: list[tuple[str, str, str, float]] = [
-    ("snake",       "dangerous_animal", "critical", 0.90),
-    ("cobra",       "dangerous_animal", "critical", 0.92),
-    ("fire",        "fire_smoke",       "critical", 0.90),
-    ("smoke",       "fire_smoke",       "high",     0.85),
-    ("gun",         "weapon_visible",   "critical", 0.90),
-    ("weapon",      "weapon_visible",   "high",     0.85),
-    ("knife",       "weapon_visible",   "high",     0.85),
-    ("fell",        "person_fall_injury","high",     0.80),
-    ("fallen",      "person_fall_injury","high",     0.80),
-    ("unconscious", "person_fall_injury","critical", 0.88),
-    ("collision",   "vehicle_collision","high",     0.80),
+    ("snake",             "dangerous_animal",    "critical", 0.90),
+    ("cobra",             "dangerous_animal",    "critical", 0.92),
+    ("fire",              "fire_smoke",           "critical", 0.90),
+    ("smoke",             "fire_smoke",           "high",     0.85),
+    ("gun",               "weapon_visible",       "critical", 0.90),
+    ("weapon",            "weapon_visible",       "high",     0.85),
+    ("knife",             "weapon_visible",       "high",     0.85),
+    ("fell",              "person_fall_injury",   "high",     0.80),
+    ("fallen",            "person_fall_injury",   "high",     0.80),
+    ("unconscious",       "person_fall_injury",   "critical", 0.88),
+    ("collision",         "vehicle_collision",    "high",     0.80),
+    # Robbery / assault patterns
+    ("snatch",            "other_hazard",         "high",     0.82),
+    ("grab",              "other_hazard",         "high",     0.78),
+    ("physical interaction", "other_hazard",      "medium",   0.72),
+    ("stops beside",      "other_hazard",         "medium",   0.68),
+    ("stops directly",    "other_hazard",         "medium",   0.68),
+    ("confronts",         "other_hazard",         "high",     0.80),
+    ("struggle",          "other_hazard",         "high",     0.85),
+    ("assault",           "other_hazard",         "critical", 0.88),
+    ("attack",            "other_hazard",         "critical", 0.88),
+    ("robbery",           "other_hazard",         "critical", 0.92),
+    ("theft",             "other_hazard",         "high",     0.82),
+    ("loiter",            "other_hazard",         "low",      0.60),
+    ("trespass",          "restricted_area_entry","medium",   0.72),
 ]
 
 

@@ -606,6 +606,42 @@ _ACTION_SYNONYMS: dict[str, frozenset] = {
     "appeared":   frozenset({"appeared", "appearing", "appear", "entered",
                               "visible", "seen", "spotted", "detected",
                               "emerged", "came into view"}),
+    # Approach / advance
+    "approach":   frozenset({"approach", "approaches", "approaching", "approached",
+                              "moves toward", "moving toward", "walks toward",
+                              "walking toward", "advances", "advancing", "advanced",
+                              "comes toward", "coming toward", "nears", "nearing",
+                              "closes in", "closing in", "pulls up", "pulls alongside",
+                              "rides up", "riding up"}),
+    # Escape / flight
+    "escape":     frozenset({"escape", "escapes", "escaping", "escaped",
+                              "flee", "flees", "fleeing", "fled",
+                              "departs", "depart", "departing", "departed",
+                              "drives away", "driving away", "rides away", "riding away",
+                              "speeds away", "speeding away", "speeds off", "takes off",
+                              "leaves quickly", "exits rapidly", "flees the scene",
+                              "flees scene"}),
+    "flee":       frozenset({"flee", "flees", "fleeing", "fled",
+                              "escape", "escapes", "escaping", "escaped",
+                              "runs away", "running away", "drives away",
+                              "speeds away", "speeds off"}),
+    # Snatch / grab
+    "snatch":     frozenset({"snatch", "snatches", "snatching", "snatched",
+                              "grab", "grabs", "grabbing", "grabbed",
+                              "seize", "seizes", "seizing", "seized",
+                              "rip", "rips", "ripping", "ripped",
+                              "yank", "yanks", "yanking", "yanked",
+                              "pulls", "pull", "pulling"}),
+    "grab":       frozenset({"grab", "grabs", "grabbing", "grabbed",
+                              "snatch", "snatches", "snatching", "snatched",
+                              "seize", "seizes", "seized", "takes",
+                              "pulls", "yanks", "rips"}),
+    # Follow / pursue
+    "follow":     frozenset({"follow", "follows", "following", "followed",
+                              "pursue", "pursues", "pursuing", "pursued",
+                              "chase", "chases", "chasing", "chased",
+                              "tail", "tails", "tailing", "tailed",
+                              "track", "tracks", "tracking", "tracked"}),
 }
 
 # Action-query trigger words — when any of these appear in the query tokens,
@@ -620,6 +656,17 @@ _ACTION_QUERY_TERMS = frozenset({
     "enter", "leave", "exit", "deliver", "place", "appear",
     "brought", "bring", "bringing", "dragged", "drag", "dragging",
     "went", "gone", "came", "come",
+    # Approach / advance
+    "approach", "approaches", "approaching", "approached",
+    # Escape / flight
+    "escape", "escapes", "escaping", "fled", "flee", "flees", "fleeing",
+    # Snatch / grab
+    "snatch", "snatches", "snatching", "snatched",
+    "grab", "grabs", "grabbing", "grabbed",
+    # Follow / pursue
+    "follow", "follows", "following", "followed",
+    "pursue", "pursues", "pursuing", "pursued",
+    "chase", "chases", "chasing", "chased",
 })
 
 
@@ -738,6 +785,11 @@ def _score_event(terms: list[str], ev: dict) -> float:
             forms = frozenset({t, FURNITURE_LEMMA.get(t, t)})
             if contains_word(descriptive, forms):
                 hits += 1
+        elif t in _ACTION_SYNONYMS:
+            # Action term: expand to all synonym forms before word-boundary matching
+            # so "approach" matches "approaches", "approaching", etc.
+            if contains_word(descriptive, _ACTION_SYNONYMS[t]):
+                hits += 1
         elif term_matches(searchable, t):
             hits += 1
     # Require at least one keyword hit — confidence alone doesn't justify a result
@@ -775,7 +827,10 @@ INCIDENT_CATEGORY_MAP: list[tuple[frozenset, frozenset]] = [
                 "stumble", "stumbled", "tripped", "slip", "slipped"}),
      frozenset({"sudden-fall"})),
     (frozenset({"escape", "escaped", "escaping", "flee", "fleeing",
-                "fled", "runaway", "chase", "chasing", "pursuit"}),
+                "fled", "runaway", "chase", "chasing", "pursuit",
+                "approach", "approaches", "approaching", "approached",
+                "follow", "follows", "following", "followed",
+                "pursue", "pursues", "pursuing", "pursued"}),
      frozenset({"suspicious-approach-departure"})),
     (frozenset({"incident", "incidents", "crime", "criminal", "suspicious",
                 "anomaly", "anomalous"}),

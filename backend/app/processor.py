@@ -462,6 +462,8 @@ async def process_recording(
 
             if success:
                 status = ProcessingStatus.INDEXED
+                await _generate_thumbnail_from_video(
+                    recording_id, str(video_path), storage, db_path)
             elif errors:
                 status = ProcessingStatus.PARTIAL
             else:
@@ -858,23 +860,71 @@ def _parse_observations(
     return result
 
 
-async def _generate_thumbnail(recording_id: str, storage: LocalStorageBackend, db_path: str):
-    """Extract first frame as thumbnail."""
+async def _generate_thumbnail_from_video(
+    recording_id: str, video_path: str, storage: LocalStorageBackend, db_path: str
+):
+    """Extract a single frame from the video at 1s using ffmpeg and save as thumbnail.
+
+    Used by the direct-video path where no frames dir exists.
+    Silently returns on failure so it never blocks processing.
+    """
+    import tempfile as _tempfile
+    try:
+        with _tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp_path = tmp.name
+        cmd = [
+            "ffmpeg", "-y", "-ss", "1", "-i", video_path,
+            "-frames:v", "1", "-q:v", "5", tmp_path,
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return
+        import os as _os
+        if not _os.path.exists(tmp_path) or _os.path.getsize(tmp_path) == 0:
+            return
+        async with aiofiles.open(tmp_path, "rb") as f:
+            data = await f.read()
+        _os.unlink(tmp_path)
+        thumb_path = await storage.save_thumbnail(recording_id, data)
+        async with get_db(db_path) as db:
+            await db.execute(
+                "UPDATE recordings SET thumbnail_path=?, updated_at=? WHERE recording_id=?",
+                (thumb_path, _now(), recording_id),
+            )
+            await db.commit()
+    except Exception as e:
+        logger.debug("Thumbnail generation failed for %s: %s", recording_id[:8], e)
+
+
+async def _generate_thumbnail(
+    recording_id: str, storage: LocalStorageBackend, db_path: str
+):
+    """Extract first frame as thumbnail (frame-based recording path)."""
     frame_dir = storage.frames_dir / recording_id
     if not frame_dir.exists():
         return
     frames = sorted(frame_dir.glob('*.jpg'))
     if not frames:
         return
-    async with aiofiles.open(frames[0], 'rb') as f:
-        data = await f.read()
-    thumb_path = await storage.save_thumbnail(recording_id, data)
-    async with get_db(db_path) as db:
-        await db.execute(
-            "UPDATE recordings SET thumbnail_path=?, updated_at=? WHERE recording_id=?",
-            (thumb_path, _now(), recording_id)
-        )
-        await db.commit()
+    try:
+        async with aiofiles.open(frames[0], 'rb') as f:
+            data = await f.read()
+        thumb_path = await storage.save_thumbnail(recording_id, data)
+        async with get_db(db_path) as db:
+            await db.execute(
+                "UPDATE recordings SET thumbnail_path=?, updated_at=? WHERE recording_id=?",
+                (thumb_path, _now(), recording_id)
+            )
+            await db.commit()
+    except Exception as e:
+        logger.debug("Thumbnail generation failed for %s: %s", recording_id[:8], e)
 
 
 def _now() -> str:

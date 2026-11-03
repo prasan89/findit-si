@@ -475,27 +475,27 @@ class TestProcessRecordingDirectPath:
 
         client = MockVideoClient()
 
-        # Mock get_video_duration and _ensure_h264 and _generate_thumbnail
+        # Mock get_video_duration and _ensure_h264 and _generate_thumbnail_from_video
         # to avoid real ffmpeg calls
         import app.processor as proc_mod
         original_duration = proc_mod.get_video_duration
         original_ensure = proc_mod._ensure_h264
-        original_thumbnail = proc_mod._generate_thumbnail
+        original_thumbnail = proc_mod._generate_thumbnail_from_video
 
         async def mock_duration(vp): return 10.0
         async def mock_ensure(vp, rid, storage, db): return vp
-        async def mock_thumbnail(rid, storage, db_path): pass
+        async def mock_thumbnail(rid, vp, storage, db_path): pass
 
         proc_mod.get_video_duration = mock_duration
         proc_mod._ensure_h264 = mock_ensure
-        proc_mod._generate_thumbnail = mock_thumbnail
+        proc_mod._generate_thumbnail_from_video = mock_thumbnail
 
         try:
             await process_recording(rid, db_path, storage, client)
         finally:
             proc_mod.get_video_duration = original_duration
             proc_mod._ensure_h264 = original_ensure
-            proc_mod._generate_thumbnail = original_thumbnail
+            proc_mod._generate_thumbnail_from_video = original_thumbnail
 
         # Verify status is INDEXED (not FAILED/PARTIAL)
         async with aiosqlite.connect(db_path) as db:
