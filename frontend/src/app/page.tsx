@@ -6,6 +6,7 @@ import UsageBadge from '@/components/UsageBadge'
 import RealityTraceWorkspace from '@/components/RealityTraceWorkspace'
 import InvestigationVideoList from '@/components/InvestigationVideoList'
 import GuardianPanel from '@/components/GuardianPanel'
+import VideoPlayerModal from '@/components/VideoPlayerModal'
 import type {
   Recording,
   InvestigationResult,
@@ -103,6 +104,7 @@ export default function Home() {
   const [investigationResult, setInvestigationResult] = useState<InvestigationResult | null>(null)
   const [multiAgentResult, setMultiAgentResult] = useState<MultiAgentInvestigationResult | null>(null)
   const [activeVideoSummary, setActiveVideoSummary] = useState<VideoAnalysisSummary | null>(null)
+  const [previewRecording, setPreviewRecording] = useState<Recording | null>(null)
 
   const fetchRecordings = useCallback(async () => {
     try {
@@ -315,8 +317,15 @@ export default function Home() {
         guardianAlertCount={0}
       >
         <div className="px-6 py-5">
-          <VideoLibrary recordings={recordings} onRecordingSelect={() => {}} onRefresh={fetchRecordings} />
+          <VideoLibrary recordings={recordings} onRecordingSelect={setPreviewRecording} onRefresh={fetchRecordings} />
         </div>
+        {previewRecording && (
+          <VideoPlayerModal
+            recording={previewRecording}
+            initialTimestamp={0}
+            onClose={() => setPreviewRecording(null)}
+          />
+        )}
       </AppShell>
     )
   }

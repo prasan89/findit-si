@@ -171,6 +171,22 @@ export default function AppShell({
       >
         {children}
       </main>
+
+      {/* Footer */}
+      {!fullHeight && (
+        <footer
+          className="shrink-0 flex items-center justify-center gap-2 py-3 text-xs"
+          style={{ borderTop: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', color: '#94A3B8' }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" width="14" height="14" aria-hidden="true">
+            <path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="#0082FB" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="#0082FB" fillOpacity="0.15"/>
+          </svg>
+          <span>Powered by</span>
+          <span className="font-semibold" style={{ color: '#0082FB' }}>Meta AI</span>
+          <span style={{ color: '#CBD5E1' }}>·</span>
+          <span>Built for the Meta AI Hackathon 2026</span>
+        </footer>
+      )}
     </div>
   )
 }

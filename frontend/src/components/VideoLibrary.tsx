@@ -316,6 +316,15 @@ function RecordingCard({ recording: r, onSelect, onDelete }: RecordingCardProps)
           </div>
         )}
 
+        {/* Play overlay on hover */}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 rounded-full w-12 h-12 flex items-center justify-center shadow-lg">
+            <svg viewBox="0 0 24 24" fill="none" width="20" height="20" aria-hidden="true">
+              <polygon points="6,4 20,12 6,20" fill="#1E293B"/>
+            </svg>
+          </div>
+        </div>
+
         {/* Duration overlay */}
         {duration && (
           <span className="absolute bottom-2 right-2 bg-black/60 text-white text-xs font-medium px-1.5 py-0.5 rounded">
