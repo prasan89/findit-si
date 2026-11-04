@@ -297,7 +297,18 @@ function RecordingCard({ recording: r, onSelect, onDelete }: RecordingCardProps)
 
   return (
     <div className="group relative rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-      {/* Thumbnail */}
+        {/* Delete X — top-right corner, visible on hover */}
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(r.recording_id, r.original_filename) }}
+          className="absolute top-1.5 right-1.5 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all"
+          aria-label={`Delete ${r.original_filename}`}
+        >
+          <svg viewBox="0 0 24 24" fill="none" width="12" height="12">
+            <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+          </svg>
+        </button>
+
+        {/* Thumbnail */}
       <button
         className="block w-full aspect-video bg-slate-100 overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
         onClick={() => onSelect(r)}
