@@ -26,10 +26,10 @@ const PAGE_TITLES: Record<string, string> = {
 }
 
 const EXAMPLE_QUERIES = [
-  'Person in red jacket',
-  'Vehicle at gate',
-  'Package left unattended',
-  'Suspicious activity near exit',
+  'Cat detected',
+  'Dog detected',
+  'Fire or smoke',
+  'Hazard detected',
 ]
 
 function SearchIconSm() {
