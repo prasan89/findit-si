@@ -70,6 +70,7 @@ export default function GuardianDashboard({ recordings }: Props) {
     : allItems
 
   const visibleItems = cameraFiltered
+    .filter(i => i.review_status !== 'dismissed')
     .filter(i => matchesFilter(i, filter))
     .filter(i => withinTimeRange(i, timeRange))
 

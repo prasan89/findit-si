@@ -226,6 +226,20 @@ export default function GuardianMessageCard({
                 </button>
               )}
 
+              {/* Dismiss (delete from feed) */}
+              {item.source === 'alert' && (
+                <button
+                  onClick={() => onAcknowledge(item, 'dismissed')}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-slate-200 text-red-500 hover:bg-red-50 hover:border-red-200 transition-colors"
+                  aria-label="Dismiss alert"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" className="w-3 h-3">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                  Dismiss
+                </button>
+              )}
+
               {/* Dispatch — police tab, alert source only */}
               {isPoliceTab && item.source === 'alert' && (
                 <button
