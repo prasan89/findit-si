@@ -26,9 +26,10 @@ const PAGE_TITLES: Record<string, string> = {
 }
 
 const EXAMPLE_QUERIES = [
-  'Cat detected',
-  'Dog detected',
+  'Tiger on road',
+  'Snake on floor',
   'Fire or smoke',
+  'Motorcycle',
 ]
 
 function SearchIconSm() {
@@ -61,6 +62,7 @@ export default function Home() {
   const [multiAgentResult, setMultiAgentResult] = useState<MultiAgentInvestigationResult | null>(null)
   const [activeVideoSummary, setActiveVideoSummary] = useState<VideoAnalysisSummary | null>(null)
   const [previewRecording, setPreviewRecording] = useState<Recording | null>(null)
+  const [guardianAlertCount, setGuardianAlertCount] = useState(0)
 
   const fetchRecordings = useCallback(async () => {
     try {
@@ -69,11 +71,27 @@ export default function Home() {
     } catch {}
   }, [])
 
+  const fetchGuardianAlerts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/guardian-alerts')
+      if (res.ok) {
+        const data = await res.json()
+        const alerts = data.alerts ?? data ?? []
+        const newCount = alerts.filter((a: { review_status: string }) => a.review_status === 'new').length
+        setGuardianAlertCount(newCount)
+      }
+    } catch {}
+  }, [])
+
   useEffect(() => {
     fetchRecordings()
-    const interval = setInterval(fetchRecordings, 5000)
+    fetchGuardianAlerts()
+    const interval = setInterval(() => {
+      fetchRecordings()
+      fetchGuardianAlerts()
+    }, 5000)
     return () => clearInterval(interval)
-  }, [fetchRecordings])
+  }, [fetchRecordings, fetchGuardianAlerts])
 
   const indexedCount = recordings.filter(
     r => r.processing_status === 'INDEXED' || r.processing_status === 'PARTIAL'
@@ -212,7 +230,7 @@ export default function Home() {
         indexedCount={indexedCount}
         pageTitle="Investigation Results"
         topbarRight={<UsageBadge />}
-        guardianAlertCount={0}
+        guardianAlertCount={guardianAlertCount}
       >
         <div className="h-full overflow-y-auto">
           <InvestigationVideoList
@@ -246,7 +264,7 @@ export default function Home() {
         pageTitle="Evidence Workspace"
         topbarRight={<UsageBadge />}
         fullHeight
-        guardianAlertCount={0}
+        guardianAlertCount={guardianAlertCount}
       >
         <RealityTraceWorkspace
           recordings={recordings}
@@ -270,7 +288,7 @@ export default function Home() {
         indexedCount={indexedCount}
         pageTitle={`Recordings (${recordingCount})`}
         topbarRight={<UsageBadge />}
-        guardianAlertCount={0}
+        guardianAlertCount={guardianAlertCount}
       >
         <div className="px-6 py-5">
           <VideoLibrary recordings={recordings} onRecordingSelect={setPreviewRecording} onRefresh={fetchRecordings} />
@@ -303,7 +321,7 @@ export default function Home() {
         pageTitle="Guardian"
         topbarRight={<UsageBadge />}
         fullHeight
-        guardianAlertCount={0}
+        guardianAlertCount={guardianAlertCount}
       >
         <GuardianPanel recordings={recordings} />
       </AppShell>
@@ -311,7 +329,7 @@ export default function Home() {
   }
 
   // ── Overview / Home ────────────────────────────────────────────────────────
-  const activeAlerts = 0
+  const activeAlerts = guardianAlertCount
   const totalIndexed = recordings.filter(r => r.processing_status === 'INDEXED').length
 
   const cameraNames = Array.from(
