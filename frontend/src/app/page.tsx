@@ -281,6 +281,12 @@ export default function Home() {
             recording={previewRecording}
             initialTimestamp={0}
             onClose={() => setPreviewRecording(null)}
+            onDelete={async (id, filename) => {
+              if (!confirm(`Delete "${filename}" and all its indexed data?`)) return
+              await fetch(`/api/recordings/${id}`, { method: 'DELETE' })
+              setPreviewRecording(null)
+              fetchRecordings()
+            }}
           />
         )}
       </AppShell>

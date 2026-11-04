@@ -6,6 +6,7 @@ interface Props {
   recording: Recording
   initialTimestamp?: number
   onClose: () => void
+  onDelete?: (id: string, filename: string) => void
 }
 
 function formatDuration(secs?: number): string {
@@ -15,7 +16,7 @@ function formatDuration(secs?: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-export default function VideoPlayerModal({ recording, initialTimestamp, onClose }: Props) {
+export default function VideoPlayerModal({ recording, initialTimestamp, onClose, onDelete }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [videoError, setVideoError] = useState(false)
 
@@ -45,15 +46,30 @@ export default function VideoPlayerModal({ recording, initialTimestamp, onClose 
               <span className="rt-badge-blue flex-shrink-0">{recording.camera_name}</span>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="rt-btn-ghost text-[#94A3B8] hover:text-[#DC2626] ml-4 p-1.5 rounded-lg"
-            aria-label="Close"
-          >
-            <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
-              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-          </button>
+          <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+            {onDelete && (
+              <button
+                onClick={() => onDelete(recording.recording_id, recording.original_filename)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                aria-label="Delete recording"
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="w-3.5 h-3.5">
+                  <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Delete
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="rt-btn-ghost text-[#94A3B8] hover:text-[#DC2626] p-1.5 rounded-lg"
+              aria-label="Close"
+            >
+              <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Video */}
