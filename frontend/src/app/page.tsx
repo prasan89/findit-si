@@ -29,7 +29,6 @@ const EXAMPLE_QUERIES = [
   'Cat detected',
   'Dog detected',
   'Fire or smoke',
-  'Hazard detected',
 ]
 
 function SearchIconSm() {
